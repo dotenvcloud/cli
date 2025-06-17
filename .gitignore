@@ -1,0 +1,12 @@
+# Binaries
+dotenv
+dotenv.exe
+dist/
+
+# Go
+*.test
+*.out
+coverage.txt
+
+# Config
+.dotenv/
