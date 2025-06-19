@@ -5,6 +5,10 @@ bin/
 *.so
 *.dylib
 
+# Root level binaries (should be in bin/)
+/dotenv
+/dotenv-*
+
 # Test binary, built with 'go test -c'
 *.test
 
