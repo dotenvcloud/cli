@@ -1,0 +1,182 @@
+name: Test CLI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'apps/cli/**'
+      - 'packages/sdk-go/**'
+      - '.github/workflows/test.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'apps/cli/**'
+      - 'packages/sdk-go/**'
+      - '.github/workflows/test.yml'
+
+defaults:
+  run:
+    working-directory: apps/cli
+
+jobs:
+  test:
+    name: Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go: ['1.21', '1.22']
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go }}
+    
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    
+    - name: Install dependencies
+      run: go mod download
+    
+    - name: Run tests
+      run: go test -v -race -coverprofile=coverage.out ./...
+    
+    - name: Upload coverage
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./apps/cli/coverage.out
+        flags: cli
+        name: cli-${{ matrix.os }}-${{ matrix.go }}
+    
+    - name: Run integration tests
+      run: go test -v -tags=integration ./test/integration/...
+    
+    - name: Build binary
+      run: go build -v .
+
+  compatibility:
+    name: Compatibility Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+    
+    - name: Set up PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.2'
+        extensions: openssl
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Install dependencies
+      working-directory: apps/cli
+      run: go mod download
+    
+    - name: Run compatibility tests
+      working-directory: apps/cli
+      run: go test -v -tags=compatibility ./test/compatibility/...
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+    
+    - name: golangci-lint
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: latest
+        working-directory: apps/cli
+        args: --timeout=5m
+    
+    - name: Check formatting
+      working-directory: apps/cli
+      run: |
+        go fmt ./...
+        git diff --exit-code
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Run Gosec
+      uses: securego/gosec@master
+      with:
+        args: '-no-fail -fmt sarif -out results.sarif ./apps/cli/...'
+        
+    - name: Upload SARIF
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: results.sarif
+
+  sdk-test:
+    name: SDK Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ['1.21', '1.22']
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go }}
+    
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-sdk-${{ hashFiles('packages/sdk-go/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-sdk-
+    
+    - name: Install SDK dependencies
+      working-directory: packages/sdk-go
+      run: go mod download
+    
+    - name: Run SDK tests
+      working-directory: packages/sdk-go
+      run: go test -v -race -coverprofile=coverage.out ./...
+    
+    - name: Upload SDK coverage
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./packages/sdk-go/coverage.out
+        flags: sdk
+        name: sdk-${{ matrix.go }}
+    
+    - name: Run SDK integration tests
+      working-directory: packages/sdk-go
+      run: go test -v -tags=integration ./...
+    
+    - name: Run SDK benchmarks
+      working-directory: packages/sdk-go
+      run: go test -bench=. -benchmem ./...

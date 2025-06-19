@@ -1,0 +1,94 @@
+project_name: dotenv
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  - id: dotenv
+    binary: dotenv
+    main: .
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+      - -X main.goVersion={{.Runtime.Goversion}}
+
+archives:
+  - id: dotenv
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-dev"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+
+brews:
+  - repository:
+      owner: dotenv
+      name: homebrew-tap
+    folder: Formula
+    homepage: https://dotenv.com
+    description: Secure environment variable management CLI
+    license: MIT
+    test: |
+      system "#{bin}/dotenv", "version"
+
+nfpms:
+  - id: packages
+    package_name: dotenv-cli
+    vendor: DotEnv
+    homepage: https://dotenv.com
+    maintainer: DotEnv Team <support@dotenv.com>
+    description: Secure environment variable management CLI
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+
+# GitHub release
+release:
+  github:
+    owner: dotenv
+    name: cli
+  draft: false
+  prerelease: auto
+  name_template: "{{.ProjectName}} v{{.Version}}"
+  header: |
+    ## What's Changed
+  footer: |
+    **Full Changelog**: https://github.com/dotenv/cli/compare/{{ .PreviousTag }}...{{ .Tag }}

@@ -1,12 +1,51 @@
 # Binaries
-dotenv
-dotenv.exe
-dist/
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
 
-# Go
+# Test binary, built with 'go test -c'
 *.test
+
+# Output of the go coverage tool
 *.out
-coverage.txt
+coverage.html
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Dependency directories
+vendor/
+
+# IDE directories
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+completions/
+
+# Local environment
+.env
+.env.local
+*.env
+
+# Debug files
+debug
+__debug_bin
+
+# Temporary files
+*.tmp
+*.bak
 
 # Config
 .dotenv/
