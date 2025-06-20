@@ -321,6 +321,59 @@ dotenv pull myapp --debug   # Debug mode
 - **Network issues**: Check proxy settings and connectivity
 - **Permission denied**: Verify file permissions and paths
 
+## MCP Tool Usage for This CLI Project
+
+This CLI project has its own Serena MCP server configured at `apps/cli/.serena`, providing project-specific code analysis and editing capabilities.
+
+### Available MCP Tools for This Project
+
+The **mcp__serena-cli__** server provides these tools specifically for this CLI codebase:
+
+- `mcp__serena-cli__find_symbol` - Find symbols in this CLI project
+- `mcp__serena-cli__find_referencing_symbols` - Find references within this codebase
+- `mcp__serena-cli__get_symbols_overview` - Get overview of CLI code structure
+- `mcp__serena-cli__replace_symbol_body` - Replace entire functions/methods
+- `mcp__serena-cli__insert_before_symbol` - Insert code before symbols
+- `mcp__serena-cli__insert_after_symbol` - Insert code after symbols
+- `mcp__serena-cli__replace_regex` - Precise edits within this project
+- `mcp__serena-cli__search_for_pattern` - Search patterns in CLI code
+- `mcp__serena-cli__list_memories` - List CLI project-specific memories
+- `mcp__serena-cli__write_memory` - Store CLI development decisions
+- `mcp__serena-cli__read_memory` - Retrieve CLI project context
+
+### When to Use This Project's MCP
+
+**Use mcp__serena-cli__ for:**
+- Navigating this CLI's package structure
+- Understanding Cobra command implementations in this project
+- Refactoring within the CLI codebase
+- Storing/retrieving CLI-specific patterns and decisions
+- Analyzing this project's error handling patterns
+- Finding crypto implementations specific to this CLI
+
+**Examples:**
+```go
+// Find Cobra commands in this CLI
+mcp__serena-cli__find_symbol with name_path "Command" 
+
+// Find this CLI's encryption implementation
+mcp__serena-cli__find_symbol with name_path "Encrypt" relative_path "internal/crypto"
+
+// Find references to config in this project
+mcp__serena-cli__find_referencing_symbols with name_path "Config" relative_path "internal/config/config.go"
+
+// Get overview of this CLI's API client
+mcp__serena-cli__get_symbols_overview with relative_path "internal/api"
+```
+
+### Best Practices
+
+1. **Use this project's MCP** for all semantic operations within apps/cli/
+2. **Store project decisions** in mcp__serena-cli__ memories
+3. **Don't mix with other project MCPs** - each has its own context
+4. **Use standard tools** when working across multiple projects
+5. **Check references** within this project before changing APIs
+
 ## Future Enhancements
 - Shell integration for auto-loading
 - Secret rotation commands
