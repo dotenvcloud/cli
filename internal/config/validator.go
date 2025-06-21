@@ -88,19 +88,20 @@ func (v *Validator) ValidateOrganization(org string) error {
 	return nil
 }
 
-// ValidateContextName validates a context name
-func (v *Validator) ValidateContextName(name string) error {
+
+// ValidateAccountName validates an account name
+func (v *Validator) ValidateAccountName(name string) error {
 	if name == "" {
-		return fmt.Errorf("context name cannot be empty")
+		return fmt.Errorf("account name cannot be empty")
 	}
 
 	if len(name) > 100 {
-		return fmt.Errorf("context name too long (max 100 characters)")
+		return fmt.Errorf("account name too long (max 100 characters)")
 	}
 
-	// Allow alphanumeric, hyphens, underscores, and dots
-	if !regexp.MustCompile(`^[a-zA-Z0-9._-]+$`).MatchString(name) {
-		return fmt.Errorf("context name must be alphanumeric with hyphens, underscores, or dots")
+	// Allow alphanumeric, hyphens, underscores, dots, and @ for email-like names
+	if !regexp.MustCompile(`^[a-zA-Z0-9._@-]+$`).MatchString(name) {
+		return fmt.Errorf("invalid account name: %s (allowed: a-z, A-Z, 0-9, -, _, .)", name)
 	}
 
 	return nil
@@ -116,27 +117,44 @@ func (v *Validator) ValidateConfig(config *Config) error {
 		return fmt.Errorf("configuration version is missing")
 	}
 
-	// Validate each context
-	for name, ctx := range config.Contexts {
-		if err := v.ValidateContextName(name); err != nil {
-			return fmt.Errorf("context '%s': %w", name, err)
+	// Check for legacy configuration
+	if config.HasLegacyConfig() {
+		return fmt.Errorf("old configuration format detected. Please run 'dotenv init' to set up the new account system")
+	}
+
+	// Validate each account
+	for name, account := range config.Accounts {
+		if err := v.ValidateAccountName(name); err != nil {
+			return fmt.Errorf("account '%s': %w", name, err)
 		}
 
-		if err := v.ValidateAPIURL(ctx.APIURL); err != nil {
-			return fmt.Errorf("context '%s': %w", name, err)
+		if err := v.ValidateAPIURL(account.APIURL); err != nil {
+			return fmt.Errorf("account '%s': %w", name, err)
 		}
 
-		if err := v.ValidateOrganization(ctx.Organization); err != nil {
-			return fmt.Errorf("context '%s': %w", name, err)
+		// Validate account based on type
+		if account.AuthType == "oauth" {
+			// OAuth accounts must have organizations
+			if len(account.Organizations) == 0 {
+				return fmt.Errorf("account '%s': OAuth account has no organizations", name)
+			}
+		} else if account.AuthType == "api_key" {
+			// API key accounts must have organization info
+			if account.Organization == nil {
+				return fmt.Errorf("account '%s': API key account missing organization info", name)
+			}
+			if err := v.ValidateOrganization(account.Organization.Slug); err != nil {
+				return fmt.Errorf("account '%s': %w", name, err)
+			}
 		}
 
 		// Note: Don't validate API key here as it might be encrypted
 	}
 
-	// Validate current context exists
-	if config.CurrentContext != "" {
-		if _, exists := config.Contexts[config.CurrentContext]; !exists {
-			return fmt.Errorf("current context '%s' does not exist", config.CurrentContext)
+	// Validate current account exists
+	if config.CurrentAccount != "" {
+		if _, exists := config.Accounts[config.CurrentAccount]; !exists {
+			return fmt.Errorf("current account '%s' does not exist", config.CurrentAccount)
 		}
 	}
 

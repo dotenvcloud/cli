@@ -15,27 +15,38 @@ import (
 var (
 	loginNoBrowser    bool
 	loginCallbackPort string
-	loginManual       bool
+	loginAPIKey       bool
+	loginStatus       bool
 )
 
 var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Authenticate with DotEnv",
-	Long: `Authenticate with DotEnv using a browser-based flow.
-This command will:
+	Long: `Authenticate with DotEnv using either OAuth2 or Organization API keys.
 
-1. Open your browser to the DotEnv authentication page
-2. Allow you to select organizations to access
-3. Securely store your API credentials`,
+OAuth2 (default for interactive sessions):
+- Opens your browser for authentication
+- Provides access to all organizations you're a member of
+- Supports automatic token refresh
+- Ideal for local development
 
-	Example: `  # Login via browser
+Organization API Key (for CI/CD):
+- Manual entry of organization-specific API key
+- Access limited to one organization
+- No browser required
+- Perfect for automation and CI/CD`,
+
+	Example: `  # OAuth2 login (default)
   dotenv login
 
-  # Login without opening browser
+  # OAuth2 without opening browser
   dotenv login --no-browser
   
-  # Enter API key manually
-  dotenv login --manual`,
+  # Organization API key login
+  dotenv login --api-key
+  
+  # Check authentication status
+  dotenv login --status`,
 
 	RunE: runLogin,
 }
@@ -43,16 +54,27 @@ This command will:
 func init() {
 	// Add flags specific to login command
 	loginCmd.Flags().BoolVar(&loginNoBrowser, "no-browser", false,
-		"print URL instead of opening browser")
+		"print URL instead of opening browser (OAuth2 only)")
 	loginCmd.Flags().StringVar(&loginCallbackPort, "callback-port", "",
-		"specify callback port (default: random)")
-	loginCmd.Flags().BoolVar(&loginManual, "manual", false,
-		"enter API key manually instead of browser auth")
+		"specify callback port for OAuth2 (default: auto)")
+	loginCmd.Flags().BoolVar(&loginAPIKey, "api-key", false,
+		"use organization API key authentication instead of OAuth2")
+	loginCmd.Flags().BoolVar(&loginStatus, "status", false,
+		"show current authentication status")
 }
 
 func runLogin(cmd *cobra.Command, args []string) error {
-	// Load current config
-	cm, err := config.NewContextManager("")
+	// Show status if requested
+	if loginStatus {
+		return runStatus(cmd, args)
+	}
+
+	// Load account manager
+	configPath, err := config.ConfigPath()
+	if err != nil {
+		return fmt.Errorf("failed to get config path: %w", err)
+	}
+	am, err := config.NewAccountManager(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -60,18 +82,16 @@ func runLogin(cmd *cobra.Command, args []string) error {
 	// Get API URL
 	apiURL := viper.GetString("api_url")
 	if apiURL == "" {
-		apiURL = "https://api.dotenv.com"
-		if os.Getenv("DOTENV_TLS_SKIP_VERIFY") != "" {
-			apiURL = "https://dotenv.test"
-		}
+		apiURL = getAPIURL()
 	}
 
-	// Handle manual login
-	if loginManual {
-		return runManualLogin(cm, apiURL)
+	// Determine authentication method
+	// Use API key if explicitly requested or in non-interactive environment
+	if loginAPIKey || os.Getenv("CI") != "" || !isInteractive() {
+		return runAPIKeyLogin(am, apiURL)
 	}
 
-	// Use browser login
+	// Default to OAuth2 for interactive sessions
 	opts := auth.BrowserLoginOptions{
 		APIUrl:        apiURL,
 		CallbackPort:  loginCallbackPort,
@@ -79,14 +99,15 @@ func runLogin(cmd *cobra.Command, args []string) error {
 		IsInteractive: true,
 	}
 
-	return auth.DoBrowserLogin(cmd.Context(), cm, opts)
+	return auth.DoBrowserLogin(cmd.Context(), am, opts)
 }
 
-func runManualLogin(cm *config.ContextManager, apiURL string) error {
-	ui.PrintInfo("Manual API key entry")
+func runAPIKeyLogin(am *config.AccountManager, apiURL string) error {
+	ui.PrintInfo("Organization API Key Authentication")
+	ui.PrintInfo("Use this method for CI/CD and automated workflows")
 
 	// Get API key
-	apiKey, err := ui.Password("Enter your API key")
+	apiKey, err := ui.Password("Enter your organization API key")
 	if err != nil {
 		return err
 	}
@@ -103,24 +124,41 @@ func runManualLogin(cm *config.ContextManager, apiURL string) error {
 		return err
 	}
 
-	// Get context name
-	contextName, err := ui.Input("Context name", organization, nil)
+	// Get account name
+	defaultAccountName := fmt.Sprintf("%s-api", organization)
+	accountName, err := ui.Input("Account name", defaultAccountName, nil)
 	if err != nil {
 		return err
 	}
 
-	// Create context
-	if err := cm.Create(contextName, apiURL, apiKey, organization); err != nil {
-		return fmt.Errorf("failed to create context: %w", err)
+	// Create org info
+	orgInfo := config.OrgInfo{
+		ULID: organization,
+		Name: organization,
+		Slug: organization,
+	}
+
+	// Create API key account
+	if err := am.CreateWithAPIKey(accountName, apiURL, apiKey, &orgInfo); err != nil {
+		return fmt.Errorf("failed to create account: %w", err)
 	}
 
 	// Set as current
-	if err := cm.Use(contextName); err != nil {
-		return fmt.Errorf("failed to set current context: %w", err)
+	if err := am.Use(accountName); err != nil {
+		return fmt.Errorf("failed to set current account: %w", err)
 	}
 
-	ui.PrintSuccess("Login successful!")
-	ui.PrintInfo("Current context set to: %s", contextName)
+	ui.PrintSuccess("API key authentication successful!")
+	ui.PrintInfo("Current account: %s", accountName)
+	ui.PrintInfo("Organization: %s", organization)
 
 	return nil
+}
+
+// showAuthStatus is now handled by the status command
+
+func isInteractive() bool {
+	// Check if stdin is a terminal
+	stat, _ := os.Stdin.Stat()
+	return (stat.Mode() & os.ModeCharDevice) != 0
 }

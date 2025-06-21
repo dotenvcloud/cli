@@ -10,23 +10,51 @@ import (
 type Config struct {
 	Version          string             `yaml:"version"`
 	TelemetryEnabled bool               `yaml:"telemetry_enabled"`
-	CurrentContext   string             `yaml:"current_context"`
-	Contexts         map[string]Context `yaml:"contexts"`
+	CurrentAccount   string             `yaml:"current_account"`
+	Accounts         map[string]Account `yaml:"accounts"`
 	Preferences      Preferences        `yaml:"preferences,omitempty"`
 	LastUpdateCheck  *time.Time         `yaml:"last_update_check,omitempty"`
+	// Legacy fields for migration detection
+	CurrentContext   string             `yaml:"current_context,omitempty"`
+	Contexts         map[string]Context `yaml:"contexts,omitempty"`
 }
 
-// Context represents a DotEnv context (organization)
+// Context represents a legacy DotEnv context (for migration detection)
 type Context struct {
-	Name         string    `yaml:"name"`
-	APIURL       string    `yaml:"api_url"`
-	APIKey       string    `yaml:"api_key"` // Encrypted
-	Organization string    `yaml:"organization"`
-	CreatedAt    time.Time `yaml:"created_at"`
-	UpdatedAt    time.Time `yaml:"updated_at"`
-	LastUpdate   time.Time `yaml:"last_update"` // Added as per requirements
-	Metadata     Metadata  `yaml:"metadata,omitempty"`
+	Name               string                   `yaml:"name"`
+	APIURL             string                   `yaml:"api_url"`
+	APIKey             string                   `yaml:"api_key,omitempty"`
+	Organization       string                   `yaml:"organization,omitempty"`
+	AuthType           string                   `yaml:"auth_type"`
+	Auth               AuthData                 `yaml:"auth,omitempty"`
+	Organizations      []OrganizationInfo       `yaml:"organizations,omitempty"`
+	CurrentOrganization string                  `yaml:"current_organization,omitempty"`
+	CreatedAt          time.Time                `yaml:"created_at"`
+	UpdatedAt          time.Time                `yaml:"updated_at"`
+	LastUpdate         time.Time                `yaml:"last_update"`
+	Metadata           Metadata                 `yaml:"metadata,omitempty"`
 }
+
+// AuthData holds authentication credentials
+type AuthData struct {
+	// For API key auth
+	APIKey string `yaml:"api_key,omitempty"`
+
+	// For OAuth auth
+	AccessToken          string    `yaml:"access_token,omitempty"`
+	RefreshToken         string    `yaml:"refresh_token,omitempty"`
+	TokenType            string    `yaml:"token_type,omitempty"`
+	ExpiresAt            time.Time `yaml:"expires_at,omitempty"`
+	RefreshTokenExpiresAt time.Time `yaml:"refresh_token_expires_at,omitempty"`
+}
+
+// OrganizationInfo represents an organization the user has access to
+type OrganizationInfo struct {
+     	Slug string `yaml:"slug"`
+     	Name string `yaml:"name"`
+     	ID   int64  `yaml:"id,omitempty"`
+     }
+
 
 // Preferences holds user preferences
 type Preferences struct {
@@ -59,7 +87,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		Version:          "1.0",
 		TelemetryEnabled: false,
-		Contexts:         make(map[string]Context),
+		Accounts:         make(map[string]Account),
 		Preferences: Preferences{
 			DefaultFormat: "env",
 			ColorOutput:   true,
@@ -73,58 +101,69 @@ func DefaultConfig() *Config {
 	}
 }
 
-// GetCurrentContext returns the current active context
-func (c *Config) GetCurrentContext() (*Context, error) {
-	if c.CurrentContext == "" {
-		return nil, fmt.Errorf("no context selected")
+// GetCurrentAccount returns the current active account
+func (c *Config) GetCurrentAccount() (*Account, error) {
+	if c.CurrentAccount == "" {
+		return nil, fmt.Errorf("no account selected")
 	}
 
-	ctx, exists := c.Contexts[c.CurrentContext]
+	acct, exists := c.Accounts[c.CurrentAccount]
 	if !exists {
-		return nil, fmt.Errorf("context '%s' not found", c.CurrentContext)
+		return nil, fmt.Errorf("account '%s' not found", c.CurrentAccount)
 	}
 
-	return &ctx, nil
+	return &acct, nil
 }
 
-// AddContext adds or updates a context
-func (c *Config) AddContext(name string, context Context) error {
+// GetCurrentContext returns the current active context (legacy, for compatibility)
+func (c *Config) GetCurrentContext() (*Context, error) {
+	// This is now a legacy method that should trigger migration
+	return nil, fmt.Errorf("old configuration format detected. Please run 'dotenv init' to set up the new account system")
+}
+
+// AddAccount adds or updates an account
+func (c *Config) AddAccount(name string, account Account) error {
 	if name == "" {
-		return fmt.Errorf("context name cannot be empty")
+		return fmt.Errorf("account name cannot be empty")
 	}
 
-	context.Name = name
-	context.UpdatedAt = time.Now()
-	context.LastUpdate = time.Now() // Set last_update timestamp
+	account.Name = name
+	account.UpdatedAt = time.Now()
+	account.LastUsed = time.Now()
 
-	if _, exists := c.Contexts[name]; !exists {
-		context.CreatedAt = time.Now()
+	if _, exists := c.Accounts[name]; !exists {
+		account.CreatedAt = time.Now()
 	}
 
-	c.Contexts[name] = context
+	c.Accounts[name] = account
 
-	// Set as current if it's the first context
-	if len(c.Contexts) == 1 {
-		c.CurrentContext = name
+	// Set as current if it's the first account
+	if len(c.Accounts) == 1 {
+		c.CurrentAccount = name
 	}
 
 	return nil
 }
 
-// RemoveContext removes a context
-func (c *Config) RemoveContext(name string) error {
-	if _, exists := c.Contexts[name]; !exists {
-		return fmt.Errorf("context '%s' not found", name)
+// AddContext adds or updates a context (legacy)
+func (c *Config) AddContext(name string, context Context) error {
+	return fmt.Errorf("old configuration format detected. Please run 'dotenv init' to set up the new account system")
+}
+
+// RemoveAccount removes an account
+func (c *Config) RemoveAccount(name string) error {
+	if _, exists := c.Accounts[name]; !exists {
+		return fmt.Errorf("Account not found: %s", name)
 	}
 
-	delete(c.Contexts, name)
+	delete(c.Accounts, name)
 
-	// Clear current context if it was removed
-	if c.CurrentContext == name {
-		c.CurrentContext = ""
-		// Set to first available context
-		for k := range c.Contexts {
-			c.CurrentContext = k
+	// Clear current account if it was removed
+	if c.CurrentAccount == name {
+		c.CurrentAccount = ""
+		// Set to first available account
+		for k := range c.Accounts {
+			c.CurrentAccount = k
 			break
 		}
 	}
@@ -132,73 +171,93 @@ func (c *Config) RemoveContext(name string) error {
 	return nil
 }
 
-// RenameContext renames a context
-func (c *Config) RenameContext(oldName, newName string) error {
+// RemoveContext removes a context (legacy)
+func (c *Config) RemoveContext(name string) error {
+	return fmt.Errorf("old configuration format detected. Please run 'dotenv init' to set up the new account system")
+}
+
+// RenameAccount renames an account
+func (c *Config) RenameAccount(oldName, newName string) error {
 	if oldName == "" || newName == "" {
-		return fmt.Errorf("context names cannot be empty")
+		return fmt.Errorf("account names cannot be empty")
 	}
 
 	if oldName == newName {
 		return nil
 	}
 
-	ctx, exists := c.Contexts[oldName]
+	acct, exists := c.Accounts[oldName]
 	if !exists {
-		return fmt.Errorf("context '%s' not found", oldName)
+		return fmt.Errorf("account '%s' not found", oldName)
 	}
 
-	if _, exists := c.Contexts[newName]; exists {
-		return fmt.Errorf("context '%s' already exists", newName)
+	if _, exists := c.Accounts[newName]; exists {
+		return fmt.Errorf("account '%s' already exists", newName)
 	}
 
-	// Copy context with new name
-	ctx.Name = newName
-	ctx.UpdatedAt = time.Now()
-	ctx.LastUpdate = time.Now()
-	c.Contexts[newName] = ctx
+	// Copy account with new name
+	acct.Name = newName
+	acct.UpdatedAt = time.Now()
+	c.Accounts[newName] = acct
 
-	// Delete old context
-	delete(c.Contexts, oldName)
+	// Delete old account
+	delete(c.Accounts, oldName)
 
-	// Update current context if needed
-	if c.CurrentContext == oldName {
-		c.CurrentContext = newName
+	// Update current account if needed
+	if c.CurrentAccount == oldName {
+		c.CurrentAccount = newName
 	}
 
 	return nil
 }
 
-// SetCurrentContext sets the current active context
+// RenameContext renames a context (legacy)
+func (c *Config) RenameContext(oldName, newName string) error {
+	return fmt.Errorf("old configuration format detected. Please run 'dotenv init' to set up the new account system")
+}
+
+// SetCurrentAccount sets the current active account
+func (c *Config) SetCurrentAccount(name string) error {
+	if _, exists := c.Accounts[name]; !exists {
+		return fmt.Errorf("account '%s' not found", name)
+	}
+
+	c.CurrentAccount = name
+	return nil
+}
+
+// SetCurrentContext sets the current active context (legacy)
 func (c *Config) SetCurrentContext(name string) error {
-	if _, exists := c.Contexts[name]; !exists {
-		return fmt.Errorf("context '%s' not found", name)
-	}
-
-	c.CurrentContext = name
-	return nil
+	return fmt.Errorf("old configuration format detected. Please run 'dotenv init' to set up the new account system")
 }
 
-// ListContexts returns a list of all context names
-func (c *Config) ListContexts() []string {
-	names := make([]string, 0, len(c.Contexts))
-	for name := range c.Contexts {
+// ListAccounts returns a list of all account names
+func (c *Config) ListAccounts() []string {
+	names := make([]string, 0, len(c.Accounts))
+	for name := range c.Accounts {
 		names = append(names, name)
 	}
 	return names
 }
 
-// GetAPIURL returns the API URL for the current context
+// ListContexts returns a list of all context names (legacy)
+func (c *Config) ListContexts() []string {
+	// Return empty list for legacy method
+	return []string{}
+}
+
+// GetAPIURL returns the API URL for the current account
 func (c *Config) GetAPIURL() (string, error) {
-	ctx, err := c.GetCurrentContext()
+	acct, err := c.GetCurrentAccount()
 	if err != nil {
 		return "", err
 	}
 
-	if ctx.APIURL == "" {
+	if acct.APIURL == "" {
 		return "https://api.dotenv.com", nil
 	}
 
-	return ctx.APIURL, nil
+	return acct.APIURL, nil
 }
 
 // ConfigPath returns the default config file path
@@ -219,4 +278,47 @@ func ConfigDir() (string, error) {
 	}
 
 	return filepath.Join(home, ".dotenv"), nil
+}
+
+// IsOAuthContext returns true if this is an OAuth context
+func (c *Context) IsOAuthContext() bool {
+	return c.AuthType == "oauth"
+}
+
+// IsAPIKeyContext returns true if this is an API key context
+func (c *Context) IsAPIKeyContext() bool {
+	return c.AuthType == "api_key" || c.AuthType == ""
+}
+
+// IsTokenExpired returns true if the OAuth token is expired
+func (c *Context) IsTokenExpired() bool {
+	if !c.IsOAuthContext() {
+		return false
+	}
+	return time.Now().After(c.Auth.ExpiresAt)
+}
+
+// GetEffectiveAPIKey returns the API key (for backward compatibility)
+func (c *Context) GetEffectiveAPIKey() string {
+	if c.IsAPIKeyContext() {
+		// Check new location first, then fall back to old location
+		if c.Auth.APIKey != "" {
+			return c.Auth.APIKey
+		}
+		return c.APIKey
+	}
+	return ""
+}
+
+// GetEffectiveOrganization returns the current organization
+func (c *Context) GetEffectiveOrganization() string {
+	if c.IsOAuthContext() {
+		return c.CurrentOrganization
+	}
+	return c.Organization
+}
+
+// HasLegacyConfig checks if the config has old context-based structure
+func (c *Config) HasLegacyConfig() bool {
+	return len(c.Contexts) > 0 || c.CurrentContext != ""
 }

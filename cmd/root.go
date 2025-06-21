@@ -11,10 +11,11 @@ import (
 )
 
 var (
-	cfgFile string
-	debug   bool
-	quiet   bool
-	noColor bool
+	cfgFile      string
+	debug        bool
+	quiet        bool
+	noColor      bool
+	globalAPIKey string
 )
 
 // rootCmd represents the base command
@@ -61,10 +62,13 @@ func init() {
 		"suppress non-error output")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false,
 		"disable colored output")
+	rootCmd.PersistentFlags().StringVar(&globalAPIKey, "api-key", "",
+		"API key for authentication (overrides account system)")
 
 	// Bind flags to viper
 	viper.BindPFlag("debug", rootCmd.PersistentFlags().Lookup("debug"))
 	viper.BindPFlag("quiet", rootCmd.PersistentFlags().Lookup("quiet"))
+	viper.BindPFlag("api_key", rootCmd.PersistentFlags().Lookup("api-key"))
 
 	// Add all commands
 	rootCmd.AddCommand(
@@ -74,12 +78,15 @@ func init() {
 		pushCmd,
 		listCmd,
 		exportCmd,
+		accountCmd,  // New account management
+		orgCmd,      // Updated org management
+		statusCmd,   // New status command
 		refreshCmd,
 		updateCmd,
-		useContextCmd,
 		versionCmd,
 	)
 }
+
 
 // initConfig reads in config file and ENV variables
 func initConfig() {

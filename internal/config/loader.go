@@ -53,15 +53,20 @@ func (l *Loader) Load() (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
-	// Decrypt API keys
-	for name, ctx := range config.Contexts {
-		if ctx.APIKey != "" {
-			decrypted, err := l.crypto.Decrypt(ctx.APIKey)
+	// Check for legacy configuration
+	if config.HasLegacyConfig() {
+		return nil, fmt.Errorf("old configuration format detected. Please run 'dotenv init' to set up the new account system")
+	}
+
+	// Decrypt API keys in accounts
+	for name, account := range config.Accounts {
+		if account.Auth.APIKey != "" {
+			decrypted, err := l.crypto.Decrypt(account.Auth.APIKey)
 			if err != nil {
-				return nil, fmt.Errorf("failed to decrypt API key for context %s: %w", name, err)
+				return nil, fmt.Errorf("failed to decrypt API key for account %s: %w", name, err)
 			}
-			ctx.APIKey = decrypted
-			config.Contexts[name] = ctx
+			account.Auth.APIKey = decrypted
+			config.Accounts[name] = account
 		}
 	}
 
@@ -83,19 +88,19 @@ func (l *Loader) Save(config *Config) error {
 
 	// Create a copy to avoid modifying the original
 	configCopy := *config
-	configCopy.Contexts = make(map[string]Context)
+	configCopy.Accounts = make(map[string]Account)
 
-	// Encrypt API keys
-	for name, ctx := range config.Contexts {
-		ctxCopy := ctx
-		if ctx.APIKey != "" {
-			encrypted, err := l.crypto.Encrypt(ctx.APIKey)
+	// Encrypt API keys in accounts
+	for name, account := range config.Accounts {
+		accountCopy := account
+		if account.Auth.APIKey != "" {
+			encrypted, err := l.crypto.Encrypt(account.Auth.APIKey)
 			if err != nil {
-				return fmt.Errorf("failed to encrypt API key for context %s: %w", name, err)
+				return fmt.Errorf("failed to encrypt API key for account %s: %w", name, err)
 			}
-			ctxCopy.APIKey = encrypted
+			accountCopy.Auth.APIKey = encrypted
 		}
-		configCopy.Contexts[name] = ctxCopy
+		configCopy.Accounts[name] = accountCopy
 	}
 
 	// Marshal to YAML
@@ -131,22 +136,54 @@ func (l *Loader) validate(config *Config) error {
 		return fmt.Errorf("missing version")
 	}
 
-	// Validate contexts
-	for name, ctx := range config.Contexts {
-		if ctx.Organization == "" {
-			return fmt.Errorf("context %s: missing organization", name)
+	// Validate accounts
+	for name, account := range config.Accounts {
+		// Validate auth type
+		if account.AuthType != "oauth" && account.AuthType != "api_key" {
+			return fmt.Errorf("account %s: invalid auth type '%s'", name, account.AuthType)
 		}
-		if ctx.APIURL == "" {
-			// Set default API URL if not specified
-			ctx.APIURL = "https://api.dotenv.com"
-			config.Contexts[name] = ctx
+
+		// Set default API URL if not specified
+		if account.APIURL == "" {
+			account.APIURL = "https://api.dotenv.cloud"
+			config.Accounts[name] = account
+		}
+
+		// Validate OAuth accounts
+		if account.AuthType == "oauth" {
+			if len(account.Organizations) == 0 {
+				return fmt.Errorf("account %s: OAuth account has no organizations", name)
+			}
+			if account.CurrentOrganization != "" {
+				// Verify current org exists
+				found := false
+				for _, org := range account.Organizations {
+					if org.ULID == account.CurrentOrganization {
+						found = true
+						break
+					}
+				}
+				if !found {
+					return fmt.Errorf("account %s: current organization '%s' not found", name, account.CurrentOrganization)
+				}
+			}
+		}
+
+		// Validate API key accounts
+		if account.AuthType == "api_key" {
+			if account.Organization == nil {
+				return fmt.Errorf("account %s: API key account missing organization info", name)
+			}
+			if account.Auth.APIKey == "" {
+				return fmt.Errorf("account %s: API key account missing API key", name)
+			}
 		}
 	}
 
-	// Validate current context
-	if config.CurrentContext != "" {
-		if _, exists := config.Contexts[config.CurrentContext]; !exists {
-			return fmt.Errorf("current context '%s' not found", config.CurrentContext)
+	// Validate current account
+	if config.CurrentAccount != "" {
+		if _, exists := config.Accounts[config.CurrentAccount]; !exists {
+			return fmt.Errorf("current account '%s' not found", config.CurrentAccount)
 		}
 	}
 

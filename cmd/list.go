@@ -9,6 +9,7 @@ import (
 
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/ui"
@@ -30,7 +31,7 @@ Resources:
   projects      - List projects in current organization
   targets       - List targets in a project
   environments  - List environments in a target
-  contexts      - List configured contexts`,
+  accounts      - List configured accounts`,
 
 	Example: `  # List all projects in current organization
   dotenv list projects
@@ -41,19 +42,19 @@ Resources:
   # List environments in a project/target
   dotenv list environments myproject/production
 
-  # List all configured contexts
-  dotenv list contexts
+  # List all configured accounts
+  dotenv list accounts
 
   # List projects in a specific organization
   dotenv list projects --organization=acme-corp`,
 
-	ValidArgs: []string{"organizations", "projects", "targets", "environments", "contexts"},
+	ValidArgs: []string{"organizations", "projects", "targets", "environments", "accounts"},
 	RunE:      runList,
 }
 
 func init() {
 	listCmd.Flags().StringVar(&listOrganization, "organization", "",
-		"specify organization (overrides current context)")
+		"specify organization (overrides current account's organization)")
 	listCmd.Flags().StringVarP(&listFormat, "format", "f", "table",
 		"output format (table, json, yaml)")
 	listCmd.Flags().BoolVar(&listJSON, "json", false,
@@ -72,9 +73,18 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	resource := args[0]
 
+	// Display account/org info for resources that use API
+	// (not for "accounts" since that's local config)
+	if resource != "accounts" && viper.GetString("api_key") == "" && os.Getenv("DOTENV_API_KEY") == "" {
+		if err := displayAccountInfo(); err != nil {
+			// Don't fail if we can't display account info
+			ui.PrintWarning("Could not display account info: %v", err)
+		}
+	}
+
 	switch resource {
-	case "contexts":
-		return listContexts(cmd)
+	case "accounts":
+		return listAccounts(cmd)
 
 	case "organizations":
 		return listOrganizations(cmd)
@@ -103,35 +113,95 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 }
 
-func listContexts(cmd *cobra.Command) error {
-	cm, err := config.NewContextManager("")
+func listAccounts(cmd *cobra.Command) error {
+	configPath, err := config.ConfigPath()
+	if err != nil {
+		return err
+	}
+	am, err := config.NewAccountManager(configPath)
 	if err != nil {
 		return err
 	}
 
-	contexts := cm.List()
+	accounts := am.List()
 
-	if len(contexts) == 0 {
-		ui.PrintWarning("No contexts configured. Run 'dotenv init' to get started.")
+	if len(accounts) == 0 {
+		ui.PrintWarning("No accounts configured. Run 'dotenv init' to get started.")
 		return nil
+	}
+
+	current, _ := am.GetCurrent()
+	currentName := ""
+	if current != nil {
+		currentName = current.Name
 	}
 
 	switch listFormat {
 	case "json":
+		// Build account details for JSON output
+		type accountInfo struct {
+			Name                string `json:"name"`
+			Type                string `json:"type"`
+			Organization        string `json:"organization"`
+			APIURL              string `json:"api_url"`
+			Current             bool   `json:"current"`
+			UserEmail           string `json:"user_email,omitempty"`
+		}
+		
+		accountList := []accountInfo{}
+		for _, name := range accounts {
+			account, err := am.Get(name)
+			if err != nil {
+				continue
+			}
+			
+			info := accountInfo{
+				Name:    name,
+				Type:    account.AuthType,
+				APIURL:  account.APIURL,
+				Current: name == currentName,
+			}
+			
+			if account.IsOAuth() {
+				org, err := account.GetCurrentOrganization()
+				if err == nil {
+					info.Organization = org.Name
+				}
+				// TODO: Store user email in account metadata
+			} else if account.Organization != nil {
+				info.Organization = account.Organization.Name
+			}
+			
+			accountList = append(accountList, info)
+		}
+		
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
-		return encoder.Encode(contexts)
+		return encoder.Encode(accountList)
 
 	case "yaml":
 		// Simple YAML output
-		for _, ctx := range contexts {
-			fmt.Printf("- name: %s\n", ctx.Name)
-			fmt.Printf("  organization: %s\n", ctx.Organization)
-			fmt.Printf("  api_url: %s\n", ctx.APIURL)
-			fmt.Printf("  current: %v\n", ctx.Current)
-			if ctx.UserEmail != "" {
-				fmt.Printf("  user_email: %s\n", ctx.UserEmail)
+		for _, name := range accounts {
+			account, err := am.Get(name)
+			if err != nil {
+				continue
 			}
+			
+			fmt.Printf("- name: %s\n", name)
+			fmt.Printf("  type: %s\n", account.AuthType)
+			
+			if account.IsOAuth() {
+				org, err := account.GetCurrentOrganization()
+				if err == nil {
+					fmt.Printf("  organization: %s\n", org.Name)
+				}
+				// TODO: Store and display user email in account metadata
+			} else if account.Organization != nil {
+				fmt.Printf("  organization: %s\n", account.Organization.Name)
+			}
+			
+			fmt.Printf("  api_url: %s\n", account.APIURL)
+			fmt.Printf("  current: %v\n", name == currentName)
 			fmt.Println()
 		}
 		return nil
@@ -139,22 +209,43 @@ func listContexts(cmd *cobra.Command) error {
 	default:
 		// Table format
 		table := tablewriter.NewWriter(os.Stdout)
-		table.Header("NAME", "ORGANIZATION", "API URL", "CURRENT")
+		table.Header("NAME", "TYPE", "ORGANIZATION", "API URL", "CURRENT")
 
-		for _, ctx := range contexts {
+		for _, name := range accounts {
+			account, err := am.Get(name)
+			if err != nil {
+				continue
+			}
+			
 			current := ""
-			if ctx.Current {
+			if name == currentName {
 				current = "*"
 			}
 
-			apiURL := ctx.APIURL
-			if apiURL == "https://api.dotenv.com" {
+			authType := account.AuthType
+			if authType == "" {
+				authType = "api_key"
+			}
+
+			orgName := ""
+			if account.IsOAuth() {
+				org, err := account.GetCurrentOrganization()
+				if err == nil {
+					orgName = org.Name
+				}
+			} else if account.Organization != nil {
+				orgName = account.Organization.Name
+			}
+
+			apiURL := account.APIURL
+			if apiURL == "https://api.dotenv.cloud" {
 				apiURL = "default"
 			}
 
 			table.Append([]string{
-				ctx.Name,
-				ctx.Organization,
+				name,
+				authType,
+				orgName,
 				apiURL,
 				current,
 			})
@@ -230,11 +321,23 @@ func listProjects(cmd *cobra.Command, orgSlug string) error {
 		if listOrganization != "" {
 			orgSlug = listOrganization
 		} else {
-			ctx, err := getCurrentContext()
+			account, err := getCurrentAccount()
 			if err != nil {
 				return err
 			}
-			orgSlug = ctx.Organization
+			
+			// Get the organization slug based on account type
+			if account.IsOAuth() {
+				org, err := account.GetCurrentOrganization()
+				if err != nil {
+					return fmt.Errorf("no organization selected for current account. Use 'dotenv org use' to select one")
+				}
+				orgSlug = org.Slug
+			} else if account.Organization != nil {
+				orgSlug = account.Organization.Slug
+			} else {
+				return fmt.Errorf("no organization configured for current account")
+			}
 		}
 	}
 

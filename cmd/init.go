@@ -22,7 +22,7 @@ var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize DotEnv CLI configuration",
 	Long: `Initialize DotEnv CLI by creating a configuration file and setting up
-your first context. This command will guide you through:
+your first account. This command will guide you through:
 
 - API authentication
 - Organization selection
@@ -74,13 +74,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Step 1: API Configuration
 	ui.PrintInfo("Step 1: API Configuration")
 
-	// Check if we're in development mode
-	apiURL := "https://api.dotenv.com"
-	if os.Getenv("DOTENV_TLS_SKIP_VERIFY") != "" {
-		apiURL = "https://dotenv.test"
-	}
+	// Get default API URL
+	defaultAPIURL := getAPIURL()
 
-	apiURL, err = ui.Input("API URL", apiURL, nil)
+	apiURL, err := ui.Input("API URL", defaultAPIURL, nil)
 	if err != nil {
 		return err
 	}
@@ -121,10 +118,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if loginNow {
 			ui.PrintInfo("Starting login process...")
 
-			// Create context manager with the new config
-			cm, err := config.NewContextManager(configPath)
+			// Create account manager with the new config
+			am, err := config.NewAccountManager(configPath)
 			if err != nil {
-				return fmt.Errorf("failed to create context manager: %w", err)
+				return fmt.Errorf("failed to create account manager: %w", err)
 			}
 
 			// Use browser login
@@ -135,16 +132,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 				IsInteractive: true,
 			}
 
-			if err := auth.DoBrowserLogin(cmd.Context(), cm, opts); err != nil {
+			if err := auth.DoBrowserLogin(cmd.Context(), am, opts); err != nil {
 				ui.PrintError("Login failed: %v", err)
 				ui.PrintInfo("You can try again later by running 'dotenv login'")
 				deferredLogin = true
 			} else {
-				// Login successful, reload config to show current context
+				// Login successful, reload config to show current account
 				cfg, err = loader.Load()
-				if err == nil && cfg.CurrentContext != "" {
+				if err == nil && cfg.CurrentAccount != "" {
 					ui.PrintSuccess("Configuration saved and logged in successfully!")
-					ui.PrintInfo("Current context: %s", cfg.CurrentContext)
+					ui.PrintInfo("Current account: %s", cfg.CurrentAccount)
+					ui.PrintInfo("Try 'dotenv list projects' to see your projects")
+					return nil // Exit early, OAuth setup is complete
 				}
 			}
 		} else {
@@ -164,7 +163,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 
 		// Try to verify API key and get organization info
-		tempClient := dotenv.NewClient(apiKey, dotenv.WithBaseURL(apiURL))
+		tempClient := dotenv.NewClient(
+			dotenv.WithAPIKey(apiKey),
+			dotenv.WithBaseURL(apiURL),
+		)
 		if os.Getenv("DOTENV_TLS_SKIP_VERIFY") != "" {
 			tempClient.SetTLSSkipVerify(true)
 		}
@@ -198,44 +200,47 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Step 3: Context Name
-	ui.PrintInfo("\nStep 3: Context Configuration")
-
-	defaultContextName := "default"
-	if organization != "" {
-		defaultContextName = organization
-	}
-
-	contextName, err := ui.Input("Context name", defaultContextName, nil)
-	if err != nil {
-		return err
-	}
-
-	if err := validator.ValidateContextName(contextName); err != nil {
-		return fmt.Errorf("invalid context name: %w", err)
-	}
-
-	// Add context if we have manual credentials
+	// Step 3: Account Configuration for API Key
 	if apiKey != "" && organization != "" {
-		ctx := config.Context{
-			APIURL:       apiURL,
-			APIKey:       apiKey,
-			Organization: organization,
+		ui.PrintInfo("\nStep 3: Account Configuration")
+
+		// Create account manager
+		am, err := config.NewAccountManager(configPath)
+		if err != nil {
+			return fmt.Errorf("failed to create account manager: %w", err)
 		}
 
-		if err := cfg.AddContext(contextName, ctx); err != nil {
-			return fmt.Errorf("failed to add context: %w", err)
+		// Default account name is organization slug
+		defaultAccountName := organization
+		accountName, err := ui.Input("Account name", defaultAccountName, nil)
+		if err != nil {
+			return err
 		}
 
-		cfg.CurrentContext = contextName
+		if err := validator.ValidateAccountName(accountName); err != nil {
+			return fmt.Errorf("invalid account name: %w", err)
+		}
 
-		// Save configuration
-		if err := loader.Save(cfg); err != nil {
-			return fmt.Errorf("failed to save configuration: %w", err)
+		// Create org info
+		orgInfo := config.OrgInfo{
+			ULID: organization,
+			Name: organization,
+			Slug: organization,
+		}
+
+		// Create API key account
+		if err := am.CreateWithAPIKey(accountName, apiURL, apiKey, &orgInfo); err != nil {
+			return fmt.Errorf("failed to create account: %w", err)
+		}
+
+		// Set as current account
+		if err := am.Use(accountName); err != nil {
+			return fmt.Errorf("failed to set current account: %w", err)
 		}
 
 		ui.PrintSuccess("Configuration saved to %s", configPath)
 		ui.PrintSuccess("You're all set!")
+		ui.PrintInfo("Current account: %s", accountName)
 		ui.PrintInfo("Try 'dotenv list projects' to see your projects")
 	} else if deferredLogin {
 		// Config was already saved for browser auth

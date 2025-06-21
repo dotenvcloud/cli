@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/dotenv/cli/internal/crypto"
 	"github.com/dotenv/cli/internal/crypto/key"
@@ -79,6 +80,14 @@ func init() {
 }
 
 func runPull(cmd *cobra.Command, args []string) error {
+	// Display account/org info unless using API key override
+	if viper.GetString("api_key") == "" && os.Getenv("DOTENV_API_KEY") == "" {
+		if err := displayAccountInfo(); err != nil {
+			// Don't fail if we can't display account info
+			ui.PrintWarning("Could not display account info: %v", err)
+		}
+	}
+
 	// Parse hierarchy path
 	path := args[0]
 	parts := strings.Split(path, "/")
