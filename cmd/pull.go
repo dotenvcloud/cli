@@ -28,6 +28,8 @@ var (
 	pullClientKey string
 	pullDecrypt   bool
 	pullQuiet     bool
+	pullMerge     bool
+	pullRaw       bool
 )
 
 var pullCmd = &cobra.Command{
@@ -77,9 +79,18 @@ func init() {
 		"decrypt secrets (disable for raw encrypted values)")
 	pullCmd.Flags().BoolVarP(&pullQuiet, "quiet", "q", false,
 		"suppress output (exit code only)")
+	pullCmd.Flags().BoolVarP(&pullMerge, "merge", "m", false,
+		"merge secrets from all hierarchy levels")
+	pullCmd.Flags().BoolVar(&pullRaw, "raw", false,
+		"get raw secret values (requires --merge and --decrypt)")
 }
 
 func runPull(cmd *cobra.Command, args []string) error {
+	// Validate flags: --raw requires --merge and --decrypt
+	if pullRaw && (!pullMerge || !pullDecrypt) {
+		return fmt.Errorf("--raw flag requires both --merge and --decrypt flags")
+	}
+
 	// Display account/org info unless using API key override
 	if viper.GetString("api_key") == "" && os.Getenv("DOTENV_API_KEY") == "" {
 		if err := displayAccountInfo(); err != nil {
@@ -117,7 +128,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 	// Build request
 	req := dotenv.RetrieveParams{
 		Project: projectSlug,
-		Format:  "raw", // We'll handle formatting
+		Raw:     pullRaw,
 	}
 
 	if targetSlug != "" {
@@ -126,18 +137,22 @@ func runPull(cmd *cobra.Command, args []string) error {
 	if environmentSlug != "" {
 		req.Environment = environmentSlug
 	}
+	
+	// Set merge action if requested
+	if pullMerge {
+		req.Merge = "deep"
+	}
 
 	if !pullQuiet {
 		ui.PrintInfo("Pulling secrets from %s...", path)
 	}
 
 	// Retrieve secrets
-	secrets, resp, err := client.Secrets.RetrieveSecrets(context.Background(), req)
+	secrets, _, err := client.Secrets.RetrieveSecrets(context.Background(), req)
 	if err != nil {
-		if resp != nil && resp.StatusCode == 404 {
-			return fmt.Errorf("project/target/environment not found: %s", path)
-		}
-		return fmt.Errorf("failed to retrieve secrets: %w", err)
+		// Get current account for better error messages
+		account, _ := getCurrentAccount()
+		return HandleAPIError(err, account)
 	}
 
 	if len(secrets) == 0 {
@@ -166,7 +181,8 @@ func runPull(cmd *cobra.Command, args []string) error {
 			// Get encryption key from server
 			encKeyResp, _, err := client.Encryption.GetEncryptionKey(context.Background(), projectSlug)
 			if err != nil {
-				return fmt.Errorf("failed to get encryption key: %w", err)
+				account, _ := getCurrentAccount()
+				return HandleAPIError(err, account)
 			}
 
 			encKey, err = key.ParseKey(encKeyResp.Key)

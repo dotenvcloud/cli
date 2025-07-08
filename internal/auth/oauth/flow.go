@@ -169,11 +169,32 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 		
 		// Get account name from user if interactive
 		if af.IsInteractive {
-			name, err := ui.Input("Account name", defaultAccountName, nil)
-			if err != nil {
-				return err
+			// Check if this account already exists
+			if existing, _ := am.Get(defaultAccountName); existing != nil {
+				// Account exists, ask if they want to update it
+				update, err := ui.Confirm(fmt.Sprintf("Update existing account '%s'?", defaultAccountName), true)
+				if err != nil {
+					return err
+				}
+				
+				if update {
+					accountName = defaultAccountName
+				} else {
+					// Let them enter a different name
+					name, err := ui.Input("New account name", defaultAccountName+"-new", nil)
+					if err != nil {
+						return err
+					}
+					accountName = name
+				}
+			} else {
+				// New account
+				name, err := ui.Input("Account name", defaultAccountName, nil)
+				if err != nil {
+					return err
+				}
+				accountName = name
 			}
-			accountName = name
 		}
 
 		// Convert organizations to config format
@@ -194,8 +215,32 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 			ExpiresIn:    tokens.ExpiresIn,
 		}
 
-		if err := am.CreateWithOAuth(accountName, af.BaseURL, tokenResp, orgInfos, selectedOrg.Slug); err != nil {
-			return fmt.Errorf("failed to create account: %w", err)
+		// Check if account already exists
+		existingAccount, err := am.Get(accountName)
+		if err == nil && existingAccount != nil {
+			// Account exists, update it
+			ui.PrintInfo("Updating existing account: %s", accountName)
+			
+			// Update tokens
+			if err := am.RefreshToken(accountName, tokenResp); err != nil {
+				return fmt.Errorf("failed to update tokens: %w", err)
+			}
+			
+			// Update organizations
+			_, err := am.RefreshOrganizations(accountName, orgInfos)
+			if err != nil {
+				return fmt.Errorf("failed to update organizations: %w", err)
+			}
+			
+			// Update current organization if needed
+			if err := am.SetOrganization(accountName, selectedOrg.Slug); err != nil {
+				return fmt.Errorf("failed to set organization: %w", err)
+			}
+		} else {
+			// Create new account
+			if err := am.CreateWithOAuth(accountName, af.BaseURL, tokenResp, orgInfos, selectedOrg.Slug); err != nil {
+				return fmt.Errorf("failed to create account: %w", err)
+			}
 		}
 
 		// Set as current account

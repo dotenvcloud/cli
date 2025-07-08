@@ -54,12 +54,19 @@ This fetches the latest organizations from the API and updates
 the local cache.`,
 	RunE: runOrgRefresh,
 }
+var orgShowCmd = &cobra.Command{
+	Use:   "show",
+	Short: "Show current organization details",
+	RunE:  runOrgShow,
+}
 
 func init() {
 	orgCmd.AddCommand(orgListCmd)
 	orgCmd.AddCommand(orgUseCmd)
 	orgCmd.AddCommand(orgRefreshCmd)
+	orgCmd.AddCommand(orgShowCmd)
 }
+
 
 func runOrgList(cmd *cobra.Command, args []string) error {
 	// Display account/org info
@@ -272,5 +279,45 @@ func runOrgRefresh(cmd *cobra.Command, args []string) error {
 		ui.PrintInfo("Organization: %s", orgInfos[0].Name)
 	}
 
+	return nil
+}
+
+func runOrgShow(cmd *cobra.Command, args []string) error {
+	// Display account/org info
+	if err := displayAccountInfo(); err != nil {
+		ui.PrintWarning("Could not display account info: %v", err)
+	}
+
+	configPath, err := config.ConfigPath()
+	if err != nil {
+		return err
+	}
+	am, err := config.NewAccountManager(configPath)
+	if err != nil {
+		return err
+	}
+
+	account, err := am.GetCurrent()
+	if err != nil {
+		return fmt.Errorf("no current account: %w", err)
+	}
+
+	currentOrg, err := account.GetCurrentOrganization()
+	if err != nil {
+		return fmt.Errorf("no organization selected: %w", err)
+	}
+
+	ui.PrintInfo("Current organization details:")
+	fmt.Printf("  Name: %s\n", currentOrg.Name)
+	fmt.Printf("  Slug: %s\n", currentOrg.Slug)
+	fmt.Printf("  ULID: %s\n", currentOrg.ULID)
+	
+	// Show when it was last refreshed
+	if account.IsOAuth() && account.OrganizationsFetchedAt != nil {
+		fmt.Printf("  Last Updated: %s\n", account.OrganizationsFetchedAt.Format("2006-01-02 15:04:05"))
+	} else if account.IsAPIKey() && account.OrganizationFetchedAt != nil {
+		fmt.Printf("  Last Updated: %s\n", account.OrganizationFetchedAt.Format("2006-01-02 15:04:05"))
+	}
+	
 	return nil
 }

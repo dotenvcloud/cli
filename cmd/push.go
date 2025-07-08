@@ -209,18 +209,26 @@ func pushSingleFile(ctx context.Context, client *dotenv.Client, project *dotenv.
 		secrets = encrypted
 	}
 
-	// Build request
-	req := &dotenv.BulkSecretsRequest{
-		ProjectSlug: project.Slug,
-		Format:      "map",
-		Secrets:     secrets,
+	// Build request - convert map to slice of BulkSecretItem
+	bulkSecrets := make([]dotenv.BulkSecretItem, 0, len(secrets))
+	for key, value := range secrets {
+		item := dotenv.BulkSecretItem{
+			Key:         key,
+			Value:       value,
+			IsEncrypted: encKey != nil,
+		}
+		if targetSlug != "" {
+			item.TargetSlug = &targetSlug
+		}
+		if environmentSlug != "" {
+			item.EnvironmentSlug = &environmentSlug
+		}
+		bulkSecrets = append(bulkSecrets, item)
 	}
 
-	if targetSlug != "" {
-		req.TargetSlug = &targetSlug
-	}
-	if environmentSlug != "" {
-		req.EnvironmentSlug = &environmentSlug
+	req := &dotenv.BulkSecretsRequest{
+		ProjectSlug: project.Slug,
+		Secrets:     bulkSecrets,
 	}
 
 	// Check existing secrets if not forcing
@@ -400,18 +408,26 @@ func pushMultipleFiles(ctx context.Context, client *dotenv.Client, project *dote
 			secrets = encrypted
 		}
 
-		// Build request
-		req := &dotenv.BulkSecretsRequest{
-			ProjectSlug: set.slug,
-			Format:      "map",
-			Secrets:     secrets,
+		// Build request - convert map to slice of BulkSecretItem
+		bulkSecrets := make([]dotenv.BulkSecretItem, 0, len(secrets))
+		for key, value := range secrets {
+			item := dotenv.BulkSecretItem{
+				Key:         key,
+				Value:       value,
+				IsEncrypted: encKey != nil,
+			}
+			if set.target != "" {
+				item.TargetSlug = &set.target
+			}
+			if set.env != "" {
+				item.EnvironmentSlug = &set.env
+			}
+			bulkSecrets = append(bulkSecrets, item)
 		}
 
-		if set.target != "" {
-			req.TargetSlug = &set.target
-		}
-		if set.env != "" {
-			req.EnvironmentSlug = &set.env
+		req := &dotenv.BulkSecretsRequest{
+			ProjectSlug: set.slug,
+			Secrets:     bulkSecrets,
 		}
 
 		// Push

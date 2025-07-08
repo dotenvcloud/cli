@@ -13,12 +13,15 @@ import (
 
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/ui"
+	dotenv "github.com/dotenv/sdk-go"
 )
 
 var (
 	listOrganization string
 	listFormat       string
 	listJSON         bool
+	listPaths        bool
+	listWithPaths    bool
 )
 
 var listCmd = &cobra.Command{
@@ -31,7 +34,8 @@ Resources:
   projects      - List projects in current organization
   targets       - List targets in a project
   environments  - List environments in a target
-  accounts      - List configured accounts`,
+  accounts      - List configured accounts
+  all           - List all resources in a flat view`,
 
 	Example: `  # List all projects in current organization
   dotenv list projects
@@ -46,9 +50,15 @@ Resources:
   dotenv list accounts
 
   # List projects in a specific organization
-  dotenv list projects --organization=acme-corp`,
+  dotenv list projects --organization=acme-corp
+  
+  # List all resources in a flat table
+  dotenv list all
+  
+  # List all resources as paths only
+  dotenv list all --paths`,
 
-	ValidArgs: []string{"organizations", "projects", "targets", "environments", "accounts"},
+	ValidArgs: []string{"organizations", "projects", "targets", "environments", "accounts", "all"},
 	RunE:      runList,
 }
 
@@ -59,6 +69,10 @@ func init() {
 		"output format (table, json, yaml)")
 	listCmd.Flags().BoolVar(&listJSON, "json", false,
 		"output as JSON (deprecated, use --format=json)")
+	listCmd.Flags().BoolVar(&listPaths, "paths", false,
+		"output full paths for easy copy/paste")
+	listCmd.Flags().BoolVar(&listWithPaths, "with-paths", false,
+		"include paths in JSON/YAML output")
 }
 
 func runList(cmd *cobra.Command, args []string) error {
@@ -107,6 +121,9 @@ func runList(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("invalid format: use project/target")
 		}
 		return listEnvironments(cmd, parts[0], parts[1])
+		
+	case "all":
+		return listAll(cmd)
 
 	default:
 		return fmt.Errorf("unknown resource: %s", resource)
@@ -266,7 +283,8 @@ func listOrganizations(cmd *cobra.Command) error {
 
 	orgs, _, err := client.Organizations.List(context.Background(), nil)
 	if err != nil {
-		return fmt.Errorf("failed to list organizations: %w", err)
+		account, _ := getCurrentAccount()
+		return HandleAPIError(err, account)
 	}
 
 	if len(orgs) == 0 {
@@ -316,36 +334,14 @@ func listProjects(cmd *cobra.Command, orgSlug string) error {
 		return err
 	}
 
-	// Get organization if not specified
-	if orgSlug == "" {
-		if listOrganization != "" {
-			orgSlug = listOrganization
-		} else {
-			account, err := getCurrentAccount()
-			if err != nil {
-				return err
-			}
-			
-			// Get the organization slug based on account type
-			if account.IsOAuth() {
-				org, err := account.GetCurrentOrganization()
-				if err != nil {
-					return fmt.Errorf("no organization selected for current account. Use 'dotenv org use' to select one")
-				}
-				orgSlug = org.Slug
-			} else if account.Organization != nil {
-				orgSlug = account.Organization.Slug
-			} else {
-				return fmt.Errorf("no organization configured for current account")
-			}
-		}
-	}
+	// Note: organization context is already set in the client via getAPIClient()
 
-	ui.PrintInfo("Fetching projects from %s...", orgSlug)
+	ui.PrintInfo("Fetching projects...")
 
-	projects, _, err := client.Projects.List(context.Background(), orgSlug, nil)
+	projects, _, err := client.Projects.List(context.Background(), nil)
 	if err != nil {
-		return fmt.Errorf("failed to list projects: %w", err)
+		account, _ := getCurrentAccount()
+		return HandleAPIError(err, account)
 	}
 
 	if len(projects) == 0 {
@@ -353,10 +349,33 @@ func listProjects(cmd *cobra.Command, orgSlug string) error {
 		return nil
 	}
 
+	// Handle --paths flag
+	if listPaths {
+		for _, proj := range projects {
+			fmt.Println(proj.Slug)
+		}
+		return nil
+	}
+
 	switch listFormat {
 	case "json":
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
+		if listWithPaths {
+			// Create enhanced output with paths
+			type projectWithPath struct {
+				*dotenv.Project
+				Path string `json:"path"`
+			}
+			enhanced := make([]projectWithPath, len(projects))
+			for i, p := range projects {
+				enhanced[i] = projectWithPath{
+					Project: p,
+					Path:    p.Slug,
+				}
+			}
+			return encoder.Encode(enhanced)
+		}
 		return encoder.Encode(projects)
 
 	case "yaml":
@@ -364,6 +383,9 @@ func listProjects(cmd *cobra.Command, orgSlug string) error {
 		for _, proj := range projects {
 			fmt.Printf("- name: %s\n", proj.Name)
 			fmt.Printf("  slug: %s\n", proj.Slug)
+			if listWithPaths {
+				fmt.Printf("  path: %s\n", proj.Slug)
+			}
 			fmt.Printf("  secrets: %d\n", proj.SecretCount)
 			fmt.Printf("  targets: %d\n", proj.TargetCount)
 			fmt.Printf("  environments: %d\n", proj.EnvironmentCount)
@@ -409,10 +431,33 @@ func listTargets(cmd *cobra.Command, projectSlug string) error {
 		return nil
 	}
 
+	// Handle --paths flag
+	if listPaths {
+		for _, target := range targets {
+			fmt.Printf("%s/%s\n", projectSlug, target.Slug)
+		}
+		return nil
+	}
+
 	switch listFormat {
 	case "json":
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
+		if listWithPaths {
+			// Create enhanced output with paths
+			type targetWithPath struct {
+				*dotenv.Target
+				Path string `json:"path"`
+			}
+			enhanced := make([]targetWithPath, len(targets))
+			for i, t := range targets {
+				enhanced[i] = targetWithPath{
+					Target: t,
+					Path:   fmt.Sprintf("%s/%s", projectSlug, t.Slug),
+				}
+			}
+			return encoder.Encode(enhanced)
+		}
 		return encoder.Encode(targets)
 
 	case "yaml":
@@ -420,6 +465,9 @@ func listTargets(cmd *cobra.Command, projectSlug string) error {
 		for _, target := range targets {
 			fmt.Printf("- name: %s\n", target.Name)
 			fmt.Printf("  slug: %s\n", target.Slug)
+			if listWithPaths {
+				fmt.Printf("  path: %s/%s\n", projectSlug, target.Slug)
+			}
 			if target.Description != "" {
 				fmt.Printf("  description: %s\n", target.Description)
 			}
@@ -468,10 +516,33 @@ func listEnvironments(cmd *cobra.Command, projectSlug, targetSlug string) error 
 		return nil
 	}
 
+	// Handle --paths flag
+	if listPaths {
+		for _, env := range envs {
+			fmt.Printf("%s/%s/%s\n", projectSlug, targetSlug, env.Slug)
+		}
+		return nil
+	}
+
 	switch listFormat {
 	case "json":
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
+		if listWithPaths {
+			// Create enhanced output with paths
+			type envWithPath struct {
+				*dotenv.Environment
+				Path string `json:"path"`
+			}
+			enhanced := make([]envWithPath, len(envs))
+			for i, e := range envs {
+				enhanced[i] = envWithPath{
+					Environment: e,
+					Path:        fmt.Sprintf("%s/%s/%s", projectSlug, targetSlug, e.Slug),
+				}
+			}
+			return encoder.Encode(enhanced)
+		}
 		return encoder.Encode(envs)
 
 	case "yaml":
@@ -479,6 +550,9 @@ func listEnvironments(cmd *cobra.Command, projectSlug, targetSlug string) error 
 		for _, env := range envs {
 			fmt.Printf("- name: %s\n", env.Name)
 			fmt.Printf("  slug: %s\n", env.Slug)
+			if listWithPaths {
+				fmt.Printf("  path: %s/%s/%s\n", projectSlug, targetSlug, env.Slug)
+			}
 			fmt.Printf("  status: %s\n", env.Status)
 			if env.Description != "" {
 				fmt.Printf("  description: %s\n", env.Description)
@@ -503,6 +577,181 @@ func listEnvironments(cmd *cobra.Command, projectSlug, targetSlug string) error 
 				env.Slug,
 				env.Status,
 				desc,
+			})
+		}
+
+		table.Render()
+		return nil
+	}
+}
+
+func listAll(cmd *cobra.Command) error {
+	client, err := getAPIClient()
+	if err != nil {
+		return err
+	}
+
+	account, err := getCurrentAccount()
+	if err != nil {
+		return err
+	}
+
+	// Get organization
+	orgIdentifier, err := account.GetOrganizationIdentifier()
+	if err != nil {
+		return fmt.Errorf("failed to get organization: %w", err)
+	}
+
+	ui.PrintInfo("Fetching all resources from %s...", orgIdentifier)
+
+	// Fetch all projects
+	projects, _, err := client.Projects.List(context.Background(), nil)
+	if err != nil {
+		account, _ := getCurrentAccount()
+		return HandleAPIError(err, account)
+	}
+
+	// Handle --paths flag
+	if listPaths {
+		// Just output paths
+		for _, project := range projects {
+			fmt.Println(project.Slug)
+			
+			// Fetch targets for this project
+			targets, _, err := client.Targets.List(context.Background(), project.Slug, nil)
+			if err != nil {
+				ui.PrintWarning("Failed to fetch targets for %s: %v", project.Slug, err)
+				continue
+			}
+			
+			for _, target := range targets {
+				fmt.Printf("%s/%s\n", project.Slug, target.Slug)
+				
+				// Fetch environments for this target
+				envs, _, err := client.Environments.List(context.Background(), project.Slug, target.Slug, nil)
+				if err != nil {
+					ui.PrintWarning("Failed to fetch environments for %s/%s: %v", project.Slug, target.Slug, err)
+					continue
+				}
+				
+				for _, env := range envs {
+					fmt.Printf("%s/%s/%s\n", project.Slug, target.Slug, env.Slug)
+				}
+			}
+		}
+		return nil
+	}
+
+	// Collect all resources
+	type resourceInfo struct {
+		Type        string
+		Path        string
+		Name        string
+		Description string
+		Status      string
+		Count       int
+	}
+	
+	var resources []resourceInfo
+
+	// Add projects
+	for _, project := range projects {
+		resources = append(resources, resourceInfo{
+			Type:  "Project",
+			Path:  project.Slug,
+			Name:  project.Name,
+			Count: project.SecretCount,
+		})
+		
+		// Fetch targets for this project
+		targets, _, err := client.Targets.List(context.Background(), project.Slug, nil)
+		if err != nil {
+			ui.PrintWarning("Failed to fetch targets for %s: %v", project.Slug, err)
+			continue
+		}
+		
+		for _, target := range targets {
+			resources = append(resources, resourceInfo{
+				Type:        "Target",
+				Path:        fmt.Sprintf("%s/%s", project.Slug, target.Slug),
+				Name:        target.Name,
+				Description: target.Description,
+			})
+			
+			// Fetch environments for this target
+			envs, _, err := client.Environments.List(context.Background(), project.Slug, target.Slug, nil)
+			if err != nil {
+				ui.PrintWarning("Failed to fetch environments for %s/%s: %v", project.Slug, target.Slug, err)
+				continue
+			}
+			
+			for _, env := range envs {
+				resources = append(resources, resourceInfo{
+					Type:        "Environment",
+					Path:        fmt.Sprintf("%s/%s/%s", project.Slug, target.Slug, env.Slug),
+					Name:        env.Name,
+					Description: env.Description,
+					Status:      env.Status,
+				})
+			}
+		}
+	}
+
+	if len(resources) == 0 {
+		ui.PrintWarning("No resources found")
+		return nil
+	}
+
+	switch listFormat {
+	case "json":
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(resources)
+
+	case "yaml":
+		// Simple YAML output
+		for _, r := range resources {
+			fmt.Printf("- type: %s\n", r.Type)
+			fmt.Printf("  path: %s\n", r.Path)
+			fmt.Printf("  name: %s\n", r.Name)
+			if r.Description != "" {
+				fmt.Printf("  description: %s\n", r.Description)
+			}
+			if r.Status != "" {
+				fmt.Printf("  status: %s\n", r.Status)
+			}
+			if r.Count > 0 {
+				fmt.Printf("  secrets: %d\n", r.Count)
+			}
+			fmt.Println()
+		}
+		return nil
+
+	default:
+		// Table format
+		table := tablewriter.NewWriter(os.Stdout)
+		table.Header("TYPE", "PATH", "NAME", "STATUS", "DETAILS")
+
+		for _, r := range resources {
+			details := r.Description
+			if r.Count > 0 {
+				details = fmt.Sprintf("%d secrets", r.Count)
+			}
+			if len(details) > 40 {
+				details = details[:37] + "..."
+			}
+			
+			status := r.Status
+			if status == "" && r.Type != "Environment" {
+				status = "-"
+			}
+
+			table.Append([]string{
+				r.Type,
+				r.Path,
+				r.Name,
+				status,
+				details,
 			})
 		}
 

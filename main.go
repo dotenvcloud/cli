@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/dotenv/cli/cmd"
@@ -27,7 +26,7 @@ func main() {
 
 	// Execute root command
 	if err := cmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		cmd.ShowErrorWithHelp(err)
 		os.Exit(1)
 	}
 }

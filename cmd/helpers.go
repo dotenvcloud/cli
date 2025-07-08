@@ -36,6 +36,11 @@ func getAPIClient() (*dotenv.Client, error) {
 		}
 		options = append(options, dotenv.WithBaseURL(apiURL))
 		
+		// Check for organization from environment
+		if org := os.Getenv("DOTENV_ORGANIZATION"); org != "" {
+			options = append(options, dotenv.WithOrganization(org))
+		}
+		
 		// Check for TLS skip verify (development mode)
 		if os.Getenv("DOTENV_TLS_SKIP_VERIFY") != "" {
 			options = append(options, dotenv.WithInsecureSkipVerify())
@@ -54,6 +59,13 @@ func getAPIClient() (*dotenv.Client, error) {
 	options := []dotenv.ClientOption{
 		dotenv.WithBaseURL(account.APIURL),
 	}
+
+	// Add organization context
+	orgULID := account.GetCurrentOrganizationULID()
+	if orgULID == "" {
+		return nil, fmt.Errorf("No organization selected. Run 'dotenv org list' to see available organizations.")
+	}
+	options = append(options, dotenv.WithOrganization(orgULID))
 
 	// Check for TLS skip verify (development mode)
 	if os.Getenv("DOTENV_TLS_SKIP_VERIFY") != "" {
@@ -153,6 +165,7 @@ func getAPIClient() (*dotenv.Client, error) {
 	return client, nil
 }
 
+
 // getCurrentAccount returns the current account
 func getCurrentAccount() (*config.Account, error) {
 	configPath, err := config.ConfigPath()
@@ -216,21 +229,31 @@ func refreshOAuthToken(am *config.AccountManager, account *config.Account) error
 		return fmt.Errorf("no refresh token available")
 	}
 
-	// Create OAuth client
-	oauthClient := oauth.NewOAuth2Client(oauth.ClientID, account.APIURL)
+	// Create SDK client without authentication (OAuth token endpoint doesn't require auth)
+	client := dotenv.NewClient(
+		dotenv.WithBaseURL(account.APIURL),
+	)
+
+	// Check for TLS skip verify (development mode)
+	if os.Getenv("DOTENV_TLS_SKIP_VERIFY") != "" {
+		client = dotenv.NewClient(
+			dotenv.WithBaseURL(account.APIURL),
+			dotenv.WithInsecureSkipVerify(),
+		)
+	}
 	
-	// Attempt to refresh the token
-	tokens, err := oauthClient.RefreshToken(context.Background(), account.Auth.RefreshToken)
+	// Attempt to refresh the token using SDK
+	sdkTokenResp, _, err := client.OAuth.RefreshToken(context.Background(), account.Auth.RefreshToken, oauth.ClientID)
 	if err != nil {
 		return fmt.Errorf("token refresh failed: %w", err)
 	}
 
 	// Update the stored tokens using AccountManager
 	tokenResp := config.TokenResponse{
-		AccessToken:  tokens.AccessToken,
-		RefreshToken: tokens.RefreshToken,
-		TokenType:    tokens.TokenType,
-		ExpiresIn:    tokens.ExpiresIn,
+		AccessToken:  sdkTokenResp.AccessToken,
+		RefreshToken: sdkTokenResp.RefreshToken,
+		TokenType:    sdkTokenResp.TokenType,
+		ExpiresIn:    sdkTokenResp.ExpiresIn,
 	}
 
 	// Save the new tokens

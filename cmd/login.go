@@ -82,7 +82,14 @@ func runLogin(cmd *cobra.Command, args []string) error {
 	// Get API URL
 	apiURL := viper.GetString("api_url")
 	if apiURL == "" {
-		apiURL = getAPIURL()
+		// Check if there's a current account and use its API URL
+		if currentAccount, err := am.GetCurrent(); err == nil && currentAccount.APIURL != "" {
+			apiURL = currentAccount.APIURL
+			ui.PrintInfo("Using API URL from current account: %s", apiURL)
+		} else {
+			// Fall back to default
+			apiURL = getAPIURL()
+		}
 	}
 
 	// Determine authentication method

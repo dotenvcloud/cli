@@ -100,6 +100,28 @@ func (a *Account) GetCurrentOrganization() (*OrgInfo, error) {
 	return a.Organization, nil
 }
 
+// GetOrganizationIdentifier returns a valid identifier for API calls
+// Since the web API only supports ULID, always return ULID
+func (a *Account) GetOrganizationIdentifier() (string, error) {
+	org, err := a.GetCurrentOrganization()
+	if err != nil {
+		return "", err
+	}
+	
+	// Always use ULID since the web API doesn't support slugs
+	if org.ULID != "" {
+		return org.ULID, nil
+	}
+	
+	// No valid identifier
+	return "", fmt.Errorf("organization '%s' has no valid ULID. Please refresh your account data with 'dotenv account refresh'", org.Name)
+}
+
+// GetCurrentOrganizationULID returns the current organization ULID
+func (a *Account) GetCurrentOrganizationULID() string {
+	ulid, _ := a.GetOrganizationIdentifier()
+	return ulid
+}
 // SetCurrentOrganization sets the current organization for OAuth accounts
 func (a *Account) SetCurrentOrganization(ulid string) error {
 	if !a.IsOAuth() {

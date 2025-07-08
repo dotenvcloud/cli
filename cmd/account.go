@@ -212,6 +212,13 @@ func runAccountAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Get API URL (prefer existing account's URL if available)
+	apiURL := getAPIURL()
+	if currentAccount, err := am.GetCurrent(); err == nil && currentAccount.APIURL != "" {
+		apiURL = currentAccount.APIURL
+		ui.PrintInfo("Using API URL from current account: %s", apiURL)
+	}
+
 	// Ask for authentication method
 	authMethod, err := ui.Select("How would you like to authenticate?", []string{
 		"Login via browser (OAuth)",
@@ -225,7 +232,7 @@ func runAccountAdd(cmd *cobra.Command, args []string) error {
 		// OAuth flow
 		ui.PrintInfo("Starting OAuth login...")
 		opts := auth.BrowserLoginOptions{
-			APIUrl:        getAPIURL(),
+			APIUrl:        apiURL,
 			CallbackPort:  "",
 			NoBrowser:     false,
 			IsInteractive: true,
@@ -281,7 +288,7 @@ func runAccountAdd(cmd *cobra.Command, args []string) error {
 		}
 
 		// Create API key account
-		if err := am.CreateWithAPIKey(accountName, getAPIURL(), apiKey, &orgInfo); err != nil {
+		if err := am.CreateWithAPIKey(accountName, apiURL, apiKey, &orgInfo); err != nil {
 			return fmt.Errorf("failed to create account: %w", err)
 		}
 
@@ -378,21 +385,31 @@ func runAccountRefresh(cmd *cobra.Command, args []string) error {
 
 	ui.PrintInfo("Refreshing OAuth token...")
 
-	// Create OAuth client
-	client := oauth.NewOAuth2Client(oauth.ClientID, account.APIURL)
+	// Create SDK client without authentication (OAuth token endpoint doesn't require auth)
+	client := dotenv.NewClient(
+		dotenv.WithBaseURL(account.APIURL),
+	)
+
+	// Check for TLS skip verify (development mode)
+	if os.Getenv("DOTENV_TLS_SKIP_VERIFY") != "" {
+		client = dotenv.NewClient(
+			dotenv.WithBaseURL(account.APIURL),
+			dotenv.WithInsecureSkipVerify(),
+		)
+	}
 	
-	// Refresh token
-	tokens, err := client.RefreshToken(cmd.Context(), account.Auth.RefreshToken)
+	// Refresh token using SDK
+	sdkTokenResp, _, err := client.OAuth.RefreshToken(cmd.Context(), account.Auth.RefreshToken, oauth.ClientID)
 	if err != nil {
 		return fmt.Errorf("failed to refresh token: %w", err)
 	}
 
 	// Update account with new tokens
 	tokenResp := config.TokenResponse{
-		AccessToken:  tokens.AccessToken,
-		RefreshToken: tokens.RefreshToken,
-		TokenType:    tokens.TokenType,
-		ExpiresIn:    tokens.ExpiresIn,
+		AccessToken:  sdkTokenResp.AccessToken,
+		RefreshToken: sdkTokenResp.RefreshToken,
+		TokenType:    sdkTokenResp.TokenType,
+		ExpiresIn:    sdkTokenResp.ExpiresIn,
 	}
 
 	if err := am.RefreshToken(account.Name, tokenResp); err != nil {
@@ -400,7 +417,7 @@ func runAccountRefresh(cmd *cobra.Command, args []string) error {
 	}
 
 	ui.PrintSuccess("Token refreshed successfully!")
-	ui.PrintInfo("New token expires: %s", time.Now().Add(time.Duration(tokens.ExpiresIn)*time.Second).Format(time.RFC3339))
+	ui.PrintInfo("New token expires: %s", time.Now().Add(time.Duration(tokenResp.ExpiresIn)*time.Second).Format(time.RFC3339))
 
 	return nil
 }

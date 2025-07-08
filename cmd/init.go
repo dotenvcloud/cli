@@ -88,8 +88,19 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid API URL: %w", err)
 	}
 
-	// Step 2: Authentication Method
-	ui.PrintInfo("\nStep 2: Authentication")
+	// Step 2: Telemetry Configuration
+	ui.PrintInfo("\nStep 2: Telemetry")
+	ui.PrintInfo("Help us improve DotEnv CLI by sharing anonymous usage data.")
+	ui.PrintInfo("No personal information or secret values are ever collected.")
+	
+	telemetryEnabled, err := ui.Confirm("Enable anonymous telemetry?", true)
+	if err != nil {
+		return err
+	}
+	cfg.TelemetryEnabled = telemetryEnabled
+
+	// Step 3: Authentication Method
+	ui.PrintInfo("\nStep 3: Authentication")
 
 	authMethod, err := ui.Select("How would you like to authenticate?", []string{
 		"Login via browser (recommended)",
@@ -104,7 +115,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	var deferredLogin bool
 
 	if strings.Contains(authMethod, "browser") {
-		// Save the config first before attempting login
+		// Save the config first before attempting login (including telemetry preference)
 		if err := loader.Save(cfg); err != nil {
 			return fmt.Errorf("failed to save configuration: %w", err)
 		}
@@ -200,9 +211,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Step 3: Account Configuration for API Key
+	// Step 4: Account Configuration for API Key
 	if apiKey != "" && organization != "" {
-		ui.PrintInfo("\nStep 3: Account Configuration")
+		ui.PrintInfo("\nStep 4: Account Configuration")
 
 		// Create account manager
 		am, err := config.NewAccountManager(configPath)
