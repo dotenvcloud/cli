@@ -4,22 +4,33 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/dotenv/cli/internal/config"
+	"github.com/dotenv/cli/internal/telemetry"
 )
 
 var (
-	cfgFile      string
-	debug        bool
-	quiet        bool
-	noColor      bool
-	globalAPIKey string
+	cfgFile         string
+	debug           bool
+	quiet           bool
+	noColor         bool
+	globalAPIKey    string
+	telemetryClient *telemetry.Client
+	commandStart    time.Time
 )
 
 // rootCmd represents the base command
-var rootCmd = &cobra.Command{
+var rootCmd *cobra.Command
+
+// NewRootCommand creates a new root command instance.
+// This is useful for testing as it returns a fresh command tree.
+func NewRootCommand() *cobra.Command {
+	cmd := &cobra.Command{
 	Use:   "dotenv",
 	Short: "DotEnv CLI - Secure environment variable management",
 	Long: `DotEnv CLI provides secure management of environment variables
@@ -42,36 +53,50 @@ For more information, visit: https://dotenv.com/docs/cli`,
 		if quiet {
 			viper.Set("quiet", true)
 		}
+
+		// Record command start time
+		commandStart = time.Now()
+
+		// Initialize telemetry if enabled
+		initTelemetry()
 	},
-}
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		// Track command execution
+		if telemetryClient != nil && telemetryClient.IsEnabled() {
+			// Get command name for telemetry
+			commandName := cmd.CommandPath()
+			
+			// Calculate duration
+			duration := time.Since(commandStart)
+			
+			// Command considered successful if no error occurred
+			success := cmd.Context().Err() == nil
+			
+			// Track the command
+			telemetryClient.TrackCommand(commandName, duration, success)
+		}
+	},
+	}
 
-// Execute runs the root command
-func Execute() error {
-	return rootCmd.Execute()
-}
-
-func init() {
-	cobra.OnInitialize(initConfig)
-
-	// Global flags
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "",
+	// Setup persistent flags
+	cmd.PersistentFlags().StringVar(&cfgFile, "config", "",
 		"config file (default is $HOME/.dotenv/config.yaml)")
-	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false,
+	cmd.PersistentFlags().BoolVar(&debug, "debug", false,
 		"enable debug output")
-	rootCmd.PersistentFlags().BoolVar(&quiet, "quiet", false,
+	cmd.PersistentFlags().BoolVar(&quiet, "quiet", false,
 		"suppress non-error output")
-	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false,
+	cmd.PersistentFlags().BoolVar(&noColor, "no-color", false,
 		"disable colored output")
-	rootCmd.PersistentFlags().StringVar(&globalAPIKey, "api-key", "",
+	cmd.PersistentFlags().StringVar(&globalAPIKey, "api-key", "",
 		"API key for authentication (overrides account system)")
 
 	// Bind flags to viper
-	viper.BindPFlag("debug", rootCmd.PersistentFlags().Lookup("debug"))
-	viper.BindPFlag("quiet", rootCmd.PersistentFlags().Lookup("quiet"))
-	viper.BindPFlag("api_key", rootCmd.PersistentFlags().Lookup("api-key"))
+	viper.BindPFlag("debug", cmd.PersistentFlags().Lookup("debug"))
+	viper.BindPFlag("quiet", cmd.PersistentFlags().Lookup("quiet"))
+	viper.BindPFlag("api_key", cmd.PersistentFlags().Lookup("api-key"))
 
 	// Add all commands
-	rootCmd.AddCommand(
+	cmd.AddCommand(
 		initCmd,
 		loginCmd,
 		pullCmd,
@@ -84,7 +109,37 @@ func init() {
 		refreshCmd,
 		updateCmd,
 		versionCmd,
+		treeCmd,     // New tree command
+		exploreCmd,  // New explore command
+		pathCmd,     // New path command
+		apikeysCmd,  // API key management
+		authCmd,     // Auth info and management
+		completionCmd, // Shell completion support
 	)
+
+	// Register shell completion functions after all commands are added
+	registerResourcePathCompletions()
+
+	return cmd
+}
+
+// Execute runs the root command
+func Execute() error {
+	err := rootCmd.Execute()
+	
+	// Close telemetry client if initialized
+	if telemetryClient != nil {
+		telemetryClient.Close()
+	}
+	
+	return err
+}
+
+func init() {
+	cobra.OnInitialize(initConfig)
+	
+	// Initialize the root command
+	rootCmd = NewRootCommand()
 }
 
 
@@ -124,4 +179,57 @@ func initConfig() {
 			fmt.Fprintf(os.Stderr, "Error reading config: %v\n", err)
 		}
 	}
+}
+
+// initTelemetry initializes the telemetry client based on configuration
+func initTelemetry() {
+	// Load config to check telemetry settings
+	configPath, err := config.ConfigPath()
+	if err != nil {
+		return
+	}
+
+	loader := config.NewLoader(configPath)
+	if !loader.Exists() {
+		return
+	}
+
+	cfg, err := loader.Load()
+	if err != nil {
+		return
+	}
+
+	// Check if telemetry is enabled
+	if !cfg.TelemetryEnabled {
+		return
+	}
+
+	// Get API URL
+	apiURL := "https://api.dotenv.com"
+	if cfg.CurrentAccount != "" {
+		if acct, ok := cfg.Accounts[cfg.CurrentAccount]; ok && acct.APIURL != "" {
+			apiURL = acct.APIURL
+		}
+	}
+
+	// Get analytics ID from preferences
+	analyticsID := cfg.Preferences.AnalyticsID
+	if analyticsID == "" {
+		// Generate new analytics ID if not present
+		analyticsID = generateAnalyticsID()
+		cfg.Preferences.AnalyticsID = analyticsID
+		// Save config with new analytics ID
+		loader.Save(cfg)
+	}
+
+	// Create telemetry client
+	// Note: We're not using an API key for telemetry as it's anonymous
+	telemetryClient = telemetry.NewClient(apiURL, "", analyticsID)
+	telemetryClient.SetEnabled(true)
+}
+
+// generateAnalyticsID generates a new anonymous analytics ID
+func generateAnalyticsID() string {
+	// Use a simple timestamp-based ID for anonymity
+	return fmt.Sprintf("cli_%d", time.Now().Unix())
 }
