@@ -8,24 +8,24 @@ import (
 
 // Account represents an authentication account (OAuth or API Key)
 type Account struct {
-	Name                   string     `yaml:"name"`
-	AuthType               string     `yaml:"auth_type"`              // "oauth" or "api_key"
-	APIURL                 string     `yaml:"api_url"`
-	CreatedAt              time.Time  `yaml:"created_at"`
-	UpdatedAt              time.Time  `yaml:"updated_at"`
-	LastUsed               time.Time  `yaml:"last_used"`
-	
+	Name      string    `yaml:"name"`
+	AuthType  string    `yaml:"auth_type"` // "oauth" or "api_key"
+	APIURL    string    `yaml:"api_url"`
+	CreatedAt time.Time `yaml:"created_at"`
+	UpdatedAt time.Time `yaml:"updated_at"`
+	LastUsed  time.Time `yaml:"last_used"`
+
 	// Auth data (consistent for both OAuth and API Key)
-	Auth                   AuthData   `yaml:"auth"`
-	
+	Auth AuthData `yaml:"auth"`
+
 	// For OAuth accounts
 	Organizations          []OrgInfo  `yaml:"organizations,omitempty"`
-	CurrentOrganization    string     `yaml:"current_organization,omitempty"`    // ULID reference
+	CurrentOrganization    string     `yaml:"current_organization,omitempty"` // ULID reference
 	OrganizationsFetchedAt *time.Time `yaml:"organizations_fetched_at,omitempty"`
-	
+
 	// For API Key accounts
-	Organization           *OrgInfo   `yaml:"organization,omitempty"`
-	OrganizationFetchedAt  *time.Time `yaml:"organization_fetched_at,omitempty"`
+	Organization          *OrgInfo   `yaml:"organization,omitempty"`
+	OrganizationFetchedAt *time.Time `yaml:"organization_fetched_at,omitempty"`
 }
 
 // OrgInfo represents organization information
@@ -83,7 +83,7 @@ func (a *Account) GetCurrentOrganization() (*OrgInfo, error) {
 		if a.CurrentOrganization == "" {
 			return nil, fmt.Errorf("no organization selected")
 		}
-		
+
 		// Find org by ULID
 		for _, org := range a.Organizations {
 			if org.ULID == a.CurrentOrganization {
@@ -92,7 +92,7 @@ func (a *Account) GetCurrentOrganization() (*OrgInfo, error) {
 		}
 		return nil, fmt.Errorf("current organization '%s' not found in available organizations", a.CurrentOrganization)
 	}
-	
+
 	// API key account
 	if a.Organization == nil {
 		return nil, fmt.Errorf("no organization info available")
@@ -107,12 +107,12 @@ func (a *Account) GetOrganizationIdentifier() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Always use ULID since the web API doesn't support slugs
 	if org.ULID != "" {
 		return org.ULID, nil
 	}
-	
+
 	// No valid identifier
 	return "", fmt.Errorf("organization '%s' has no valid ULID. Please refresh your account data with 'dotenv account refresh'", org.Name)
 }
@@ -122,12 +122,13 @@ func (a *Account) GetCurrentOrganizationULID() string {
 	ulid, _ := a.GetOrganizationIdentifier()
 	return ulid
 }
+
 // SetCurrentOrganization sets the current organization for OAuth accounts
 func (a *Account) SetCurrentOrganization(ulid string) error {
 	if !a.IsOAuth() {
 		return fmt.Errorf("cannot change organization for API key account")
 	}
-	
+
 	// Verify org exists
 	found := false
 	for _, org := range a.Organizations {
@@ -136,11 +137,11 @@ func (a *Account) SetCurrentOrganization(ulid string) error {
 			break
 		}
 	}
-	
+
 	if !found {
 		return fmt.Errorf("organization '%s' not found in available organizations", ulid)
 	}
-	
+
 	a.CurrentOrganization = ulid
 	a.UpdatedAt = time.Now()
 	return nil
@@ -149,17 +150,17 @@ func (a *Account) SetCurrentOrganization(ulid string) error {
 // NeedsOrganizationRefresh checks if organization data should be refreshed
 func (a *Account) NeedsOrganizationRefresh() bool {
 	var fetchedAt *time.Time
-	
+
 	if a.IsOAuth() {
 		fetchedAt = a.OrganizationsFetchedAt
 	} else {
 		fetchedAt = a.OrganizationFetchedAt
 	}
-	
+
 	if fetchedAt == nil {
 		return true
 	}
-	
+
 	// Refresh if older than 24 hours
 	return time.Since(*fetchedAt) > 24*time.Hour
 }
@@ -169,7 +170,7 @@ func ResolveOrganization(identifier string, orgs []OrgInfo) (*OrgInfo, error) {
 	if identifier == "" {
 		return nil, fmt.Errorf("organization identifier cannot be empty")
 	}
-	
+
 	// First check if it's a valid ULID (26 characters, uppercase alphanumeric)
 	if len(identifier) == 26 && isValidULID(identifier) {
 		// Find by ULID
@@ -180,29 +181,29 @@ func ResolveOrganization(identifier string, orgs []OrgInfo) (*OrgInfo, error) {
 		}
 		return nil, fmt.Errorf("Organization not found: %s", identifier)
 	}
-	
+
 	// Find by slug (exact match)
 	for _, org := range orgs {
 		if org.Slug == identifier {
 			return &org, nil
 		}
 	}
-	
+
 	// If no exact match, suggest similar slugs
 	var suggestions []string
 	lowerIdent := strings.ToLower(identifier)
 	for _, org := range orgs {
 		if strings.Contains(strings.ToLower(org.Slug), lowerIdent) ||
-		   strings.Contains(strings.ToLower(org.Name), lowerIdent) {
+			strings.Contains(strings.ToLower(org.Name), lowerIdent) {
 			suggestions = append(suggestions, org.Slug)
 		}
 	}
-	
+
 	if len(suggestions) > 0 {
-		return nil, fmt.Errorf("Organization not found: %s. Did you mean one of: %s", 
+		return nil, fmt.Errorf("Organization not found: %s. Did you mean one of: %s",
 			identifier, strings.Join(suggestions, ", "))
 	}
-	
+
 	return nil, fmt.Errorf("Organization not found: %s", identifier)
 }
 
@@ -212,7 +213,7 @@ func isValidULID(s string) bool {
 	if len(s) != 26 {
 		return false
 	}
-	
+
 	// Check if all characters are valid base32 (excluding I, L, O, U)
 	validChars := "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 	for _, c := range s {
@@ -220,6 +221,6 @@ func isValidULID(s string) bool {
 			return false
 		}
 	}
-	
+
 	return true
 }

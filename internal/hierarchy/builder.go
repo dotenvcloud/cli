@@ -182,10 +182,10 @@ func (b *Builder) LoadChildren(ctx context.Context, node *Node) error {
 
 func (b *Builder) fetchProjects(ctx context.Context) ([]*dotenv.Project, error) {
 	// Note: organization context is set in the client, so we don't need orgSlug parameter
-	
+
 	// For now, we'll use a fixed cache key since the client has the org context
 	cacheKey := "current"
-	
+
 	// Check cache first
 	b.cache.mu.RLock()
 	if cached, ok := b.cache.projects[cacheKey]; ok {
@@ -224,12 +224,12 @@ func (b *Builder) loadTargetsForProject(ctx context.Context, projectNode *Node, 
 				Metadata: target,
 				Children: []*Node{},
 			}
-			
+
 			// Also load environments for this target if it has any
 			if target.EnvironmentCount > 0 {
 				_ = b.loadEnvironmentsForTarget(ctx, targetNode, projectSlug, target.Slug)
 			}
-			
+
 			projectNode.Children = append(projectNode.Children, targetNode)
 		}
 		return nil
@@ -257,12 +257,12 @@ func (b *Builder) loadTargetsForProject(ctx context.Context, projectNode *Node, 
 			Metadata: target,
 			Children: []*Node{},
 		}
-		
+
 		// Also load environments for this target if it has any
 		if target.EnvironmentCount > 0 {
 			_ = b.loadEnvironmentsForTarget(ctx, targetNode, projectSlug, target.Slug)
 		}
-		
+
 		projectNode.Children = append(projectNode.Children, targetNode)
 	}
 

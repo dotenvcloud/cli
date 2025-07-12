@@ -67,7 +67,7 @@ func padKey(key []byte) []byte {
 		// Key is 32 bytes or longer, truncate to 32 bytes
 		return key[:RequiredKeySize]
 	}
-	
+
 	// Key is shorter than 32 bytes, pad with '0' bytes
 	padded := make([]byte, RequiredKeySize)
 	copy(padded, key)

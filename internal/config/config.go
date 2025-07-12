@@ -15,24 +15,24 @@ type Config struct {
 	Preferences      Preferences        `yaml:"preferences,omitempty"`
 	LastUpdateCheck  *time.Time         `yaml:"last_update_check,omitempty"`
 	// Legacy fields for migration detection
-	CurrentContext   string             `yaml:"current_context,omitempty"`
-	Contexts         map[string]Context `yaml:"contexts,omitempty"`
+	CurrentContext string             `yaml:"current_context,omitempty"`
+	Contexts       map[string]Context `yaml:"contexts,omitempty"`
 }
 
 // Context represents a legacy DotEnv context (for migration detection)
 type Context struct {
-	Name               string                   `yaml:"name"`
-	APIURL             string                   `yaml:"api_url"`
-	APIKey             string                   `yaml:"api_key,omitempty"`
-	Organization       string                   `yaml:"organization,omitempty"`
-	AuthType           string                   `yaml:"auth_type"`
-	Auth               AuthData                 `yaml:"auth,omitempty"`
-	Organizations      []OrganizationInfo       `yaml:"organizations,omitempty"`
-	CurrentOrganization string                  `yaml:"current_organization,omitempty"`
-	CreatedAt          time.Time                `yaml:"created_at"`
-	UpdatedAt          time.Time                `yaml:"updated_at"`
-	LastUpdate         time.Time                `yaml:"last_update"`
-	Metadata           Metadata                 `yaml:"metadata,omitempty"`
+	Name                string             `yaml:"name"`
+	APIURL              string             `yaml:"api_url"`
+	APIKey              string             `yaml:"api_key,omitempty"`
+	Organization        string             `yaml:"organization,omitempty"`
+	AuthType            string             `yaml:"auth_type"`
+	Auth                AuthData           `yaml:"auth,omitempty"`
+	Organizations       []OrganizationInfo `yaml:"organizations,omitempty"`
+	CurrentOrganization string             `yaml:"current_organization,omitempty"`
+	CreatedAt           time.Time          `yaml:"created_at"`
+	UpdatedAt           time.Time          `yaml:"updated_at"`
+	LastUpdate          time.Time          `yaml:"last_update"`
+	Metadata            Metadata           `yaml:"metadata,omitempty"`
 }
 
 // AuthData holds authentication credentials
@@ -41,20 +41,19 @@ type AuthData struct {
 	APIKey string `yaml:"api_key,omitempty"`
 
 	// For OAuth auth
-	AccessToken          string    `yaml:"access_token,omitempty"`
-	RefreshToken         string    `yaml:"refresh_token,omitempty"`
-	TokenType            string    `yaml:"token_type,omitempty"`
-	ExpiresAt            time.Time `yaml:"expires_at,omitempty"`
+	AccessToken           string    `yaml:"access_token,omitempty"`
+	RefreshToken          string    `yaml:"refresh_token,omitempty"`
+	TokenType             string    `yaml:"token_type,omitempty"`
+	ExpiresAt             time.Time `yaml:"expires_at,omitempty"`
 	RefreshTokenExpiresAt time.Time `yaml:"refresh_token_expires_at,omitempty"`
 }
 
 // OrganizationInfo represents an organization the user has access to
 type OrganizationInfo struct {
-     	Slug string `yaml:"slug"`
-     	Name string `yaml:"name"`
-     	ID   int64  `yaml:"id,omitempty"`
-     }
-
+	Slug string `yaml:"slug"`
+	Name string `yaml:"name"`
+	ID   int64  `yaml:"id,omitempty"`
+}
 
 // Preferences holds user preferences
 type Preferences struct {

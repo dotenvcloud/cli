@@ -30,11 +30,11 @@ type TokenResponse struct {
 
 // AuthorizeParams contains parameters for the authorization request
 type AuthorizeParams struct {
-	RedirectURI     string
-	State           string
-	CodeChallenge   string
+	RedirectURI         string
+	State               string
+	CodeChallenge       string
 	CodeChallengeMethod string
-	Scope           string
+	Scope               string
 }
 
 // NewOAuth2Client creates a new OAuth2 client
@@ -42,19 +42,19 @@ func NewOAuth2Client(clientID, baseURL string) *OAuth2Client {
 	if baseURL == "" {
 		baseURL = "https://api.dotenv.com"
 	}
-	
+
 	// Remove /api/v1 suffix if present
 	baseURL = strings.TrimSuffix(baseURL, "/api/v1")
 	baseURL = strings.TrimSuffix(baseURL, "/api")
-	
+
 	// For development, use the web URL for OAuth endpoints
 	if strings.Contains(baseURL, "dotenv.test") || strings.Contains(baseURL, "api.dotenv.test") {
 		baseURL = "https://dotenv.test"
 	}
-	
+
 	return &OAuth2Client{
-		ClientID:   clientID,
-		BaseURL:    baseURL,
+		ClientID: clientID,
+		BaseURL:  baseURL,
 		HTTPClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -65,7 +65,7 @@ func NewOAuth2Client(clientID, baseURL string) *OAuth2Client {
 func (c *OAuth2Client) GetAuthorizationURL(params AuthorizeParams) string {
 	u, _ := url.Parse(c.BaseURL)
 	u.Path = "/oauth/authorize"
-	
+
 	q := u.Query()
 	q.Set("client_id", c.ClientID)
 	q.Set("redirect_uri", params.RedirectURI)
@@ -73,11 +73,11 @@ func (c *OAuth2Client) GetAuthorizationURL(params AuthorizeParams) string {
 	q.Set("state", params.State)
 	q.Set("code_challenge", params.CodeChallenge)
 	q.Set("code_challenge_method", params.CodeChallengeMethod)
-	
+
 	if params.Scope != "" {
 		q.Set("scope", params.Scope)
 	}
-	
+
 	u.RawQuery = q.Encode()
 	return u.String()
 }
@@ -93,7 +93,7 @@ func (c *OAuth2Client) ExchangeCode(ctx context.Context, code, codeVerifier, red
 		tokenURL = c.BaseURL
 	}
 	tokenURL = fmt.Sprintf("%s/api/oauth/token", tokenURL)
-	
+
 	data := url.Values{
 		"grant_type":    {"authorization_code"},
 		"code":          {code},
@@ -101,21 +101,21 @@ func (c *OAuth2Client) ExchangeCode(ctx context.Context, code, codeVerifier, red
 		"code_verifier": {codeVerifier},
 		"redirect_uri":  {redirectURI},
 	}
-	
+
 	req, err := http.NewRequestWithContext(ctx, "POST", tokenURL, strings.NewReader(data.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	
+
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
-	
+
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange code: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		var errResp struct {
 			Error            string `json:"error"`
@@ -126,12 +126,12 @@ func (c *OAuth2Client) ExchangeCode(ctx context.Context, code, codeVerifier, red
 		}
 		return nil, fmt.Errorf("token exchange failed: %s - %s", errResp.Error, errResp.ErrorDescription)
 	}
-	
+
 	var tokenResp TokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
 		return nil, fmt.Errorf("failed to decode token response: %w", err)
 	}
-	
+
 	return &tokenResp, nil
 }
 
@@ -146,27 +146,27 @@ func (c *OAuth2Client) RefreshToken(ctx context.Context, refreshToken string) (*
 		tokenURL = c.BaseURL
 	}
 	tokenURL = fmt.Sprintf("%s/api/oauth/token", tokenURL)
-	
+
 	data := url.Values{
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {refreshToken},
 		"client_id":     {c.ClientID},
 	}
-	
+
 	req, err := http.NewRequestWithContext(ctx, "POST", tokenURL, strings.NewReader(data.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	
+
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
-	
+
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to refresh token: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		var errResp struct {
 			Error            string `json:"error"`
@@ -177,11 +177,11 @@ func (c *OAuth2Client) RefreshToken(ctx context.Context, refreshToken string) (*
 		}
 		return nil, fmt.Errorf("token refresh failed: %s - %s", errResp.Error, errResp.ErrorDescription)
 	}
-	
+
 	var tokenResp TokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
 		return nil, fmt.Errorf("failed to decode token response: %w", err)
 	}
-	
+
 	return &tokenResp, nil
 }

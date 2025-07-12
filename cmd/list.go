@@ -121,7 +121,7 @@ func runList(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("invalid format '%s': expected 'project/target'", args[1])
 		}
 		return listEnvironments(cmd, parts[0], parts[1])
-		
+
 	case "all":
 		return listAll(cmd)
 
@@ -157,28 +157,28 @@ func listAccounts(cmd *cobra.Command) error {
 	case "json":
 		// Build account details for JSON output
 		type accountInfo struct {
-			Name                string `json:"name"`
-			Type                string `json:"type"`
-			Organization        string `json:"organization"`
-			APIURL              string `json:"api_url"`
-			Current             bool   `json:"current"`
-			UserEmail           string `json:"user_email,omitempty"`
+			Name         string `json:"name"`
+			Type         string `json:"type"`
+			Organization string `json:"organization"`
+			APIURL       string `json:"api_url"`
+			Current      bool   `json:"current"`
+			UserEmail    string `json:"user_email,omitempty"`
 		}
-		
+
 		accountList := []accountInfo{}
 		for _, name := range accounts {
 			account, err := am.Get(name)
 			if err != nil {
 				continue
 			}
-			
+
 			info := accountInfo{
 				Name:    name,
 				Type:    account.AuthType,
 				APIURL:  account.APIURL,
 				Current: name == currentName,
 			}
-			
+
 			if account.IsOAuth() {
 				org, err := account.GetCurrentOrganization()
 				if err == nil {
@@ -188,10 +188,10 @@ func listAccounts(cmd *cobra.Command) error {
 			} else if account.Organization != nil {
 				info.Organization = account.Organization.Name
 			}
-			
+
 			accountList = append(accountList, info)
 		}
-		
+
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(accountList)
@@ -203,10 +203,10 @@ func listAccounts(cmd *cobra.Command) error {
 			if err != nil {
 				continue
 			}
-			
+
 			fmt.Printf("- name: %s\n", name)
 			fmt.Printf("  type: %s\n", account.AuthType)
-			
+
 			if account.IsOAuth() {
 				org, err := account.GetCurrentOrganization()
 				if err == nil {
@@ -216,7 +216,7 @@ func listAccounts(cmd *cobra.Command) error {
 			} else if account.Organization != nil {
 				fmt.Printf("  organization: %s\n", account.Organization.Name)
 			}
-			
+
 			fmt.Printf("  api_url: %s\n", account.APIURL)
 			fmt.Printf("  current: %v\n", name == currentName)
 			fmt.Println()
@@ -233,7 +233,7 @@ func listAccounts(cmd *cobra.Command) error {
 			if err != nil {
 				continue
 			}
-			
+
 			current := ""
 			if name == currentName {
 				current = "*"
@@ -616,24 +616,24 @@ func listAll(cmd *cobra.Command) error {
 		// Just output paths
 		for _, project := range projects {
 			fmt.Println(project.Slug)
-			
+
 			// Fetch targets for this project
 			targets, _, err := client.Targets.List(context.Background(), project.Slug, nil)
 			if err != nil {
 				ui.PrintWarning("Failed to fetch targets for %s: %v", project.Slug, err)
 				continue
 			}
-			
+
 			for _, target := range targets {
 				fmt.Printf("%s/%s\n", project.Slug, target.Slug)
-				
+
 				// Fetch environments for this target
 				envs, _, err := client.Environments.List(context.Background(), project.Slug, target.Slug, nil)
 				if err != nil {
 					ui.PrintWarning("Failed to fetch environments for %s/%s: %v", project.Slug, target.Slug, err)
 					continue
 				}
-				
+
 				for _, env := range envs {
 					fmt.Printf("%s/%s/%s\n", project.Slug, target.Slug, env.Slug)
 				}
@@ -651,7 +651,7 @@ func listAll(cmd *cobra.Command) error {
 		Status      string
 		Count       int
 	}
-	
+
 	var resources []resourceInfo
 
 	// Add projects
@@ -662,14 +662,14 @@ func listAll(cmd *cobra.Command) error {
 			Name:  project.Name,
 			Count: project.SecretCount,
 		})
-		
+
 		// Fetch targets for this project
 		targets, _, err := client.Targets.List(context.Background(), project.Slug, nil)
 		if err != nil {
 			ui.PrintWarning("Failed to fetch targets for %s: %v", project.Slug, err)
 			continue
 		}
-		
+
 		for _, target := range targets {
 			resources = append(resources, resourceInfo{
 				Type:        "Target",
@@ -677,14 +677,14 @@ func listAll(cmd *cobra.Command) error {
 				Name:        target.Name,
 				Description: target.Description,
 			})
-			
+
 			// Fetch environments for this target
 			envs, _, err := client.Environments.List(context.Background(), project.Slug, target.Slug, nil)
 			if err != nil {
 				ui.PrintWarning("Failed to fetch environments for %s/%s: %v", project.Slug, target.Slug, err)
 				continue
 			}
-			
+
 			for _, env := range envs {
 				resources = append(resources, resourceInfo{
 					Type:        "Environment",
@@ -740,7 +740,7 @@ func listAll(cmd *cobra.Command) error {
 			if len(details) > 40 {
 				details = details[:37] + "..."
 			}
-			
+
 			status := r.Status
 			if status == "" && r.Type != "Environment" {
 				status = "-"

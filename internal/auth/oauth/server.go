@@ -11,10 +11,10 @@ import (
 
 // CallbackServer handles OAuth2 callback
 type CallbackServer struct {
-	Port         string
-	AuthCode     chan string
-	AuthError    chan error
-	AuthState    string
+	Port          string
+	AuthCode      chan string
+	AuthError     chan error
+	AuthState     string
 	ExpectedState string
 }
 
@@ -31,7 +31,7 @@ func NewCallbackServer(expectedState string) *CallbackServer {
 func (s *CallbackServer) FindAvailablePort() (string, error) {
 	// Try ports 43893-43895 as configured in the OAuth client
 	ports := []string{"43893", "43894", "43895"}
-	
+
 	for _, port := range ports {
 		listener, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
 		if err == nil {
@@ -40,7 +40,7 @@ func (s *CallbackServer) FindAvailablePort() (string, error) {
 			return port, nil
 		}
 	}
-	
+
 	// If configured ports are not available, find a random port
 	listener, err := net.Listen("tcp", ":0")
 	if err != nil {
@@ -48,7 +48,7 @@ func (s *CallbackServer) FindAvailablePort() (string, error) {
 	}
 	port := fmt.Sprintf("%d", listener.Addr().(*net.TCPAddr).Port)
 	listener.Close()
-	
+
 	s.Port = port
 	return port, nil
 }
@@ -57,19 +57,19 @@ func (s *CallbackServer) FindAvailablePort() (string, error) {
 func (s *CallbackServer) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/callback", s.handleCallback)
-	
+
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%s", s.Port),
 		Handler: mux,
 	}
-	
+
 	// Start server in background
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			s.AuthError <- fmt.Errorf("callback server error: %w", err)
 		}
 	}()
-	
+
 	// Shutdown server when context is cancelled
 	go func() {
 		<-ctx.Done()
@@ -77,7 +77,7 @@ func (s *CallbackServer) Start(ctx context.Context) error {
 		defer cancel()
 		server.Shutdown(shutdownCtx)
 	}()
-	
+
 	return nil
 }
 
@@ -89,32 +89,32 @@ func (s *CallbackServer) handleCallback(w http.ResponseWriter, r *http.Request) 
 	state := query.Get("state")
 	error := query.Get("error")
 	errorDesc := query.Get("error_description")
-	
+
 	// Check for errors
 	if error != "" {
 		s.AuthError <- fmt.Errorf("authorization failed: %s - %s", error, errorDesc)
 		s.showErrorPage(w, error, errorDesc)
 		return
 	}
-	
+
 	// Verify state
 	if state != s.ExpectedState {
 		s.AuthError <- fmt.Errorf("invalid state parameter")
 		s.showErrorPage(w, "invalid_state", "State parameter mismatch")
 		return
 	}
-	
+
 	// Check for authorization code
 	if code == "" {
 		s.AuthError <- fmt.Errorf("no authorization code received")
 		s.showErrorPage(w, "no_code", "No authorization code in response")
 		return
 	}
-	
+
 	// Send code through channel
 	s.AuthCode <- code
 	s.AuthState = state
-	
+
 	// Show success page
 	s.showSuccessPage(w)
 }

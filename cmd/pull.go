@@ -190,7 +190,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 		if _, err := os.Stat(pullOutput); err == nil {
 			// File exists, create backup
 			backupPath := pullOutput + ".backup"
-			
+
 			// Ask for confirmation
 			if !pullQuiet {
 				confirm, err := ui.Confirm(fmt.Sprintf("File %s exists. Create backup at %s?", pullOutput, backupPath), true)
@@ -201,17 +201,17 @@ func runPull(cmd *cobra.Command, args []string) error {
 					return fmt.Errorf("operation cancelled by user")
 				}
 			}
-			
+
 			// Copy existing file to backup
 			existingData, err := os.ReadFile(pullOutput)
 			if err != nil {
 				return fmt.Errorf("failed to read existing file '%s' for backup: %w", pullOutput, err)
 			}
-			
+
 			if err := os.WriteFile(backupPath, existingData, 0600); err != nil {
 				return fmt.Errorf("failed to create backup file '%s': %w", backupPath, err)
 			}
-			
+
 			if !pullQuiet {
 				ui.PrintInfo("Created backup at %s", backupPath)
 			}
@@ -288,7 +288,7 @@ func getEncryptionKey(clientKeyPath string, projectSlug string, client *dotenv.C
 		if resp != nil && resp.StatusCode == 400 {
 			return nil, ErrClientManagedKey
 		}
-		
+
 		// Provide specific error for encryption key failures
 		if dotenv.IsNotFound(err) {
 			return nil, fmt.Errorf("encryption key not found for project '%s'. The project may not have encryption enabled", projectSlug)
@@ -322,10 +322,10 @@ func determineTargetLevel(hierarchy struct {
 // processSecretLevels processes each level and returns merged or single-level secrets
 func processSecretLevels(resp *dotenv.SecretsHierarchyResponse, merge bool, decrypt bool, encKey []byte, targetLevel string) (map[string]string, error) {
 	allSecrets := make(map[string]string)
-	
+
 	// Order matters for merging: project -> target -> environment
 	levelOrder := []string{"project", "target", "environment"}
-	
+
 	for _, levelName := range levelOrder {
 		level, exists := resp.Data.Attributes.Levels[levelName]
 		if !exists || level.Content == "" {
@@ -362,13 +362,13 @@ func processSecretLevels(resp *dotenv.SecretsHierarchyResponse, merge bool, decr
 // processLevel processes a single level and returns its secrets
 func processLevel(levelName string, level dotenv.SecretLevel, decrypt bool, encKey []byte, format string) (map[string]string, error) {
 	content := level.Content
-	
+
 	// Decrypt if necessary
 	if decrypt && level.Encrypted {
 		if len(encKey) == 0 {
 			return nil, fmt.Errorf("cannot decrypt %s level: encryption key not provided", levelName)
 		}
-		
+
 		decrypted, err := crypto.DecryptString(content, encKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decrypt %s level secrets: %w", levelName, err)
@@ -405,16 +405,16 @@ func promptForClientKey() ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read encryption key: %w", err)
 	}
-	
+
 	if keyStr == "" {
 		return nil, fmt.Errorf("encryption key cannot be empty")
 	}
-	
+
 	encKey, err := key.ParseKey(keyStr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid key format: %w", err)  
+		return nil, fmt.Errorf("invalid key format: %w", err)
 	}
-	
+
 	return encKey, nil
 }
 

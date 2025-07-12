@@ -18,18 +18,18 @@ func ParseResourcePath(path string) (*ResourcePath, error) {
 	if path == "" {
 		return nil, fmt.Errorf("empty path")
 	}
-	
+
 	// Normalize path by trimming spaces and slashes
 	path = strings.TrimSpace(path)
 	path = strings.Trim(path, "/")
-	
+
 	if path == "" {
 		return nil, fmt.Errorf("empty path after normalization")
 	}
-	
+
 	parts := strings.Split(path, "/")
 	rp := &ResourcePath{}
-	
+
 	switch len(parts) {
 	case 1:
 		rp.Project = parts[0]
@@ -43,7 +43,7 @@ func ParseResourcePath(path string) (*ResourcePath, error) {
 	default:
 		return nil, fmt.Errorf("invalid path format: %s (expected project[/target[/environment]])", path)
 	}
-	
+
 	// Validate that none of the parts are empty
 	if rp.Project == "" {
 		return nil, fmt.Errorf("project cannot be empty in path: %s", path)
@@ -54,7 +54,7 @@ func ParseResourcePath(path string) (*ResourcePath, error) {
 	if len(parts) >= 3 && rp.Environment == "" {
 		return nil, fmt.Errorf("environment cannot be empty in path: %s", path)
 	}
-	
+
 	return rp, nil
 }
 
@@ -62,7 +62,7 @@ func ParseResourcePath(path string) (*ResourcePath, error) {
 // Empty components are ignored
 func FormatResourcePath(project, target, environment string) string {
 	var parts []string
-	
+
 	if project != "" {
 		parts = append(parts, project)
 	}
@@ -72,7 +72,7 @@ func FormatResourcePath(project, target, environment string) string {
 	if environment != "" {
 		parts = append(parts, environment)
 	}
-	
+
 	return strings.Join(parts, "/")
 }
 
@@ -88,7 +88,7 @@ func (rp *ResourcePath) Level() int {
 	if rp == nil {
 		return 0
 	}
-	
+
 	if rp.Environment != "" {
 		return 3
 	}
@@ -120,7 +120,7 @@ func (rp *ResourcePath) Parent() *ResourcePath {
 	if rp == nil || rp.Level() == 0 {
 		return nil
 	}
-	
+
 	switch rp.Level() {
 	case 1:
 		return nil // project has no parent
@@ -138,7 +138,7 @@ func (rp *ResourcePath) Equals(other *ResourcePath) bool {
 	if rp == nil || other == nil {
 		return rp == other
 	}
-	
+
 	return rp.Project == other.Project &&
 		rp.Target == other.Target &&
 		rp.Environment == other.Environment
@@ -150,22 +150,22 @@ func (rp *ResourcePath) Contains(other *ResourcePath) bool {
 	if rp == nil || other == nil || rp.Level() < other.Level() {
 		return false
 	}
-	
+
 	// Check project match
 	if other.Project != "" && rp.Project != other.Project {
 		return false
 	}
-	
+
 	// Check target match if specified
 	if other.Target != "" && rp.Target != other.Target {
 		return false
 	}
-	
+
 	// Check environment match if specified
 	if other.Environment != "" && rp.Environment != other.Environment {
 		return false
 	}
-	
+
 	return true
 }
 
@@ -174,16 +174,16 @@ func (rp *ResourcePath) MatchesPattern(pattern string) bool {
 	if rp == nil || pattern == "" {
 		return false
 	}
-	
+
 	// Convert to lowercase for case-insensitive matching
 	pattern = strings.ToLower(pattern)
 	pathStr := strings.ToLower(rp.String())
-	
+
 	// Check if pattern appears in the full path
 	if strings.Contains(pathStr, pattern) {
 		return true
 	}
-	
+
 	// Also check individual components
 	if strings.Contains(strings.ToLower(rp.Project), pattern) {
 		return true
@@ -194,6 +194,6 @@ func (rp *ResourcePath) MatchesPattern(pattern string) bool {
 	if rp.Environment != "" && strings.Contains(strings.ToLower(rp.Environment), pattern) {
 		return true
 	}
-	
+
 	return false
 }

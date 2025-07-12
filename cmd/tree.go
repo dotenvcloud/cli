@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
-	
+
 	"github.com/dotenv/cli/internal/hierarchy"
 	"github.com/dotenv/cli/internal/ui"
 	dotenv "github.com/dotenv/sdk-go"
@@ -31,7 +31,7 @@ var treeCmd = &cobra.Command{
     
 This command provides a visual representation of your DotEnv resources,
 making it easy to understand the structure and navigate the hierarchy.`,
-	
+
 	Example: `  # Show tree for all projects in current organization
   dotenv tree
   
@@ -46,22 +46,22 @@ making it easy to understand the structure and navigate the hierarchy.`,
   
   # Limit tree depth
   dotenv tree --max-depth=2`,
-	
+
 	RunE: runTree,
 }
 
 func init() {
-	treeCmd.Flags().StringVarP(&treeProject, "project", "p", "", 
+	treeCmd.Flags().StringVarP(&treeProject, "project", "p", "",
 		"show tree for specific project")
-	treeCmd.Flags().StringVarP(&treeTarget, "target", "t", "", 
+	treeCmd.Flags().StringVarP(&treeTarget, "target", "t", "",
 		"show tree for specific target (requires --project)")
-	treeCmd.Flags().BoolVar(&treeFull, "full", false, 
+	treeCmd.Flags().BoolVar(&treeFull, "full", false,
 		"show full tree including environments")
-	treeCmd.Flags().IntVar(&treeMaxDepth, "max-depth", 0, 
+	treeCmd.Flags().IntVar(&treeMaxDepth, "max-depth", 0,
 		"maximum depth to display (0 = unlimited)")
-	treeCmd.Flags().BoolVar(&treeShowCounts, "show-counts", false, 
+	treeCmd.Flags().BoolVar(&treeShowCounts, "show-counts", false,
 		"show resource counts at each level")
-	treeCmd.Flags().StringVar(&treeFormat, "format", "tree", 
+	treeCmd.Flags().StringVar(&treeFormat, "format", "tree",
 		"output format (tree, json, yaml)")
 }
 
@@ -72,30 +72,30 @@ func runTree(cmd *cobra.Command, args []string) error {
 			ui.PrintWarning("Could not display account info: %v", err)
 		}
 	}
-	
+
 	// Get API client
 	client, err := getAPIClient()
 	if err != nil {
 		return err
 	}
-	
+
 	// Handle project argument
 	projectSlug := treeProject
 	if len(args) > 0 {
 		projectSlug = args[0]
 	}
-	
+
 	// Validate target flag requires project
 	if treeTarget != "" && projectSlug == "" {
 		return fmt.Errorf("--target requires --project or a project argument")
 	}
-	
+
 	// Build hierarchy
 	builder := hierarchy.NewBuilder(client)
-	
+
 	var root *hierarchy.Node
 	ctx := cmd.Context()
-	
+
 	if projectSlug != "" {
 		// Build tree for specific project or target
 		if treeTarget != "" {
@@ -109,22 +109,22 @@ func runTree(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		
+
 		orgIdentifier, err := account.GetOrganizationIdentifier()
 		if err != nil {
 			return fmt.Errorf("failed to get organization: %w", err)
 		}
-		
+
 		root, err = builder.Build(ctx, orgIdentifier)
 	}
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to build hierarchy: %w", err)
 	}
-	
+
 	// Sort the tree for consistent output
 	root.SortChildren()
-	
+
 	// Render based on format
 	switch treeFormat {
 	case "json":
@@ -140,16 +140,16 @@ func renderTree(node *hierarchy.Node, w io.Writer, depth, maxDepth int, showFull
 	if node == nil {
 		return nil
 	}
-	
+
 	if maxDepth > 0 && depth > maxDepth {
 		return nil
 	}
-	
+
 	// Skip environments unless --full is specified
 	if node.Type == hierarchy.NodeTypeEnvironment && !showFull {
 		return nil
 	}
-	
+
 	// Skip organization node in display (start from projects)
 	if node.Type != hierarchy.NodeTypeOrganization {
 		// Print node with tree formatting
@@ -161,13 +161,13 @@ func renderTree(node *hierarchy.Node, w io.Writer, depth, maxDepth int, showFull
 			}
 			prefix += "├── "
 		}
-		
+
 		// Format node display
 		display := node.Name
 		if node.Slug != node.Name {
 			display = fmt.Sprintf("%s (%s)", node.Name, node.Slug)
 		}
-		
+
 		// Add type indicator
 		typeIndicator := ""
 		switch node.Type {
@@ -178,7 +178,7 @@ func renderTree(node *hierarchy.Node, w io.Writer, depth, maxDepth int, showFull
 		case hierarchy.NodeTypeEnvironment:
 			typeIndicator = "🌿 "
 		}
-		
+
 		// Add counts if requested
 		if showCounts {
 			count := 0
@@ -195,22 +195,22 @@ func renderTree(node *hierarchy.Node, w io.Writer, depth, maxDepth int, showFull
 				// Count actual children
 				count = len(node.Children)
 			}
-			
+
 			if count > 0 {
 				display += fmt.Sprintf(" [%d]", count)
 			}
 		}
-		
+
 		// Add status for environments
 		if node.Type == hierarchy.NodeTypeEnvironment {
 			if env, ok := node.Metadata.(*dotenv.Environment); ok && env.Status != "" {
 				display += fmt.Sprintf(" (%s)", env.Status)
 			}
 		}
-		
+
 		fmt.Fprintf(w, "%s%s%s\n", prefix, typeIndicator, display)
 	}
-	
+
 	// Render children
 	visibleChildren := make([]*hierarchy.Node, 0)
 	for _, child := range node.Children {
@@ -220,32 +220,32 @@ func renderTree(node *hierarchy.Node, w io.Writer, depth, maxDepth int, showFull
 		}
 		visibleChildren = append(visibleChildren, child)
 	}
-	
+
 	for i, child := range visibleChildren {
 		// Determine if this is the last child for proper tree formatting
 		isLast := i == len(visibleChildren)-1
-		
+
 		// Adjust depth for organization node
 		childDepth := depth
 		if node.Type != hierarchy.NodeTypeOrganization {
 			childDepth = depth + 1
 		}
-		
+
 		// For last child, we need to update the prefix
 		if isLast && childDepth > 1 {
 			// This is complex to handle properly, for now we'll use simple formatting
 		}
-		
+
 		renderTree(child, w, childDepth, maxDepth, showFull, showCounts)
 	}
-	
+
 	return nil
 }
 
 func renderTreeJSON(node *hierarchy.Node, w io.Writer) error {
 	// Convert hierarchy to JSON structure
 	data := nodeToMap(node)
-	
+
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(data)
@@ -254,7 +254,7 @@ func renderTreeJSON(node *hierarchy.Node, w io.Writer) error {
 func renderTreeYAML(node *hierarchy.Node, w io.Writer) error {
 	// Convert hierarchy to YAML structure
 	data := nodeToMap(node)
-	
+
 	encoder := yaml.NewEncoder(w)
 	encoder.SetIndent(2)
 	return encoder.Encode(data)
@@ -268,7 +268,7 @@ func nodeToMap(node *hierarchy.Node) map[string]interface{} {
 		"slug": node.Slug,
 		"path": node.Path,
 	}
-	
+
 	// Add metadata based on type
 	switch node.Type {
 	case hierarchy.NodeTypeProject:
@@ -292,7 +292,7 @@ func nodeToMap(node *hierarchy.Node) map[string]interface{} {
 			}
 		}
 	}
-	
+
 	// Add children
 	if len(node.Children) > 0 {
 		children := make([]map[string]interface{}, len(node.Children))
@@ -301,6 +301,6 @@ func nodeToMap(node *hierarchy.Node) map[string]interface{} {
 		}
 		result["children"] = children
 	}
-	
+
 	return result
 }

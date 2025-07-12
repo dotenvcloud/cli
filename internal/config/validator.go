@@ -88,7 +88,6 @@ func (v *Validator) ValidateOrganization(org string) error {
 	return nil
 }
 
-
 // ValidateAccountName validates an account name
 func (v *Validator) ValidateAccountName(name string) error {
 	if name == "" {

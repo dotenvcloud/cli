@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/spf13/viper"
-	
+
 	"github.com/dotenv/cli/internal/auth/oauth"
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/ui"
@@ -17,35 +17,35 @@ import (
 func getAPIClient() (*dotenv.Client, error) {
 	// Check for command-line flag override first
 	apiKey := viper.GetString("api_key")
-	
+
 	// If not set via flag, check environment variable
 	if apiKey == "" {
 		apiKey = os.Getenv("DOTENV_API_KEY")
 	}
-	
+
 	// If API key is provided, bypass account system (for CI/CD)
 	if apiKey != "" {
 		options := []dotenv.ClientOption{
 			dotenv.WithAPIKey(apiKey),
 		}
-		
+
 		// Check for custom API URL
 		apiURL := os.Getenv("DOTENV_API_URL")
 		if apiURL == "" {
 			apiURL = "https://api.dotenv.cloud"
 		}
 		options = append(options, dotenv.WithBaseURL(apiURL))
-		
+
 		// Check for organization from environment
 		if org := os.Getenv("DOTENV_ORGANIZATION"); org != "" {
 			options = append(options, dotenv.WithOrganization(org))
 		}
-		
+
 		// Check for TLS skip verify (development mode)
 		if os.Getenv("DOTENV_TLS_SKIP_VERIFY") != "" {
 			options = append(options, dotenv.WithInsecureSkipVerify())
 		}
-		
+
 		return dotenv.NewClient(options...), nil
 	}
 
@@ -77,7 +77,7 @@ func getAPIClient() (*dotenv.Client, error) {
 		// Check if token is expired
 		if account.IsTokenExpired() {
 			ui.PrintInfo("OAuth token expired. Attempting to refresh...")
-			
+
 			// Try to refresh the token
 			configPath, err := config.ConfigPath()
 			if err != nil {
@@ -87,18 +87,18 @@ func getAPIClient() (*dotenv.Client, error) {
 			if err != nil {
 				return nil, fmt.Errorf("failed to initialize account manager at '%s': %w", configPath, err)
 			}
-			
+
 			if err := refreshOAuthToken(am, account); err != nil {
 				return nil, fmt.Errorf("failed to refresh token: %w. Please login again with 'dotenv login'", err)
 			}
-			
+
 			// Reload account after refresh
 			account, err = am.GetCurrent()
 			if err != nil {
 				return nil, fmt.Errorf("failed to reload account '%s' after token refresh: %w", account.Name, err)
 			}
 		}
-		
+
 		options = append(options, dotenv.WithBearerToken(account.Auth.AccessToken))
 	} else {
 		// API key authentication
@@ -164,7 +164,6 @@ func getAPIClient() (*dotenv.Client, error) {
 
 	return client, nil
 }
-
 
 // getCurrentAccount returns the current account
 func getCurrentAccount() (*config.Account, error) {
@@ -241,7 +240,7 @@ func refreshOAuthToken(am *config.AccountManager, account *config.Account) error
 			dotenv.WithInsecureSkipVerify(),
 		)
 	}
-	
+
 	// Attempt to refresh the token using SDK
 	sdkTokenResp, _, err := client.OAuth.RefreshToken(context.Background(), account.Auth.RefreshToken, oauth.ClientID)
 	if err != nil {

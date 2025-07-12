@@ -92,7 +92,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	ui.PrintInfo("\nStep 2: Telemetry")
 	ui.PrintInfo("Help us improve DotEnv CLI by sharing anonymous usage data.")
 	ui.PrintInfo("No personal information or secret values are ever collected.")
-	
+
 	telemetryEnabled, err := ui.Confirm("Enable anonymous telemetry?", true)
 	if err != nil {
 		return err

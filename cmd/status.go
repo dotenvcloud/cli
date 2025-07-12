@@ -64,7 +64,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	ui.PrintInfo("Authentication")
 	if account.IsOAuth() {
 		fmt.Printf("  Token Type: %s\n", account.Auth.TokenType)
-		
+
 		if account.IsTokenExpired() {
 			ui.PrintWarning("  Token Status: EXPIRED")
 			fmt.Printf("  Expired At: %s\n", account.Auth.ExpiresAt.Format("2006-01-02 15:04:05"))
@@ -72,7 +72,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		} else {
 			fmt.Printf("  Token Status: Valid\n")
 			fmt.Printf("  Expires At: %s\n", account.Auth.ExpiresAt.Format("2006-01-02 15:04:05"))
-			
+
 			// Show time until expiry
 			timeUntilExpiry := time.Until(account.Auth.ExpiresAt)
 			if timeUntilExpiry < 24*time.Hour {
@@ -81,24 +81,24 @@ func runStatus(cmd *cobra.Command, args []string) error {
 				fmt.Printf("  Expires In: %s\n", timeUntilExpiry.Round(time.Hour))
 			}
 		}
-		
+
 		// Refresh token info
 		if account.IsRefreshTokenExpired() {
 			ui.PrintWarning("  Refresh Token: EXPIRED")
 		} else {
-			fmt.Printf("  Refresh Token: Valid (expires %s)\n", 
+			fmt.Printf("  Refresh Token: Valid (expires %s)\n",
 				account.Auth.RefreshTokenExpiresAt.Format("2006-01-02"))
 		}
 	} else {
-		fmt.Printf("  API Key: %s...%s\n", 
-			account.Auth.APIKey[:12], 
+		fmt.Printf("  API Key: %s...%s\n",
+			account.Auth.APIKey[:12],
 			account.Auth.APIKey[len(account.Auth.APIKey)-4:])
 	}
 
 	// Display organization info
 	fmt.Println()
 	ui.PrintInfo("Organization")
-	
+
 	if account.IsOAuth() {
 		if len(account.Organizations) == 0 {
 			ui.PrintWarning("  No organizations available")
@@ -114,9 +114,9 @@ func runStatus(cmd *cobra.Command, args []string) error {
 				fmt.Printf("  Slug: %s\n", org.Slug)
 				fmt.Printf("  ULID: %s\n", org.ULID)
 			}
-			
+
 			fmt.Printf("  Total Available: %d\n", len(account.Organizations))
-			
+
 			if account.OrganizationsFetchedAt != nil {
 				age := time.Since(*account.OrganizationsFetchedAt)
 				if age > 24*time.Hour {
@@ -136,9 +136,9 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  Name: %s\n", account.Organization.Name)
 			fmt.Printf("  Slug: %s\n", account.Organization.Slug)
 			fmt.Printf("  ULID: %s\n", account.Organization.ULID)
-			
+
 			if account.OrganizationFetchedAt != nil {
-				fmt.Printf("  Last Fetched: %s ago\n", 
+				fmt.Printf("  Last Fetched: %s ago\n",
 					time.Since(*account.OrganizationFetchedAt).Round(time.Minute))
 			}
 		}

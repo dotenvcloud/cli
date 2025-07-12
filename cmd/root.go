@@ -31,51 +31,51 @@ var rootCmd *cobra.Command
 // This is useful for testing as it returns a fresh command tree.
 func NewRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
-	Use:   "dotenv",
-	Short: "DotEnv CLI - Secure environment variable management",
-	Long: `DotEnv CLI provides secure management of environment variables
+		Use:   "dotenv",
+		Short: "DotEnv CLI - Secure environment variable management",
+		Long: `DotEnv CLI provides secure management of environment variables
 across projects, targets, and environments with client-side encryption support.
 
 For more information, visit: https://dotenv.com/docs/cli`,
 
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		// Disable color if requested
-		if noColor {
-			color.NoColor = true
-		}
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			// Disable color if requested
+			if noColor {
+				color.NoColor = true
+			}
 
-		// Set debug mode
-		if debug {
-			viper.Set("debug", true)
-		}
+			// Set debug mode
+			if debug {
+				viper.Set("debug", true)
+			}
 
-		// Set quiet mode
-		if quiet {
-			viper.Set("quiet", true)
-		}
+			// Set quiet mode
+			if quiet {
+				viper.Set("quiet", true)
+			}
 
-		// Record command start time
-		commandStart = time.Now()
+			// Record command start time
+			commandStart = time.Now()
 
-		// Initialize telemetry if enabled
-		initTelemetry()
-	},
-	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		// Track command execution
-		if telemetryClient != nil && telemetryClient.IsEnabled() {
-			// Get command name for telemetry
-			commandName := cmd.CommandPath()
-			
-			// Calculate duration
-			duration := time.Since(commandStart)
-			
-			// Command considered successful if no error occurred
-			success := cmd.Context().Err() == nil
-			
-			// Track the command
-			telemetryClient.TrackCommand(commandName, duration, success)
-		}
-	},
+			// Initialize telemetry if enabled
+			initTelemetry()
+		},
+		PersistentPostRun: func(cmd *cobra.Command, args []string) {
+			// Track command execution
+			if telemetryClient != nil && telemetryClient.IsEnabled() {
+				// Get command name for telemetry
+				commandName := cmd.CommandPath()
+
+				// Calculate duration
+				duration := time.Since(commandStart)
+
+				// Command considered successful if no error occurred
+				success := cmd.Context().Err() == nil
+
+				// Track the command
+				telemetryClient.TrackCommand(commandName, duration, success)
+			}
+		},
 	}
 
 	// Setup persistent flags
@@ -103,17 +103,17 @@ For more information, visit: https://dotenv.com/docs/cli`,
 		pushCmd,
 		listCmd,
 		exportCmd,
-		accountCmd,  // New account management
-		orgCmd,      // Updated org management
-		statusCmd,   // New status command
+		accountCmd, // New account management
+		orgCmd,     // Updated org management
+		statusCmd,  // New status command
 		refreshCmd,
 		updateCmd,
 		versionCmd,
-		treeCmd,     // New tree command
-		exploreCmd,  // New explore command
-		pathCmd,     // New path command
-		apikeysCmd,  // API key management
-		authCmd,     // Auth info and management
+		treeCmd,       // New tree command
+		exploreCmd,    // New explore command
+		pathCmd,       // New path command
+		apikeysCmd,    // API key management
+		authCmd,       // Auth info and management
 		completionCmd, // Shell completion support
 	)
 
@@ -126,22 +126,21 @@ For more information, visit: https://dotenv.com/docs/cli`,
 // Execute runs the root command
 func Execute() error {
 	err := rootCmd.Execute()
-	
+
 	// Close telemetry client if initialized
 	if telemetryClient != nil {
 		telemetryClient.Close()
 	}
-	
+
 	return err
 }
 
 func init() {
 	cobra.OnInitialize(initConfig)
-	
+
 	// Initialize the root command
 	rootCmd = NewRootCommand()
 }
-
 
 // initConfig reads in config file and ENV variables
 func initConfig() {

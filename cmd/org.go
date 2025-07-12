@@ -67,7 +67,6 @@ func init() {
 	orgCmd.AddCommand(orgShowCmd)
 }
 
-
 func runOrgList(cmd *cobra.Command, args []string) error {
 	// Display account/org info
 	if err := displayAccountInfo(); err != nil {
@@ -99,11 +98,11 @@ func runOrgList(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Name: %s\n", account.Organization.Name)
 		fmt.Printf("  Slug: %s\n", account.Organization.Slug)
 		fmt.Printf("  ULID: %s\n", account.Organization.ULID)
-		
+
 		if account.OrganizationFetchedAt != nil {
 			fmt.Printf("  Last Updated: %s\n", account.OrganizationFetchedAt.Format("2006-01-02 15:04:05"))
 		}
-		
+
 		return nil
 	}
 
@@ -120,26 +119,26 @@ func runOrgList(cmd *cobra.Command, args []string) error {
 	}
 
 	ui.PrintInfo("Organizations for OAuth account '%s':", account.Name)
-	
+
 	// Create table
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "CURRENT\tNAME\tSLUG\tULID")
-	
+
 	for _, org := range account.Organizations {
 		current := " "
 		if org.ULID == currentULID {
 			current = "*"
 		}
-		
+
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", current, org.Name, org.Slug, org.ULID)
 	}
-	
+
 	w.Flush()
-	
+
 	if account.OrganizationsFetchedAt != nil {
 		fmt.Printf("\nLast Updated: %s\n", account.OrganizationsFetchedAt.Format("2006-01-02 15:04:05"))
 	}
-	
+
 	return nil
 }
 
@@ -168,7 +167,7 @@ func runOrgUse(cmd *cobra.Command, args []string) error {
 	}
 
 	identifier := args[0]
-	
+
 	// Resolve organization
 	org, err := config.ResolveOrganization(identifier, account.Organizations)
 	if err != nil {
@@ -182,7 +181,7 @@ func runOrgUse(cmd *cobra.Command, args []string) error {
 
 	ui.PrintSuccess("Switched to organization: %s", org.Name)
 	ui.PrintInfo("Slug: %s", org.Slug)
-	
+
 	return nil
 }
 
@@ -210,7 +209,7 @@ func runOrgRefresh(cmd *cobra.Command, args []string) error {
 
 	// Create API client
 	var client *dotenv.Client
-	
+
 	if account.IsOAuth() {
 		// Check if token needs refresh
 		if account.IsTokenExpired() {
@@ -218,7 +217,7 @@ func runOrgRefresh(cmd *cobra.Command, args []string) error {
 			// TODO: Implement token refresh here
 			return fmt.Errorf("token expired, please run 'dotenv account refresh' first")
 		}
-		
+
 		client = dotenv.NewClient(
 			dotenv.WithBearerToken(account.Auth.AccessToken),
 			dotenv.WithBaseURL(account.APIURL),
@@ -250,9 +249,9 @@ func runOrgRefresh(cmd *cobra.Command, args []string) error {
 	var orgInfos []config.OrgInfo
 	for _, org := range orgs {
 		orgInfos = append(orgInfos, config.OrgInfo{
-			ULID: org.Slug,  // Laravel returns ULID in slug field
+			ULID: org.Slug, // Laravel returns ULID in slug field
 			Name: org.Name,
-			Slug: org.Slug,  // For now, using ULID as slug
+			Slug: org.Slug, // For now, using ULID as slug
 		})
 	}
 
@@ -267,10 +266,10 @@ func runOrgRefresh(cmd *cobra.Command, args []string) error {
 	}
 
 	ui.PrintSuccess("Organizations refreshed successfully!")
-	
+
 	if account.IsOAuth() {
 		ui.PrintInfo("Found %d organization(s)", len(orgInfos))
-		
+
 		// Show current organization
 		if currentOrg, err := account.GetCurrentOrganization(); err == nil {
 			ui.PrintInfo("Current organization: %s", currentOrg.Name)
@@ -311,13 +310,13 @@ func runOrgShow(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Name: %s\n", currentOrg.Name)
 	fmt.Printf("  Slug: %s\n", currentOrg.Slug)
 	fmt.Printf("  ULID: %s\n", currentOrg.ULID)
-	
+
 	// Show when it was last refreshed
 	if account.IsOAuth() && account.OrganizationsFetchedAt != nil {
 		fmt.Printf("  Last Updated: %s\n", account.OrganizationsFetchedAt.Format("2006-01-02 15:04:05"))
 	} else if account.IsAPIKey() && account.OrganizationFetchedAt != nil {
 		fmt.Printf("  Last Updated: %s\n", account.OrganizationFetchedAt.Format("2006-01-02 15:04:05"))
 	}
-	
+
 	return nil
 }

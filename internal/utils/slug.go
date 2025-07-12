@@ -15,27 +15,27 @@ import (
 func Slugify(input string) string {
 	// Convert to lowercase
 	slug := strings.ToLower(input)
-	
+
 	// Replace spaces and underscores with hyphens
 	slug = strings.ReplaceAll(slug, " ", "-")
 	slug = strings.ReplaceAll(slug, "_", "-")
-	
+
 	// Remove special characters except allowed ones
 	// Keep: a-z, 0-9, -, .
 	reg := regexp.MustCompile(`[^a-z0-9\-.]`)
 	slug = reg.ReplaceAllString(slug, "")
-	
+
 	// Collapse multiple hyphens into one
 	reg = regexp.MustCompile(`-+`)
 	slug = reg.ReplaceAllString(slug, "-")
-	
+
 	// Trim hyphens and dots from start/end
 	slug = strings.Trim(slug, "-.")
-	
+
 	// Ensure slug is not empty
 	if slug == "" {
 		slug = "default"
 	}
-	
+
 	return slug
 }

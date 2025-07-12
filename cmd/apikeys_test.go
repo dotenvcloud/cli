@@ -361,7 +361,7 @@ func TestAPIKeysDeleteCommand(t *testing.T) {
 	// Create command - set stdin to simulate "n" response to confirmation
 	rootCmd := cmd.NewRootCommand()
 	rootCmd.SetArgs([]string{"apikeys", "delete", "key-123", "--config", tc.ConfigPath})
-	
+
 	// Set stdin to provide "n" for the confirmation prompt
 	rootCmd.SetIn(bytes.NewReader([]byte("n\n")))
 
@@ -424,7 +424,7 @@ func TestAPIKeysRotateCommand(t *testing.T) {
 	// Create command - set stdin to simulate "y" response to confirmation
 	rootCmd := cmd.NewRootCommand()
 	rootCmd.SetArgs([]string{"apikeys", "rotate", "key-123", "--config", tc.ConfigPath})
-	
+
 	// Set stdin to provide "y" for the confirmation prompt
 	rootCmd.SetIn(bytes.NewReader([]byte("y\n")))
 

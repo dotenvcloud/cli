@@ -67,9 +67,9 @@ func TestParseResourcePath(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "empty environment",
-			path:    "project/target/",
-			want:    &ResourcePath{Project: "project", Target: "target"},
+			name: "empty environment",
+			path: "project/target/",
+			want: &ResourcePath{Project: "project", Target: "target"},
 		},
 	}
 
@@ -114,11 +114,11 @@ func TestFormatResourcePath(t *testing.T) {
 			want:        "myproject/production/web",
 		},
 		{
-			name: "empty components ignored",
-			project: "myproject",
-			target: "",
+			name:        "empty components ignored",
+			project:     "myproject",
+			target:      "",
 			environment: "web",
-			want: "myproject/web",
+			want:        "myproject/web",
 		},
 		{
 			name: "all empty",

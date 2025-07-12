@@ -237,7 +237,7 @@ func runAccountAdd(cmd *cobra.Command, args []string) error {
 			NoBrowser:     false,
 			IsInteractive: true,
 		}
-		
+
 		if err := auth.DoBrowserLogin(cmd.Context(), am, opts); err != nil {
 			return fmt.Errorf("OAuth login failed: %w", err)
 		}
@@ -397,7 +397,7 @@ func runAccountRefresh(cmd *cobra.Command, args []string) error {
 			dotenv.WithInsecureSkipVerify(),
 		)
 	}
-	
+
 	// Refresh token using SDK
 	sdkTokenResp, _, err := client.OAuth.RefreshToken(cmd.Context(), account.Auth.RefreshToken, oauth.ClientID)
 	if err != nil {

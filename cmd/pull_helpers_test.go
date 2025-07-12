@@ -1,14 +1,14 @@
 package cmd
 
 import (
-	"testing"
 	"github.com/stretchr/testify/assert"
+	"testing"
 )
 
 func TestDetermineTargetLevel(t *testing.T) {
 	tests := []struct {
-		name       string
-		hierarchy  struct {
+		name      string
+		hierarchy struct {
 			Project     string  `json:"project"`
 			Target      *string `json:"target"`
 			Environment *string `json:"environment"`
@@ -137,7 +137,7 @@ EMPTY=`,
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := parseSecretContent(tt.content, tt.format)
-			
+
 			if tt.wantError {
 				assert.Error(t, err)
 			} else {
@@ -222,7 +222,7 @@ func TestFormatSecrets(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := formatSecrets(tt.secrets, tt.format)
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {

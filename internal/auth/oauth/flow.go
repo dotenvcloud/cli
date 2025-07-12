@@ -35,12 +35,10 @@ type OrganizationResponse struct {
 
 // Organization represents an organization the user has access to
 type Organization struct {
-     	ID   int64  `json:"id"`
-     	Slug string `json:"ulid"` // Laravel uses 'ulid' field for slug
-     	Name string `json:"name"`
-     }
-
-
+	ID   int64  `json:"id"`
+	Slug string `json:"ulid"` // Laravel uses 'ulid' field for slug
+	Name string `json:"name"`
+}
 
 // Run executes the OAuth2 authentication flow
 func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
@@ -61,7 +59,7 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 
 	// Create callback server
 	callbackServer := NewCallbackServer(state)
-	
+
 	// Find available port
 	_, err = callbackServer.FindAvailablePort()
 	if err != nil {
@@ -71,7 +69,7 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 	// Start callback server
 	serverCtx, cancelServer := context.WithCancel(ctx)
 	defer cancelServer()
-	
+
 	if err := callbackServer.Start(serverCtx); err != nil {
 		return fmt.Errorf("failed to start callback server: %w", err)
 	}
@@ -111,7 +109,7 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 	case code := <-callbackServer.AuthCode:
 		// Exchange code for tokens
 		ui.PrintInfo("Exchanging authorization code for tokens...")
-		
+
 		tokens, err := client.ExchangeCode(timeoutCtx, code, pkce.Verifier, callbackServer.GetCallbackURL())
 		if err != nil {
 			return fmt.Errorf("failed to exchange code: %w", err)
@@ -119,7 +117,7 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 
 		// Fetch user info and organizations
 		ui.PrintInfo("Fetching user information...")
-		
+
 		userInfo, orgs, err := af.fetchUserAndOrganizations(tokens.AccessToken)
 		if err != nil {
 			return fmt.Errorf("failed to fetch user info: %w", err)
@@ -136,7 +134,7 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 		// Default account name is user email
 		defaultAccountName := userInfo.Email
 		accountName := defaultAccountName
-		
+
 		// Let user select organization
 		var selectedOrg Organization
 		if len(orgs) > 1 && af.IsInteractive {
@@ -145,12 +143,12 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 			for i, org := range orgs {
 				orgOptions[i] = fmt.Sprintf("%s (%s)", org.Name, org.Slug)
 			}
-			
+
 			selected, err := ui.Select("Select your organization", orgOptions)
 			if err != nil {
 				return err
 			}
-			
+
 			// Find selected org
 			for _, org := range orgs {
 				if strings.Contains(selected, org.Slug) {
@@ -166,7 +164,7 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 			// No orgs
 			return fmt.Errorf("no organizations found for this account")
 		}
-		
+
 		// Get account name from user if interactive
 		if af.IsInteractive {
 			// Check if this account already exists
@@ -176,7 +174,7 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 				if err != nil {
 					return err
 				}
-				
+
 				if update {
 					accountName = defaultAccountName
 				} else {
@@ -201,7 +199,7 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 		var orgInfos []config.OrgInfo
 		for _, org := range orgs {
 			orgInfos = append(orgInfos, config.OrgInfo{
-				ULID: org.Slug,  // Using ULID field for the Laravel ulid value
+				ULID: org.Slug, // Using ULID field for the Laravel ulid value
 				Name: org.Name,
 				Slug: utils.Slugify(org.Name), // Generate slug from name
 			})
@@ -220,18 +218,18 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 		if err == nil && existingAccount != nil {
 			// Account exists, update it
 			ui.PrintInfo("Updating existing account: %s", accountName)
-			
+
 			// Update tokens
 			if err := am.RefreshToken(accountName, tokenResp); err != nil {
 				return fmt.Errorf("failed to update tokens: %w", err)
 			}
-			
+
 			// Update organizations
 			_, err := am.RefreshOrganizations(accountName, orgInfos)
 			if err != nil {
 				return fmt.Errorf("failed to update organizations: %w", err)
 			}
-			
+
 			// Update current organization if needed
 			if err := am.SetOrganization(accountName, selectedOrg.Slug); err != nil {
 				return fmt.Errorf("failed to set organization: %w", err)
@@ -251,7 +249,7 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 		ui.PrintSuccess("Login complete!")
 		ui.PrintInfo("Current account: %s", accountName)
 		ui.PrintInfo("Current organization: %s", selectedOrg.Name)
-		
+
 		if len(orgs) > 1 {
 			ui.PrintInfo("\nTo switch organizations, use: dotenv org use <slug>")
 		}
@@ -268,16 +266,16 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 
 // fetchUserAndOrganizations fetches the user info and organizations
 func (af *AuthFlow) fetchUserAndOrganizations(accessToken string) (userInfo struct {
-	ID            int64
-	Email         string
-	Name          string
+	ID    int64
+	Email string
+	Name  string
 }, orgs []Organization, err error) {
 	// For development, use API subdomain for API calls
 	apiURL := af.BaseURL
 	if strings.Contains(af.BaseURL, "dotenv.test") {
 		apiURL = "https://api.dotenv.test"
 	}
-	
+
 	// Create API client with the OAuth token
 	client := dotenv.NewClient(
 		dotenv.WithBearerToken(accessToken),

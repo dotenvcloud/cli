@@ -64,13 +64,13 @@ func runAuthInfo(cmd *cobra.Command, args []string) error {
 		// For API key authentication, show limited info
 		ui.PrintInfo("Authentication: API Key")
 		fmt.Printf("Token Prefix: %s...\n", apiKey[:min(12, len(apiKey))])
-		
+
 		// Get organization from config
 		org := viper.GetString("organization")
 		if org != "" {
 			fmt.Printf("Organization: %s\n", org)
 		}
-		
+
 		ui.PrintInfo("\nAPI key authentication has limited user information.")
 		ui.PrintInfo("Use OAuth authentication for full user details.")
 		return nil
@@ -78,7 +78,7 @@ func runAuthInfo(cmd *cobra.Command, args []string) error {
 
 	// Get authenticated user info
 	ui.PrintInfo("Fetching user information...")
-	
+
 	user, organizations, _, err := client.User.GetAuthenticatedUser(context.Background())
 	if err != nil {
 		account, _ := getCurrentAccount()

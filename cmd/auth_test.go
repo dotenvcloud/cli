@@ -92,9 +92,9 @@ func TestAuthInfoCommand(t *testing.T) {
 			},
 		},
 		{
-			name:              "no organizations",
-			args:              []string{},
-			mockUser:          &dotenv.User{
+			name: "no organizations",
+			args: []string{},
+			mockUser: &dotenv.User{
 				ID:         "user-lonely",
 				Email:      "lonely@example.com",
 				Name:       "Lonely User",
@@ -149,7 +149,7 @@ func TestAuthInfoCommand(t *testing.T) {
 					userResp.Data.Attributes.CreatedAt = tt.mockUser.CreatedAt
 					userResp.Data.Attributes.UpdatedAt = tt.mockUser.UpdatedAt
 					userResp.Data.Attributes.IsVerified = tt.mockUser.IsVerified
-					
+
 					// Add organizations to included
 					for _, org := range tt.mockOrganizations {
 						userResp.Included = append(userResp.Included, struct {
@@ -177,7 +177,7 @@ func TestAuthInfoCommand(t *testing.T) {
 							},
 						})
 					}
-					
+
 					json.NewEncoder(w).Encode(userResp)
 				} else if tt.mockStatusCode >= 400 {
 					errorResp := dotenv.JSONAPIResponse{
@@ -210,14 +210,14 @@ func TestAuthInfoCommand(t *testing.T) {
 					},
 				},
 			}
-			
+
 			// Add API key to config if using API key auth
 			if tt.useAPIKey {
 				contexts := config["contexts"].(map[string]interface{})
 				testContext := contexts["test"].(map[string]interface{})
 				testContext["api_key"] = apiKey
 			}
-			
+
 			tc.WriteConfig(t, config)
 
 			// Create command
@@ -292,7 +292,7 @@ func TestAuthInfoCommand_WithAccount(t *testing.T) {
 		userResp.Data.Attributes.CreatedAt = mockUser.CreatedAt
 		userResp.Data.Attributes.UpdatedAt = mockUser.UpdatedAt
 		userResp.Data.Attributes.IsVerified = mockUser.IsVerified
-		
+
 		// Add organizations to included
 		for _, org := range mockOrganizations {
 			userResp.Included = append(userResp.Included, struct {
@@ -320,7 +320,7 @@ func TestAuthInfoCommand_WithAccount(t *testing.T) {
 				},
 			})
 		}
-		
+
 		json.NewEncoder(w).Encode(userResp)
 	}))
 	defer server.Close()
@@ -393,7 +393,7 @@ func TestAuthCommand_NoSubcommand(t *testing.T) {
 
 	// Execute
 	err := rootCmd.Execute()
-	
+
 	// Should show help text, not an error
 	require.NoError(t, err)
 	output := stdout.String()

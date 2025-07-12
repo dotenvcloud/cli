@@ -14,7 +14,7 @@ type AccountManager struct {
 // NewAccountManager creates a new account manager
 func NewAccountManager(configPath string) (*AccountManager, error) {
 	loader := NewLoader(configPath)
-	
+
 	config, err := loader.Load()
 	if err != nil {
 		// If config doesn't exist, create default
@@ -27,12 +27,12 @@ func NewAccountManager(configPath string) (*AccountManager, error) {
 			return nil, fmt.Errorf("failed to load config: %w", err)
 		}
 	}
-	
+
 	// Check for legacy config
 	if config.HasLegacyConfig() {
 		return nil, fmt.Errorf("old configuration format detected. Please run 'dotenv init' to set up the new account system")
 	}
-	
+
 	return &AccountManager{
 		config: config,
 		loader: loader,
@@ -44,20 +44,20 @@ func (am *AccountManager) Create(name string, apiURL string, authType string) er
 	if name == "" {
 		return fmt.Errorf("account name cannot be empty")
 	}
-	
+
 	if authType != "oauth" && authType != "api_key" {
 		return fmt.Errorf("invalid auth type: %s (must be 'oauth' or 'api_key')", authType)
 	}
-	
+
 	if apiURL == "" {
 		apiURL = "https://api.dotenv.cloud"
 	}
-	
+
 	// Check if account already exists
 	if _, exists := am.config.Accounts[name]; exists {
 		return fmt.Errorf("Account name already exists: %s", name)
 	}
-	
+
 	// Create new account
 	account := Account{
 		Name:      name,
@@ -67,12 +67,12 @@ func (am *AccountManager) Create(name string, apiURL string, authType string) er
 		UpdatedAt: time.Now(),
 		LastUsed:  time.Now(),
 	}
-	
+
 	// Add to config
 	if err := am.config.AddAccount(name, account); err != nil {
 		return err
 	}
-	
+
 	// Save config
 	return am.loader.Save(am.config)
 }
@@ -82,16 +82,16 @@ func (am *AccountManager) CreateWithAPIKey(name string, apiURL string, apiKey st
 	if err := am.Create(name, apiURL, "api_key"); err != nil {
 		return err
 	}
-	
+
 	// Update with API key and organization
 	updates := map[string]interface{}{
 		"auth": AuthData{
 			APIKey: apiKey,
 		},
-		"organization": orgInfo,
+		"organization":            orgInfo,
 		"organization_fetched_at": time.Now(),
 	}
-	
+
 	return am.Update(name, updates)
 }
 
@@ -100,21 +100,21 @@ func (am *AccountManager) CreateWithOAuth(name string, apiURL string, tokens Tok
 	if err := am.Create(name, apiURL, "oauth"); err != nil {
 		return err
 	}
-	
+
 	// Update with OAuth data
 	updates := map[string]interface{}{
 		"auth": AuthData{
-			AccessToken:          tokens.AccessToken,
-			RefreshToken:         tokens.RefreshToken,
-			TokenType:            tokens.TokenType,
-			ExpiresAt:            time.Now().Add(time.Duration(tokens.ExpiresIn) * time.Second),
+			AccessToken:           tokens.AccessToken,
+			RefreshToken:          tokens.RefreshToken,
+			TokenType:             tokens.TokenType,
+			ExpiresAt:             time.Now().Add(time.Duration(tokens.ExpiresIn) * time.Second),
 			RefreshTokenExpiresAt: time.Now().Add(60 * 24 * time.Hour), // 60 days default (matching web app)
 		},
-		"organizations": orgs,
-		"current_organization": selectedOrgULID,
+		"organizations":            orgs,
+		"current_organization":     selectedOrgULID,
 		"organizations_fetched_at": time.Now(),
 	}
-	
+
 	return am.Update(name, updates)
 }
 
@@ -124,7 +124,7 @@ func (am *AccountManager) Update(name string, updates map[string]interface{}) er
 	if !exists {
 		return fmt.Errorf("account '%s' not found", name)
 	}
-	
+
 	// Update fields
 	for key, value := range updates {
 		switch key {
@@ -164,10 +164,10 @@ func (am *AccountManager) Update(name string, updates map[string]interface{}) er
 			}
 		}
 	}
-	
+
 	account.UpdatedAt = time.Now()
 	account.LastUsed = time.Now()
-	
+
 	// Save updated account
 	am.config.Accounts[name] = account
 	return am.loader.Save(am.config)
@@ -178,13 +178,13 @@ func (am *AccountManager) Use(name string) error {
 	if err := am.config.SetCurrentAccount(name); err != nil {
 		return err
 	}
-	
+
 	// Update last used
 	if account, exists := am.config.Accounts[name]; exists {
 		account.LastUsed = time.Now()
 		am.config.Accounts[name] = account
 	}
-	
+
 	return am.loader.Save(am.config)
 }
 
@@ -227,14 +227,14 @@ func (am *AccountManager) Rename(oldName, newName string) error {
 func (am *AccountManager) RefreshToken(name string, tokens TokenResponse) error {
 	updates := map[string]interface{}{
 		"auth": AuthData{
-			AccessToken:          tokens.AccessToken,
-			RefreshToken:         tokens.RefreshToken,
-			TokenType:            tokens.TokenType,
-			ExpiresAt:            time.Now().Add(time.Duration(tokens.ExpiresIn) * time.Second),
+			AccessToken:           tokens.AccessToken,
+			RefreshToken:          tokens.RefreshToken,
+			TokenType:             tokens.TokenType,
+			ExpiresAt:             time.Now().Add(time.Duration(tokens.ExpiresIn) * time.Second),
 			RefreshTokenExpiresAt: time.Now().Add(60 * 24 * time.Hour), // 60 days default (matching web app)
 		},
 	}
-	
+
 	return am.Update(name, updates)
 }
 
@@ -244,15 +244,15 @@ func (am *AccountManager) SetOrganization(accountName string, orgULID string) er
 	if !exists {
 		return fmt.Errorf("account '%s' not found", accountName)
 	}
-	
+
 	if !account.IsOAuth() {
 		return fmt.Errorf("cannot change organization for API key account")
 	}
-	
+
 	if err := account.SetCurrentOrganization(orgULID); err != nil {
 		return err
 	}
-	
+
 	// Save updated account
 	am.config.Accounts[accountName] = account
 	return am.loader.Save(am.config)
@@ -265,14 +265,14 @@ func (am *AccountManager) RefreshOrganizations(accountName string, orgs []OrgInf
 	if !exists {
 		return false, fmt.Errorf("account '%s' not found", accountName)
 	}
-	
+
 	orgWasRemoved := false
-	
+
 	if account.IsOAuth() {
 		account.Organizations = orgs
 		now := time.Now()
 		account.OrganizationsFetchedAt = &now
-		
+
 		// Verify current org still exists
 		currentOrgExists := false
 		for _, org := range orgs {
@@ -281,7 +281,7 @@ func (am *AccountManager) RefreshOrganizations(accountName string, orgs []OrgInf
 				break
 			}
 		}
-		
+
 		if !currentOrgExists && account.CurrentOrganization != "" {
 			orgWasRemoved = true
 			if len(orgs) > 0 {
@@ -300,7 +300,7 @@ func (am *AccountManager) RefreshOrganizations(accountName string, orgs []OrgInf
 			account.OrganizationFetchedAt = &now
 		}
 	}
-	
+
 	account.UpdatedAt = time.Now()
 	am.config.Accounts[accountName] = account
 	if err := am.loader.Save(am.config); err != nil {

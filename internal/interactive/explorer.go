@@ -15,14 +15,14 @@ import (
 type Action string
 
 const (
-	ActionSelect       Action = "select"
-	ActionCopy         Action = "copy"
-	ActionPull         Action = "pull"
+	ActionSelect        Action = "select"
+	ActionCopy          Action = "copy"
+	ActionPull          Action = "pull"
 	ActionPullLevelOnly Action = "pull-level-only"
-	ActionPush         Action = "push"
-	ActionView         Action = "view"
-	ActionBack         Action = "back"
-	ActionExit         Action = "exit"
+	ActionPush          Action = "push"
+	ActionView          Action = "view"
+	ActionBack          Action = "back"
+	ActionExit          Action = "exit"
 )
 
 // ErrExit is returned when user wants to exit
@@ -33,11 +33,11 @@ var ErrBack = errors.New("back")
 
 // Explorer provides interactive navigation through the resource hierarchy
 type Explorer struct {
-	root     *hierarchy.Node
-	builder  *hierarchy.Builder
-	client   *dotenv.Client
-	history  []*hierarchy.Node
-	current  *hierarchy.Node
+	root    *hierarchy.Node
+	builder *hierarchy.Builder
+	client  *dotenv.Client
+	history []*hierarchy.Node
+	current *hierarchy.Node
 }
 
 // NewExplorer creates a new explorer instance
@@ -56,15 +56,15 @@ func (e *Explorer) Run() (selectedPath string, action Action, err error) {
 	for {
 		// Build options for current level
 		options := e.buildOptions()
-		
+
 		// Show prompt
 		prompt := e.buildPrompt()
-		
+
 		selected, err := ui.Select(prompt, options)
 		if err != nil {
 			return "", "", err
 		}
-		
+
 		// Handle selection
 		action, err = e.handleSelection(selected)
 		if err != nil {
@@ -81,7 +81,7 @@ func (e *Explorer) Run() (selectedPath string, action Action, err error) {
 			}
 			return "", "", err
 		}
-		
+
 		// If we have an action, return the current path
 		if action != "" && action != ActionBack {
 			return e.current.Path, action, nil
@@ -92,18 +92,18 @@ func (e *Explorer) Run() (selectedPath string, action Action, err error) {
 // buildOptions creates the list of options for the current node
 func (e *Explorer) buildOptions() []string {
 	options := []string{}
-	
+
 	// Add back option if not at root
 	if len(e.history) > 0 {
 		options = append(options, "← Back")
 	}
-	
+
 	// Add children or actions based on node type
-	if e.current.Type == hierarchy.NodeTypeEnvironment || 
-	   (len(e.current.Children) == 0 && e.current.Type != hierarchy.NodeTypeOrganization) {
+	if e.current.Type == hierarchy.NodeTypeEnvironment ||
+		(len(e.current.Children) == 0 && e.current.Type != hierarchy.NodeTypeOrganization) {
 		// This is a leaf node, show actions
 		levelName := string(e.current.Type)
-		
+
 		options = append(options,
 			"📋 Copy path to clipboard",
 			fmt.Sprintf("⬇️  Pull %s secrets only", levelName),
@@ -118,18 +118,18 @@ func (e *Explorer) buildOptions() []string {
 			label := e.formatNodeOption(child)
 			options = append(options, label)
 		}
-		
+
 		// If this is a project or target, also allow actions including pull
 		if e.current.Type == hierarchy.NodeTypeProject || e.current.Type == hierarchy.NodeTypeTarget {
-			options = append(options, "")  // Separator
+			options = append(options, "") // Separator
 			options = append(options, "── Actions for "+e.current.Name+" ──")
-			
+
 			// Customize pull option text based on level
 			levelName := "project"
 			if e.current.Type == hierarchy.NodeTypeTarget {
 				levelName = "target"
 			}
-			
+
 			options = append(options,
 				"📋 Copy path to clipboard",
 				fmt.Sprintf("⬇️  Pull %s secrets only", levelName),
@@ -139,11 +139,11 @@ func (e *Explorer) buildOptions() []string {
 			)
 		}
 	}
-	
+
 	// Always add exit option
-	options = append(options, "")  // Separator
+	options = append(options, "") // Separator
 	options = append(options, "✗ Exit")
-	
+
 	return options
 }
 
@@ -151,7 +151,7 @@ func (e *Explorer) buildOptions() []string {
 func (e *Explorer) formatNodeOption(node *hierarchy.Node) string {
 	prefix := "→ "
 	label := node.Name
-	
+
 	// Add metadata information
 	switch node.Type {
 	case hierarchy.NodeTypeProject:
@@ -161,7 +161,7 @@ func (e *Explorer) formatNodeOption(node *hierarchy.Node) string {
 			if proj.EncryptionType == "client" {
 				keyIndicator = " [client-key]"
 			}
-			
+
 			if proj.TargetCount > 0 || proj.EnvironmentCount > 0 {
 				label = fmt.Sprintf("%s%s (%d targets, %d environments)",
 					node.Name, keyIndicator, proj.TargetCount, proj.EnvironmentCount)
@@ -170,13 +170,13 @@ func (e *Explorer) formatNodeOption(node *hierarchy.Node) string {
 			}
 		}
 		prefix = "📁 "
-		
+
 	case hierarchy.NodeTypeTarget:
 		if target, ok := node.Metadata.(*dotenv.Target); ok && target.Description != "" {
 			label = fmt.Sprintf("%s - %s", node.Name, target.Description)
 		}
 		prefix = "🎯 "
-		
+
 	case hierarchy.NodeTypeEnvironment:
 		if env, ok := node.Metadata.(*dotenv.Environment); ok {
 			status := env.Status
@@ -187,14 +187,14 @@ func (e *Explorer) formatNodeOption(node *hierarchy.Node) string {
 		}
 		prefix = "🌿 "
 	}
-	
+
 	return prefix + label
 }
 
 // buildPrompt creates the prompt text for the current level
 func (e *Explorer) buildPrompt() string {
 	path := e.buildPath()
-	
+
 	switch e.current.Type {
 	case hierarchy.NodeTypeOrganization:
 		return fmt.Sprintf("Select project in %s:", e.current.Name)
@@ -223,32 +223,32 @@ func (e *Explorer) handleSelection(selected string) (Action, error) {
 	switch {
 	case selected == "← Back":
 		return ActionBack, ErrBack
-		
+
 	case selected == "✗ Exit":
 		return ActionExit, ErrExit
-		
+
 	case strings.HasPrefix(selected, "📋 Copy"):
 		return ActionCopy, nil
-		
+
 	case strings.Contains(selected, "secrets only"):
 		return ActionPullLevelOnly, nil
-		
+
 	case strings.Contains(selected, "all secrets (merged)"):
 		return ActionPull, nil
-		
+
 	case strings.HasPrefix(selected, "⬆️  Push"):
 		return ActionPush, nil
-		
+
 	case strings.HasPrefix(selected, "👁  View"):
 		return ActionView, nil
-		
+
 	case strings.HasPrefix(selected, "✓ Select"):
 		return ActionSelect, nil
-		
+
 	case selected == "" || strings.HasPrefix(selected, "──"):
 		// Separator or header, ignore
 		return "", nil
-		
+
 	default:
 		// This should be a child node
 		return e.navigateToChild(selected)
@@ -263,7 +263,7 @@ func (e *Explorer) navigateToChild(selected string) (Action, error) {
 	if len(parts) < 2 {
 		return "", fmt.Errorf("invalid selection: %s", selected)
 	}
-	
+
 	nodeName := parts[1]
 	// Remove metadata in parentheses
 	if idx := strings.Index(nodeName, " ("); idx > 0 {
@@ -277,7 +277,7 @@ func (e *Explorer) navigateToChild(selected string) (Action, error) {
 	if idx := strings.Index(nodeName, " ["); idx > 0 {
 		nodeName = nodeName[:idx]
 	}
-	
+
 	// Find the child node
 	for _, child := range e.current.Children {
 		if child.Name == nodeName {
@@ -287,14 +287,14 @@ func (e *Explorer) navigateToChild(selected string) (Action, error) {
 					ui.PrintWarning("Failed to load children: %v", err)
 				}
 			}
-			
+
 			// Navigate to the child
 			e.history = append(e.history, e.current)
 			e.current = child
 			return "", nil
 		}
 	}
-	
+
 	return "", fmt.Errorf("child not found: %s", nodeName)
 }
 

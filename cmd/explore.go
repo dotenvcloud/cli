@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	
+
 	"github.com/dotenv/cli/internal/hierarchy"
 	"github.com/dotenv/cli/internal/interactive"
 	"github.com/dotenv/cli/internal/ui"
@@ -30,7 +30,7 @@ var exploreCmd = &cobra.Command{
 This command provides an interactive interface to browse through your
 projects, targets, and environments, with options to copy paths or
 execute commands on selected resources.`,
-	
+
 	Example: `  # Start exploring from organization root
   dotenv explore
   
@@ -39,7 +39,7 @@ execute commands on selected resources.`,
   
   # Start exploring from a specific target
   dotenv explore myproject/production`,
-	
+
 	RunE: runExplore,
 }
 
@@ -55,22 +55,22 @@ func runExplore(cmd *cobra.Command, args []string) error {
 			ui.PrintWarning("Could not display account info: %v", err)
 		}
 	}
-	
+
 	// Get starting path from args
 	if len(args) > 0 {
 		exploreStartPath = args[0]
 	}
-	
+
 	// Get API client
 	client, err := getAPIClient()
 	if err != nil {
 		return err
 	}
-	
+
 	// Build initial hierarchy
 	builder := hierarchy.NewBuilder(client)
 	ctx := cmd.Context()
-	
+
 	// Determine starting point
 	var startNode *hierarchy.Node
 	if exploreStartPath != "" {
@@ -98,22 +98,22 @@ func runExplore(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		
+
 		orgIdentifier, err := account.GetOrganizationIdentifier()
 		if err != nil {
 			return fmt.Errorf("failed to get organization: %w", err)
 		}
-		
+
 		ui.PrintInfo("Loading organization resources...")
 		startNode, err = builder.Build(ctx, orgIdentifier)
 		if err != nil {
 			return fmt.Errorf("failed to load organization: %w", err)
 		}
 	}
-	
+
 	// Create and run explorer
 	explorer := interactive.NewExplorer(startNode, builder, client)
-	
+
 	for {
 		selectedPath, action, err := explorer.Run()
 		if err != nil {
@@ -123,7 +123,7 @@ func runExplore(cmd *cobra.Command, args []string) error {
 			}
 			return err
 		}
-		
+
 		// Handle action
 		switch action {
 		case interactive.ActionCopy:
@@ -134,33 +134,75 @@ func runExplore(cmd *cobra.Command, args []string) error {
 				ui.PrintSuccess("Copied to clipboard: %s", selectedPath)
 			}
 			// Continue exploring
-			
+
 		case interactive.ActionPull:
-			ui.PrintInfo("Running: dotenv pull %s", selectedPath)
-			// Exit explorer and run pull command
-			err := runPull(cmd, []string{selectedPath})
+			// Prompt for output file
+			outputFile, err := ui.InputWithHelp(
+				"Enter output file path (or press Enter for terminal output)",
+				"",
+				"Specify a file path to save secrets (e.g., .env, secrets.env), or press Enter to display in terminal",
+				nil,
+			)
+			if err != nil {
+				ui.PrintError("Failed to get output file: %v", err)
+				continue
+			}
+			
+			// Set the output file
+			pullOutput = outputFile
+			
+			if outputFile != "" {
+				ui.PrintInfo("Running: dotenv pull %s --output=%s", selectedPath, outputFile)
+			} else {
+				ui.PrintInfo("Running: dotenv pull %s", selectedPath)
+			}
+			
+			// Run pull command
+			err = runPull(cmd, []string{selectedPath})
+			pullOutput = "" // Reset for next use
+			
 			if err != nil {
 				// Show error with helpful context
 				ShowErrorWithHelp(err)
-				// Continue exploring instead of exiting
 				continue
 			}
 			return nil
-			
+
 		case interactive.ActionPullLevelOnly:
-			ui.PrintInfo("Running: dotenv pull %s --level-only", selectedPath)
-			// Set the flag and run pull command
+			// Prompt for output file
+			outputFile, err := ui.InputWithHelp(
+				"Enter output file path (or press Enter for terminal output)",
+				"",
+				"Specify a file path to save secrets (e.g., .env, secrets.env), or press Enter to display in terminal",
+				nil,
+			)
+			if err != nil {
+				ui.PrintError("Failed to get output file: %v", err)
+				continue
+			}
+			
+			// Set the output file and flag
+			pullOutput = outputFile
 			pullLevelOnly = true
-			err := runPull(cmd, []string{selectedPath})
+			
+			if outputFile != "" {
+				ui.PrintInfo("Running: dotenv pull %s --level-only --output=%s", selectedPath, outputFile)
+			} else {
+				ui.PrintInfo("Running: dotenv pull %s --level-only", selectedPath)
+			}
+			
+			// Run pull command
+			err = runPull(cmd, []string{selectedPath})
+			pullOutput = "" // Reset for next use
+			pullLevelOnly = false // Reset flag
+			
 			if err != nil {
 				// Show error with helpful context
 				ShowErrorWithHelp(err)
-				// Reset flag and continue exploring
-				pullLevelOnly = false
 				continue
 			}
 			return nil
-			
+
 		case interactive.ActionPush:
 			ui.PrintInfo("Running: dotenv push for %s", selectedPath)
 			// Prompt for file
@@ -171,18 +213,18 @@ func runExplore(cmd *cobra.Command, args []string) error {
 			}
 			// Exit explorer and run push command
 			return runPush(cmd, []string{file, selectedPath})
-			
+
 		case interactive.ActionView:
 			// Show details about the selected resource
 			if err := showResourceDetails(ctx, client, selectedPath); err != nil {
 				ui.PrintError("Failed to get details: %v", err)
 			}
 			// Continue exploring
-			
+
 		case interactive.ActionSelect:
 			ui.PrintSuccess("Selected: %s", selectedPath)
 			return nil
-			
+
 		case interactive.ActionExit:
 			return nil
 		}
@@ -192,7 +234,7 @@ func runExplore(cmd *cobra.Command, args []string) error {
 // copyToClipboard copies text to the system clipboard
 func copyToClipboard(text string) error {
 	var cmd *exec.Cmd
-	
+
 	switch runtime.GOOS {
 	case "darwin":
 		cmd = exec.Command("pbcopy")
@@ -212,35 +254,35 @@ func copyToClipboard(text string) error {
 	default:
 		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
-	
+
 	// Write text to command's stdin
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return err
 	}
-	
+
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	
+
 	if _, err := in.Write([]byte(text)); err != nil {
 		return err
 	}
-	
+
 	if err := in.Close(); err != nil {
 		return err
 	}
-	
+
 	return cmd.Wait()
 }
 
 // showResourceDetails displays detailed information about a resource
 func showResourceDetails(ctx context.Context, client *dotenv.Client, path string) error {
 	parts := strings.Split(path, "/")
-	
+
 	ui.PrintHeader("Resource Details")
 	ui.PrintKeyValue("Path", path)
-	
+
 	switch len(parts) {
 	case 1:
 		// Project details
@@ -248,7 +290,7 @@ func showResourceDetails(ctx context.Context, client *dotenv.Client, path string
 		if err != nil {
 			return err
 		}
-		
+
 		ui.PrintKeyValue("Type", "Project")
 		ui.PrintKeyValue("Name", project.Name)
 		ui.PrintKeyValue("Slug", project.Slug)
@@ -260,14 +302,14 @@ func showResourceDetails(ctx context.Context, client *dotenv.Client, path string
 		ui.PrintKeyValue("Environments", fmt.Sprintf("%d", project.EnvironmentCount))
 		ui.PrintKeyValue("Created", project.CreatedAt.Format("2006-01-02 15:04:05"))
 		ui.PrintKeyValue("Updated", project.UpdatedAt.Format("2006-01-02 15:04:05"))
-		
+
 	case 2:
 		// Target details
 		target, _, err := client.Targets.Get(ctx, parts[0], parts[1])
 		if err != nil {
 			return err
 		}
-		
+
 		ui.PrintKeyValue("Type", "Target")
 		ui.PrintKeyValue("Name", target.Name)
 		ui.PrintKeyValue("Slug", target.Slug)
@@ -277,7 +319,7 @@ func showResourceDetails(ctx context.Context, client *dotenv.Client, path string
 		ui.PrintKeyValue("Project", parts[0])
 		ui.PrintKeyValue("Created", target.CreatedAt.Format("2006-01-02 15:04:05"))
 		ui.PrintKeyValue("Updated", target.UpdatedAt.Format("2006-01-02 15:04:05"))
-		
+
 		// List environments in this target
 		envs, _, err := client.Environments.List(ctx, parts[0], parts[1], nil)
 		if err == nil && len(envs) > 0 {
@@ -286,14 +328,14 @@ func showResourceDetails(ctx context.Context, client *dotenv.Client, path string
 				fmt.Printf("  • %s (%s)\n", env.Name, env.Status)
 			}
 		}
-		
+
 	case 3:
 		// Environment details
 		env, _, err := client.Environments.Get(ctx, parts[0], parts[1], parts[2])
 		if err != nil {
 			return err
 		}
-		
+
 		ui.PrintKeyValue("Type", "Environment")
 		ui.PrintKeyValue("Name", env.Name)
 		ui.PrintKeyValue("Slug", env.Slug)
@@ -305,14 +347,14 @@ func showResourceDetails(ctx context.Context, client *dotenv.Client, path string
 		ui.PrintKeyValue("Target", parts[1])
 		ui.PrintKeyValue("Created", env.CreatedAt.Format("2006-01-02 15:04:05"))
 		ui.PrintKeyValue("Updated", env.UpdatedAt.Format("2006-01-02 15:04:05"))
-		
+
 		// Could show secret count if available
 		ui.PrintInfo("\nUse 'dotenv pull %s' to retrieve secrets from this environment", path)
 	}
-	
+
 	fmt.Println() // Empty line after details
 	ui.PrintInfo("Press Enter to continue...")
 	fmt.Scanln() // Wait for user input
-	
+
 	return nil
 }

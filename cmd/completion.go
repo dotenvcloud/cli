@@ -70,13 +70,12 @@ PowerShell:
 	},
 }
 
-
 // registerResourcePathCompletions sets up dynamic completions for resource paths
 func registerResourcePathCompletions() {
 	// For pull command - completes project/target/environment paths
 	pullCmd.RegisterFlagCompletionFunc("project", projectCompletion)
 	pullCmd.ValidArgsFunction = resourcePathCompletion
-	
+
 	// For push command - completes project/target/environment paths
 	pushCmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		// First arg is file, second is resource path
@@ -87,21 +86,21 @@ func registerResourcePathCompletions() {
 		// Resource path completion
 		return resourcePathCompletion(cmd, args[1:], toComplete)
 	}
-	
+
 	// For list commands that take resource arguments
 	listCmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
 			// First argument is the resource type
 			return []string{
 				"organizations\tList all organizations",
-				"projects\tList projects in current organization", 
+				"projects\tList projects in current organization",
 				"targets\tList targets in a project",
 				"environments\tList environments in a target",
 				"accounts\tList configured accounts",
 				"all\tList all resources in a flat view",
 			}, cobra.ShellCompDirectiveNoFileComp
 		}
-		
+
 		// For targets and environments, provide path completion
 		if len(args) == 1 {
 			switch args[0] {
@@ -111,18 +110,18 @@ func registerResourcePathCompletions() {
 				return targetPathCompletion(cmd, args[1:], toComplete)
 			}
 		}
-		
+
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	
+
 	// For tree command
 	treeCmd.ValidArgsFunction = projectCompletion
 	treeCmd.RegisterFlagCompletionFunc("project", projectCompletion)
 	treeCmd.RegisterFlagCompletionFunc("target", targetCompletion)
-	
+
 	// For explore command
 	exploreCmd.ValidArgsFunction = resourcePathCompletion
-	
+
 	// For path command - no completion needed as it's searching
 }
 
@@ -132,10 +131,10 @@ func resourcePathCompletion(cmd *cobra.Command, args []string, toComplete string
 	if len(args) > 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	
+
 	// Parse what's been typed so far
 	parts := strings.Split(toComplete, "/")
-	
+
 	switch len(parts) {
 	case 1:
 		// Complete projects
@@ -161,27 +160,27 @@ func projectCompletion(cmd *cobra.Command, args []string, toComplete string) ([]
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-		
+
 		// Organization context is already set in the client
-		
+
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		
+
 		projectList, _, err := client.Projects.List(ctx, nil)
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-		
+
 		projects = make([]string, 0, len(projectList))
 		for _, p := range projectList {
 			desc := fmt.Sprintf("%s (%d secrets)", p.Name, p.SecretCount)
 			projects = append(projects, fmt.Sprintf("%s\t%s", p.Slug, desc))
 		}
-		
+
 		// Cache for future use
 		cacheProjects(projects)
 	}
-	
+
 	// Filter by prefix
 	if toComplete != "" {
 		filtered := make([]string, 0)
@@ -193,7 +192,7 @@ func projectCompletion(cmd *cobra.Command, args []string, toComplete string) ([]
 		}
 		projects = filtered
 	}
-	
+
 	return projects, cobra.ShellCompDirectiveNoFileComp
 }
 
@@ -203,7 +202,7 @@ func targetCompletion(cmd *cobra.Command, args []string, toComplete string) ([]s
 	if projectFlag == "" {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	
+
 	return targetCompletionForProject(cmd, projectFlag, toComplete)
 }
 
@@ -213,15 +212,15 @@ func targetCompletionForProject(cmd *cobra.Command, project, toComplete string) 
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	
+
 	targets, _, err := client.Targets.List(ctx, project, nil)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	
+
 	completions := make([]string, 0, len(targets))
 	for _, t := range targets {
 		if toComplete == "" || strings.HasPrefix(t.Slug, toComplete) {
@@ -232,7 +231,7 @@ func targetCompletionForProject(cmd *cobra.Command, project, toComplete string) 
 			completions = append(completions, fmt.Sprintf("%s\t%s", t.Slug, desc))
 		}
 	}
-	
+
 	return completions, cobra.ShellCompDirectiveNoFileComp
 }
 
@@ -242,7 +241,7 @@ func targetPathCompletion(cmd *cobra.Command, args []string, toComplete string) 
 	if len(args) > 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	
+
 	// Check if we're completing a partial path
 	if strings.Contains(toComplete, "/") {
 		parts := strings.Split(toComplete, "/")
@@ -251,13 +250,13 @@ func targetPathCompletion(cmd *cobra.Command, args []string, toComplete string) 
 		}
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	
+
 	// Otherwise, complete projects with hint that target is needed
 	projects := getCachedProjects()
 	if projects == nil {
 		return projectCompletion(cmd, args, toComplete)
 	}
-	
+
 	// Modify to show that a target is needed
 	completions := make([]string, 0, len(projects))
 	for _, p := range projects {
@@ -266,7 +265,7 @@ func targetPathCompletion(cmd *cobra.Command, args []string, toComplete string) 
 			completions = append(completions, fmt.Sprintf("%s/\tProject: %s (add target)", parts[0], parts[1]))
 		}
 	}
-	
+
 	return completions, cobra.ShellCompDirectiveNoSpace | cobra.ShellCompDirectiveNoFileComp
 }
 
@@ -276,15 +275,15 @@ func environmentCompletionForTarget(cmd *cobra.Command, project, target, toCompl
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	
+
 	envs, _, err := client.Environments.List(ctx, project, target, nil)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	
+
 	completions := make([]string, 0, len(envs))
 	for _, e := range envs {
 		if toComplete == "" || strings.HasPrefix(e.Slug, toComplete) {
@@ -295,7 +294,7 @@ func environmentCompletionForTarget(cmd *cobra.Command, project, target, toCompl
 			completions = append(completions, fmt.Sprintf("%s\t%s", e.Slug, desc))
 		}
 	}
-	
+
 	return completions, cobra.ShellCompDirectiveNoFileComp
 }
 

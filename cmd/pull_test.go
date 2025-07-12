@@ -35,12 +35,12 @@ func TestPullCommand(t *testing.T) {
 					"type": "secrets",
 					"attributes": map[string]interface{}{
 						"encrypted": false,
-						"format": "env",
+						"format":    "env",
 						"levels": map[string]interface{}{
 							"project": map[string]interface{}{
 								"encrypted": false,
-								"content": "DATABASE_URL=postgres://localhost/test\nAPI_KEY=test-api-key",
-								"source": "project",
+								"content":   "DATABASE_URL=postgres://localhost/test\nAPI_KEY=test-api-key",
+								"source":    "project",
 							},
 						},
 					},
@@ -61,17 +61,17 @@ func TestPullCommand(t *testing.T) {
 					"type": "secrets",
 					"attributes": map[string]interface{}{
 						"encrypted": false,
-						"format": "env",
+						"format":    "env",
 						"levels": map[string]interface{}{
 							"project": map[string]interface{}{
 								"encrypted": false,
-								"content": "DATABASE_URL=postgres://localhost/test",
-								"source": "project",
+								"content":   "DATABASE_URL=postgres://localhost/test",
+								"source":    "project",
 							},
 							"target": map[string]interface{}{
 								"encrypted": false,
-								"content": "PROD_VAR=prod-value",
-								"source": "target",
+								"content":   "PROD_VAR=prod-value",
+								"source":    "target",
 							},
 						},
 					},
@@ -79,7 +79,7 @@ func TestPullCommand(t *testing.T) {
 				"meta": map[string]interface{}{
 					"hierarchy": map[string]interface{}{
 						"project": "test-project",
-						"target": "production",
+						"target":  "production",
 					},
 				},
 			},
@@ -124,7 +124,7 @@ func TestPullCommand(t *testing.T) {
 					json.NewEncoder(w).Encode(response)
 					return
 				}
-				
+
 				// Mock secrets endpoint
 				if tt.serverResponse != nil {
 					if _, ok := tt.serverResponse["error"]; ok {

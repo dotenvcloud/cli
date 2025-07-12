@@ -4,7 +4,6 @@ import (
 	"testing"
 )
 
-
 func TestNode_Walk(t *testing.T) {
 	// Create a test hierarchy
 	root := &Node{

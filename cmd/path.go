@@ -28,7 +28,7 @@ var pathCmd = &cobra.Command{
     
 This command provides a quick way to find resource paths for use with other commands.
 Supports exact matching, fuzzy matching, and regular expression patterns.`,
-	
+
 	Example: `  # Find all resources containing "prod"
   dotenv path prod
   
@@ -43,7 +43,7 @@ Supports exact matching, fuzzy matching, and regular expression patterns.`,
   
   # Get first match only
   dotenv path myapp --output=first`,
-	
+
 	Args: cobra.ExactArgs(1),
 	RunE: runPath,
 }
@@ -68,12 +68,12 @@ func runPath(cmd *cobra.Command, args []string) error {
 	}
 
 	searchTerm := args[0]
-	
+
 	// Validate flags
 	if pathExact && pathRegex {
 		return fmt.Errorf("cannot use both --exact and --regex")
 	}
-	
+
 	// Compile regex if needed
 	var searchRegex *regexp.Regexp
 	if pathRegex {
@@ -83,19 +83,19 @@ func runPath(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("invalid regex pattern: %w", err)
 		}
 	}
-	
+
 	// Get API client
 	client, err := getAPIClient()
 	if err != nil {
 		return err
 	}
-	
+
 	// Search for resources
 	matches, err := searchResources(cmd.Context(), client, searchTerm, searchRegex)
 	if err != nil {
 		return err
 	}
-	
+
 	// Filter by type if requested
 	if pathType != "all" {
 		filtered := []resourceMatch{}
@@ -106,7 +106,7 @@ func runPath(cmd *cobra.Command, args []string) error {
 		}
 		matches = filtered
 	}
-	
+
 	// Handle output format
 	switch pathOutput {
 	case "first":
@@ -114,21 +114,21 @@ func runPath(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("no matches found")
 		}
 		fmt.Println(matches[0].Path)
-		
+
 	case "count":
 		fmt.Println(len(matches))
-		
+
 	default: // "list"
 		if len(matches) == 0 {
 			ui.PrintWarning("No matches found for '%s'", searchTerm)
 			return nil
 		}
-		
+
 		for _, match := range matches {
 			fmt.Printf("%s\t# %s: %s\n", match.Path, match.Type, match.Name)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -140,13 +140,13 @@ type resourceMatch struct {
 
 func searchResources(ctx context.Context, client *dotenv.Client, searchTerm string, searchRegex *regexp.Regexp) ([]resourceMatch, error) {
 	matches := []resourceMatch{}
-	
+
 	// Fetch all projects
 	projects, _, err := client.Projects.List(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list projects: %w", err)
 	}
-	
+
 	// Search projects and their children
 	for _, project := range projects {
 		// Check if project matches
@@ -157,14 +157,14 @@ func searchResources(ctx context.Context, client *dotenv.Client, searchTerm stri
 				Name: project.Name,
 			})
 		}
-		
+
 		// Fetch targets
 		targets, _, err := client.Targets.List(ctx, project.Slug, nil)
 		if err != nil {
 			ui.PrintDebug("Failed to fetch targets for %s: %v", project.Slug, err)
 			continue
 		}
-		
+
 		for _, target := range targets {
 			// Check if target matches
 			if matchesSearch(target.Name, target.Slug, searchTerm, searchRegex) {
@@ -174,14 +174,14 @@ func searchResources(ctx context.Context, client *dotenv.Client, searchTerm stri
 					Name: target.Name,
 				})
 			}
-			
+
 			// Fetch environments
 			envs, _, err := client.Environments.List(ctx, project.Slug, target.Slug, nil)
 			if err != nil {
 				ui.PrintDebug("Failed to fetch environments for %s/%s: %v", project.Slug, target.Slug, err)
 				continue
 			}
-			
+
 			for _, env := range envs {
 				// Check if environment matches
 				if matchesSearch(env.Name, env.Slug, searchTerm, searchRegex) {
@@ -194,7 +194,7 @@ func searchResources(ctx context.Context, client *dotenv.Client, searchTerm stri
 			}
 		}
 	}
-	
+
 	return matches, nil
 }
 
@@ -203,13 +203,13 @@ func matchesSearch(name, slug, searchTerm string, searchRegex *regexp.Regexp) bo
 	if searchRegex != nil {
 		return searchRegex.MatchString(name) || searchRegex.MatchString(slug)
 	}
-	
+
 	// Handle exact match
 	if pathExact {
 		searchLower := strings.ToLower(searchTerm)
 		return strings.ToLower(name) == searchLower || strings.ToLower(slug) == searchLower
 	}
-	
+
 	// Handle fuzzy match (case-insensitive contains)
 	searchLower := strings.ToLower(searchTerm)
 	return strings.Contains(strings.ToLower(name), searchLower) ||
