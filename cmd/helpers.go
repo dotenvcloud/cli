@@ -89,7 +89,7 @@ func getAPIClient() (*dotenv.Client, error) {
 			}
 			
 			if err := refreshOAuthToken(am, account); err != nil {
-				return nil, fmt.Errorf("Failed to refresh token. Please login again with 'dotenv login'")
+				return nil, fmt.Errorf("failed to refresh token: %w. Please login again with 'dotenv login'", err)
 			}
 			
 			// Reload account after refresh

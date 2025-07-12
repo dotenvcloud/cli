@@ -156,9 +156,17 @@ func (e *Explorer) formatNodeOption(node *hierarchy.Node) string {
 	switch node.Type {
 	case hierarchy.NodeTypeProject:
 		if proj, ok := node.Metadata.(*dotenv.Project); ok {
+			// Build label with encryption type indicator
+			keyIndicator := ""
+			if proj.EncryptionType == "client" {
+				keyIndicator = " [client-key]"
+			}
+			
 			if proj.TargetCount > 0 || proj.EnvironmentCount > 0 {
-				label = fmt.Sprintf("%s (%d targets, %d environments)",
-					node.Name, proj.TargetCount, proj.EnvironmentCount)
+				label = fmt.Sprintf("%s%s (%d targets, %d environments)",
+					node.Name, keyIndicator, proj.TargetCount, proj.EnvironmentCount)
+			} else {
+				label = node.Name + keyIndicator
 			}
 		}
 		prefix = "📁 "

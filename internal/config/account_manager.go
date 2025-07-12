@@ -108,7 +108,7 @@ func (am *AccountManager) CreateWithOAuth(name string, apiURL string, tokens Tok
 			RefreshToken:         tokens.RefreshToken,
 			TokenType:            tokens.TokenType,
 			ExpiresAt:            time.Now().Add(time.Duration(tokens.ExpiresIn) * time.Second),
-			RefreshTokenExpiresAt: time.Now().Add(30 * 24 * time.Hour), // 30 days default
+			RefreshTokenExpiresAt: time.Now().Add(60 * 24 * time.Hour), // 60 days default (matching web app)
 		},
 		"organizations": orgs,
 		"current_organization": selectedOrgULID,
@@ -231,7 +231,7 @@ func (am *AccountManager) RefreshToken(name string, tokens TokenResponse) error 
 			RefreshToken:         tokens.RefreshToken,
 			TokenType:            tokens.TokenType,
 			ExpiresAt:            time.Now().Add(time.Duration(tokens.ExpiresIn) * time.Second),
-			RefreshTokenExpiresAt: time.Now().Add(30 * 24 * time.Hour), // 30 days default
+			RefreshTokenExpiresAt: time.Now().Add(60 * 24 * time.Hour), // 60 days default (matching web app)
 		},
 	}
 	

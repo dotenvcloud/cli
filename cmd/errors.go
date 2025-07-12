@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	
 	"github.com/dotenv/cli/internal/config"
@@ -8,10 +9,18 @@ import (
 	dotenv "github.com/dotenv/sdk-go"
 )
 
+// ErrClientManagedKey indicates that the project uses client-managed encryption
+var ErrClientManagedKey = errors.New("project uses client-managed encryption")
+
 // HandleAPIError provides user-friendly error messages with suggested actions
 func HandleAPIError(err error, account *config.Account) error {
 	if err == nil {
 		return nil
+	}
+
+	// Check for client-managed key error
+	if errors.Is(err, ErrClientManagedKey) {
+		return fmt.Errorf("this project uses client-managed encryption. Please provide your encryption key using --client-key flag or you will be prompted for it")
 	}
 
 	// Check for specific error types
@@ -122,6 +131,13 @@ func ShowErrorWithHelp(err error) {
 	case contains(err.Error(), "session has expired"):
 		ui.PrintInfo("\nYour authentication has expired. Please run:")
 		ui.PrintInfo("  dotenv login")
+		
+	case contains(err.Error(), "client-managed encryption"):
+		ui.PrintInfo("\nThis project uses client-managed encryption keys.")
+		ui.PrintInfo("To provide your key:")
+		ui.PrintInfo("1. Use the --client-key flag: dotenv pull <project> --client-key=path/to/key")
+		ui.PrintInfo("2. Or wait to be prompted for the key")
+		ui.PrintInfo("3. The key should be in base64, hex, or raw format")
 	}
 }
 

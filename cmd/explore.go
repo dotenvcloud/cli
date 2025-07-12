@@ -138,13 +138,28 @@ func runExplore(cmd *cobra.Command, args []string) error {
 		case interactive.ActionPull:
 			ui.PrintInfo("Running: dotenv pull %s", selectedPath)
 			// Exit explorer and run pull command
-			return runPull(cmd, []string{selectedPath})
+			err := runPull(cmd, []string{selectedPath})
+			if err != nil {
+				// Show error with helpful context
+				ShowErrorWithHelp(err)
+				// Continue exploring instead of exiting
+				continue
+			}
+			return nil
 			
 		case interactive.ActionPullLevelOnly:
 			ui.PrintInfo("Running: dotenv pull %s --level-only", selectedPath)
 			// Set the flag and run pull command
 			pullLevelOnly = true
-			return runPull(cmd, []string{selectedPath})
+			err := runPull(cmd, []string{selectedPath})
+			if err != nil {
+				// Show error with helpful context
+				ShowErrorWithHelp(err)
+				// Reset flag and continue exploring
+				pullLevelOnly = false
+				continue
+			}
+			return nil
 			
 		case interactive.ActionPush:
 			ui.PrintInfo("Running: dotenv push for %s", selectedPath)

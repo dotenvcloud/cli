@@ -241,7 +241,16 @@ func processHierarchicalSecrets(resp *dotenv.SecretsHierarchyResponse, merge boo
 		var err error
 		encKey, err = getEncryptionKey(clientKeyPath, projectSlug, client)
 		if err != nil {
-			return nil, err
+			// If this is a client-managed key project and no key was provided, prompt for it
+			if err == ErrClientManagedKey && clientKeyPath == "" {
+				ui.PrintInfo("This project uses client-managed encryption. Please provide your encryption key.")
+				encKey, err = promptForClientKey()
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				return nil, err
+			}
 		}
 	}
 
@@ -272,8 +281,13 @@ func getEncryptionKey(clientKeyPath string, projectSlug string, client *dotenv.C
 	}
 
 	// Get encryption key from server
-	encKeyResp, _, err := client.Encryption.GetEncryptionKey(context.Background(), projectSlug)
+	encKeyResp, resp, err := client.Encryption.GetEncryptionKey(context.Background(), projectSlug)
 	if err != nil {
+		// Check if it's a 400 error (likely client-managed key)
+		if resp != nil && resp.StatusCode == 400 {
+			return nil, ErrClientManagedKey
+		}
+		
 		// Provide specific error for encryption key failures
 		if dotenv.IsNotFound(err) {
 			return nil, fmt.Errorf("encryption key not found for project '%s'. The project may not have encryption enabled", projectSlug)
@@ -382,6 +396,25 @@ func parseSecretContent(content string, format string) (map[string]string, error
 	default:
 		return nil, fmt.Errorf("unsupported secret format '%s': expected 'env' or 'json'", format)
 	}
+}
+
+// promptForClientKey prompts the user to enter their encryption key
+func promptForClientKey() ([]byte, error) {
+	keyStr, err := ui.Password("Enter encryption key")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read encryption key: %w", err)
+	}
+	
+	if keyStr == "" {
+		return nil, fmt.Errorf("encryption key cannot be empty")
+	}
+	
+	encKey, err := key.ParseKey(keyStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid key format: %w", err)  
+	}
+	
+	return encKey, nil
 }
 
 func formatSecrets(secrets map[string]string, format string) (string, error) {
