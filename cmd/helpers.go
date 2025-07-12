@@ -81,11 +81,11 @@ func getAPIClient() (*dotenv.Client, error) {
 			// Try to refresh the token
 			configPath, err := config.ConfigPath()
 			if err != nil {
-				return nil, fmt.Errorf("failed to get config path: %w", err)
+				return nil, fmt.Errorf("failed to locate config directory for token refresh: %w", err)
 			}
 			am, err := config.NewAccountManager(configPath)
 			if err != nil {
-				return nil, fmt.Errorf("failed to create account manager for token refresh: %w", err)
+				return nil, fmt.Errorf("failed to initialize account manager at '%s': %w", configPath, err)
 			}
 			
 			if err := refreshOAuthToken(am, account); err != nil {
@@ -95,7 +95,7 @@ func getAPIClient() (*dotenv.Client, error) {
 			// Reload account after refresh
 			account, err = am.GetCurrent()
 			if err != nil {
-				return nil, fmt.Errorf("failed to reload account after token refresh: %w", err)
+				return nil, fmt.Errorf("failed to reload account '%s' after token refresh: %w", account.Name, err)
 			}
 		}
 		
@@ -104,7 +104,7 @@ func getAPIClient() (*dotenv.Client, error) {
 		// API key authentication
 		apiKey := account.GetToken()
 		if apiKey == "" {
-			return nil, fmt.Errorf("no API key found in account")
+			return nil, fmt.Errorf("no API key found in account '%s'", account.Name)
 		}
 		options = append(options, dotenv.WithAPIKey(apiKey))
 	}

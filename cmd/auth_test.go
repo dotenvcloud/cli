@@ -140,18 +140,50 @@ func TestAuthInfoCommand(t *testing.T) {
 				w.WriteHeader(tt.mockStatusCode)
 
 				if tt.mockStatusCode == http.StatusOK && tt.mockUser != nil {
-					response := dotenv.JSONAPIResponse{
-						Data: tt.mockUser,
-						Meta: map[string]interface{}{
-							"organizations": tt.mockOrganizations,
-						},
+					// Build the response in the format expected by the SDK
+					userResp := dotenv.UserResponse{}
+					userResp.Data.Type = "users"
+					userResp.Data.ID = tt.mockUser.ID
+					userResp.Data.Attributes.Name = tt.mockUser.Name
+					userResp.Data.Attributes.Email = tt.mockUser.Email
+					userResp.Data.Attributes.CreatedAt = tt.mockUser.CreatedAt
+					userResp.Data.Attributes.UpdatedAt = tt.mockUser.UpdatedAt
+					userResp.Data.Attributes.IsVerified = tt.mockUser.IsVerified
+					
+					// Add organizations to included
+					for _, org := range tt.mockOrganizations {
+						userResp.Included = append(userResp.Included, struct {
+							Type       string `json:"type"`
+							ID         string `json:"id"`
+							Attributes struct {
+								ULID string `json:"ulid"`
+								Name string `json:"name"`
+								Slug string `json:"slug"`
+								Role string `json:"role"`
+							} `json:"attributes"`
+						}{
+							Type: "organizations",
+							ID:   org.ID,
+							Attributes: struct {
+								ULID string `json:"ulid"`
+								Name string `json:"name"`
+								Slug string `json:"slug"`
+								Role string `json:"role"`
+							}{
+								ULID: org.ULID,
+								Name: org.Name,
+								Slug: org.Slug,
+								Role: org.Role,
+							},
+						})
 					}
-					json.NewEncoder(w).Encode(response)
+					
+					json.NewEncoder(w).Encode(userResp)
 				} else if tt.mockStatusCode >= 400 {
 					errorResp := dotenv.JSONAPIResponse{
 						Errors: []dotenv.JSONAPIError{
 							{
-								Status: tt.mockStatusCode,
+								Status: http.StatusText(tt.mockStatusCode),
 								Title:  http.StatusText(tt.mockStatusCode),
 								Detail: "Error occurred",
 							},
@@ -251,13 +283,45 @@ func TestAuthInfoCommand_WithAccount(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 
-		response := dotenv.JSONAPIResponse{
-			Data: mockUser,
-			Meta: map[string]interface{}{
-				"organizations": mockOrganizations,
-			},
+		// Build the response in the format expected by the SDK
+		userResp := dotenv.UserResponse{}
+		userResp.Data.Type = "users"
+		userResp.Data.ID = mockUser.ID
+		userResp.Data.Attributes.Name = mockUser.Name
+		userResp.Data.Attributes.Email = mockUser.Email
+		userResp.Data.Attributes.CreatedAt = mockUser.CreatedAt
+		userResp.Data.Attributes.UpdatedAt = mockUser.UpdatedAt
+		userResp.Data.Attributes.IsVerified = mockUser.IsVerified
+		
+		// Add organizations to included
+		for _, org := range mockOrganizations {
+			userResp.Included = append(userResp.Included, struct {
+				Type       string `json:"type"`
+				ID         string `json:"id"`
+				Attributes struct {
+					ULID string `json:"ulid"`
+					Name string `json:"name"`
+					Slug string `json:"slug"`
+					Role string `json:"role"`
+				} `json:"attributes"`
+			}{
+				Type: "organizations",
+				ID:   org.ID,
+				Attributes: struct {
+					ULID string `json:"ulid"`
+					Name string `json:"name"`
+					Slug string `json:"slug"`
+					Role string `json:"role"`
+				}{
+					ULID: org.ULID,
+					Name: org.Name,
+					Slug: org.Slug,
+					Role: org.Role,
+				},
+			})
 		}
-		json.NewEncoder(w).Encode(response)
+		
+		json.NewEncoder(w).Encode(userResp)
 	}))
 	defer server.Close()
 

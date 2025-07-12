@@ -40,30 +40,41 @@ func GenerateKeyHex() (string, error) {
 	return hex.EncodeToString(key), nil
 }
 
-// ParseKey parses a key from various formats
+// ParseKey parses a key from various formats and applies padding
 func ParseKey(keyStr string) ([]byte, error) {
 	// Try base64 first
-	if key, err := base64.StdEncoding.DecodeString(keyStr); err == nil {
-		if len(key) == RequiredKeySize {
-			return key, nil
-		}
+	if key, err := base64.StdEncoding.DecodeString(keyStr); err == nil && len(key) > 0 {
+		return padKey(key), nil
 	}
 
-	// Try hex - must be 64 characters for 32 bytes
-	if len(keyStr) == RequiredKeySize*2 {
-		if key, err := hex.DecodeString(keyStr); err == nil {
-			if len(key) == RequiredKeySize {
-				return key, nil
-			}
-		}
+	// Try hex
+	if key, err := hex.DecodeString(keyStr); err == nil && len(key) > 0 {
+		return padKey(key), nil
 	}
 
-	// If it's exactly 32 bytes, use as-is
-	if len(keyStr) == RequiredKeySize {
-		return []byte(keyStr), nil
+	// Otherwise use the raw string as bytes
+	if len(keyStr) > 0 {
+		return padKey([]byte(keyStr)), nil
 	}
 
-	return nil, fmt.Errorf("invalid key format or length")
+	return nil, fmt.Errorf("invalid key: empty string")
+}
+
+// padKey pads or truncates a key to exactly 32 bytes for AES-256
+// This matches the web application's key padding behavior
+func padKey(key []byte) []byte {
+	if len(key) >= RequiredKeySize {
+		// Key is 32 bytes or longer, truncate to 32 bytes
+		return key[:RequiredKeySize]
+	}
+	
+	// Key is shorter than 32 bytes, pad with '0' bytes
+	padded := make([]byte, RequiredKeySize)
+	copy(padded, key)
+	for i := len(key); i < RequiredKeySize; i++ {
+		padded[i] = '0'
+	}
+	return padded
 }
 
 // GenerateSalt generates a random salt for key derivation

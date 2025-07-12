@@ -118,17 +118,17 @@ func runPush(cmd *cobra.Command, args []string) error {
 			targetSlug = parts[1]
 			environmentSlug = parts[2]
 		default:
-			return fmt.Errorf("invalid path format")
+			return fmt.Errorf("invalid path format: use project[/target[/environment]]")
 		}
 	} else {
 		// Multi-file mode
 		if len(parts) != 1 {
-			return fmt.Errorf("in multi-file mode, specify only the project")
+			return fmt.Errorf("in multi-file mode, specify only the project name (got: %s)", path)
 		}
 		projectSlug = parts[0]
 
 		if pushProject == "" && pushTarget == "" && pushEnvironment == "" {
-			return fmt.Errorf("specify at least one file with --project, --target, or --env")
+			return fmt.Errorf("no files specified: use --project, --target, or --env flags to specify .env files")
 		}
 	}
 
@@ -142,9 +142,9 @@ func runPush(cmd *cobra.Command, args []string) error {
 	project, resp, err := client.Projects.Get(context.Background(), projectSlug)
 	if err != nil {
 		if resp != nil && resp.StatusCode == 404 {
-			return fmt.Errorf("project not found: %s", projectSlug)
+			return fmt.Errorf("project '%s' not found in organization", projectSlug)
 		}
-		return fmt.Errorf("failed to get project: %w", err)
+		return fmt.Errorf("failed to verify project '%s' exists: %w", projectSlug, err)
 	}
 
 	// Get encryption key if encrypting

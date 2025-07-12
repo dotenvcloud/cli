@@ -89,7 +89,7 @@ func TestAPIKeysListCommand(t *testing.T) {
 					errorResp := dotenv.JSONAPIResponse{
 						Errors: []dotenv.JSONAPIError{
 							{
-								Status: tt.mockStatusCode,
+								Status: http.StatusText(tt.mockStatusCode),
 								Title:  http.StatusText(tt.mockStatusCode),
 								Detail: "Error occurred",
 							},
@@ -216,7 +216,7 @@ func TestAPIKeysCreateCommand(t *testing.T) {
 					errorResp := dotenv.JSONAPIResponse{
 						Errors: []dotenv.JSONAPIError{
 							{
-								Status: tt.mockStatusCode,
+								Status: http.StatusText(tt.mockStatusCode),
 								Title:  http.StatusText(tt.mockStatusCode),
 								Detail: "Error occurred",
 							},

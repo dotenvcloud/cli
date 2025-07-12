@@ -15,13 +15,14 @@ import (
 type Action string
 
 const (
-	ActionSelect Action = "select"
-	ActionCopy   Action = "copy"
-	ActionPull   Action = "pull"
-	ActionPush   Action = "push"
-	ActionView   Action = "view"
-	ActionBack   Action = "back"
-	ActionExit   Action = "exit"
+	ActionSelect       Action = "select"
+	ActionCopy         Action = "copy"
+	ActionPull         Action = "pull"
+	ActionPullLevelOnly Action = "pull-level-only"
+	ActionPush         Action = "push"
+	ActionView         Action = "view"
+	ActionBack         Action = "back"
+	ActionExit         Action = "exit"
 )
 
 // ErrExit is returned when user wants to exit
@@ -101,9 +102,12 @@ func (e *Explorer) buildOptions() []string {
 	if e.current.Type == hierarchy.NodeTypeEnvironment || 
 	   (len(e.current.Children) == 0 && e.current.Type != hierarchy.NodeTypeOrganization) {
 		// This is a leaf node, show actions
+		levelName := string(e.current.Type)
+		
 		options = append(options,
 			"📋 Copy path to clipboard",
-			"⬇️  Pull secrets",
+			fmt.Sprintf("⬇️  Pull %s secrets only", levelName),
+			"⬇️  Pull all secrets (merged)",
 			"⬆️  Push secrets",
 			"👁  View details",
 			"✓ Select and exit",
@@ -115,12 +119,22 @@ func (e *Explorer) buildOptions() []string {
 			options = append(options, label)
 		}
 		
-		// If this is a project or target, also allow actions
+		// If this is a project or target, also allow actions including pull
 		if e.current.Type == hierarchy.NodeTypeProject || e.current.Type == hierarchy.NodeTypeTarget {
 			options = append(options, "")  // Separator
 			options = append(options, "── Actions for "+e.current.Name+" ──")
+			
+			// Customize pull option text based on level
+			levelName := "project"
+			if e.current.Type == hierarchy.NodeTypeTarget {
+				levelName = "target"
+			}
+			
 			options = append(options,
 				"📋 Copy path to clipboard",
+				fmt.Sprintf("⬇️  Pull %s secrets only", levelName),
+				"⬇️  Pull all secrets (merged)",
+				"⬆️  Push secrets",
 				"✓ Select and exit",
 			)
 		}
@@ -208,7 +222,10 @@ func (e *Explorer) handleSelection(selected string) (Action, error) {
 	case strings.HasPrefix(selected, "📋 Copy"):
 		return ActionCopy, nil
 		
-	case strings.HasPrefix(selected, "⬇️  Pull"):
+	case strings.Contains(selected, "secrets only"):
+		return ActionPullLevelOnly, nil
+		
+	case strings.Contains(selected, "all secrets (merged)"):
 		return ActionPull, nil
 		
 	case strings.HasPrefix(selected, "⬆️  Push"):

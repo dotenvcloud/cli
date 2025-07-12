@@ -77,7 +77,7 @@ func init() {
 
 func runList(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("specify a resource to list")
+		return fmt.Errorf("specify a resource to list: accounts, organizations, projects, targets, environments, or all")
 	}
 
 	// Handle deprecated --json flag
@@ -108,17 +108,17 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	case "targets":
 		if len(args) < 2 {
-			return fmt.Errorf("specify project: dotenv list targets <project>")
+			return fmt.Errorf("project name required: use 'dotenv list targets <project>'")
 		}
 		return listTargets(cmd, args[1])
 
 	case "environments":
 		if len(args) < 2 {
-			return fmt.Errorf("specify project/target: dotenv list environments <project>/<target>")
+			return fmt.Errorf("project and target required: use 'dotenv list environments <project>/<target>'")
 		}
 		parts := strings.Split(args[1], "/")
 		if len(parts) != 2 {
-			return fmt.Errorf("invalid format: use project/target")
+			return fmt.Errorf("invalid format '%s': expected 'project/target'", args[1])
 		}
 		return listEnvironments(cmd, parts[0], parts[1])
 		
@@ -126,7 +126,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		return listAll(cmd)
 
 	default:
-		return fmt.Errorf("unknown resource: %s", resource)
+		return fmt.Errorf("unknown resource '%s': valid resources are accounts, organizations, projects, targets, environments, all, text", resource)
 	}
 }
 

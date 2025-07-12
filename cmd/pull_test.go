@@ -3,14 +3,13 @@ package cmd_test
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -32,46 +31,65 @@ func TestPullCommand(t *testing.T) {
 			name: "successful pull",
 			args: []string{"test-project"},
 			serverResponse: map[string]interface{}{
-				"data": []interface{}{
-					map[string]interface{}{
-						"type": "secrets",
-						"attributes": map[string]interface{}{
-							"key":   "DATABASE_URL",
-							"value": "postgres://localhost/test",
-						},
-					},
-					map[string]interface{}{
-						"type": "secrets",
-						"attributes": map[string]interface{}{
-							"key":   "API_KEY",
-							"value": "test-api-key",
+				"data": map[string]interface{}{
+					"type": "secrets",
+					"attributes": map[string]interface{}{
+						"encrypted": false,
+						"format": "env",
+						"levels": map[string]interface{}{
+							"project": map[string]interface{}{
+								"encrypted": false,
+								"content": "DATABASE_URL=postgres://localhost/test\nAPI_KEY=test-api-key",
+								"source": "project",
+							},
 						},
 					},
 				},
+				"meta": map[string]interface{}{
+					"hierarchy": map[string]interface{}{
+						"project": "test-project",
+					},
+				},
 			},
-			wantOutput: "DATABASE_URL=postgres://localhost/test\nAPI_KEY=test-api-key",
+			wantOutput: "API_KEY=test-api-key\nDATABASE_URL=postgres://localhost/test",
 		},
 		{
-			name: "pull with environment filter",
-			args: []string{"test-project", "--environment", "production"},
+			name: "pull project with target",
+			args: []string{"test-project/production"},
 			serverResponse: map[string]interface{}{
-				"data": []interface{}{
-					map[string]interface{}{
-						"type": "secrets",
-						"attributes": map[string]interface{}{
-							"key":   "PROD_VAR",
-							"value": "prod-value",
+				"data": map[string]interface{}{
+					"type": "secrets",
+					"attributes": map[string]interface{}{
+						"encrypted": false,
+						"format": "env",
+						"levels": map[string]interface{}{
+							"project": map[string]interface{}{
+								"encrypted": false,
+								"content": "DATABASE_URL=postgres://localhost/test",
+								"source": "project",
+							},
+							"target": map[string]interface{}{
+								"encrypted": false,
+								"content": "PROD_VAR=prod-value",
+								"source": "target",
+							},
 						},
 					},
 				},
+				"meta": map[string]interface{}{
+					"hierarchy": map[string]interface{}{
+						"project": "test-project",
+						"target": "production",
+					},
+				},
 			},
-			wantOutput: "PROD_VAR=prod-value",
+			wantOutput: "DATABASE_URL=postgres://localhost/test\nPROD_VAR=prod-value",
 		},
 		{
 			name:          "missing project",
 			args:          []string{},
 			wantError:     true,
-			errorContains: "project slug required",
+			errorContains: "accepts 1 arg(s), received 0",
 		},
 		{
 			name: "project not found",
@@ -91,6 +109,23 @@ func TestPullCommand(t *testing.T) {
 
 			// Create mock server
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Mock encryption key endpoint
+				if strings.Contains(r.URL.Path, "/encryption-key") {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusOK)
+					response := map[string]interface{}{
+						"data": map[string]interface{}{
+							"type": "encryption-keys",
+							"attributes": map[string]interface{}{
+								"key": "YmFzZTY0ZW5jb2RlZDMyYnl0ZWVuY3J5cHRpb25rZXk=", // base64 encoded 32 byte key
+							},
+						},
+					}
+					json.NewEncoder(w).Encode(response)
+					return
+				}
+				
+				// Mock secrets endpoint
 				if tt.serverResponse != nil {
 					if _, ok := tt.serverResponse["error"]; ok {
 						w.WriteHeader(http.StatusNotFound)
@@ -104,15 +139,23 @@ func TestPullCommand(t *testing.T) {
 			}))
 			defer server.Close()
 
-			// Set up config
+			// Set up config with account system
 			config := map[string]interface{}{
 				"version":         "1.0",
-				"current_context": "test",
-				"contexts": map[string]interface{}{
-					"test": map[string]interface{}{
-						"api_url":      server.URL,
-						"api_key":      tc.APIKey,
-						"organization": "test-org",
+				"current_account": "test-account",
+				"accounts": map[string]interface{}{
+					"test-account": map[string]interface{}{
+						"name":      "Test Account",
+						"api_url":   server.URL,
+						"auth_type": "api_key",
+						"auth": map[string]interface{}{
+							"api_key": tc.APIKey,
+						},
+						"organization": map[string]interface{}{
+							"ulid": "01JK3K3C89D4E0YYPKR4AEZ33Q",
+							"name": "Test Organization",
+							"slug": "test-org",
+						},
 					},
 				},
 			}
@@ -196,15 +239,23 @@ func TestPullCommand_Formats(t *testing.T) {
 			}))
 			defer server.Close()
 
-			// Set up config
+			// Set up config with account system
 			config := map[string]interface{}{
 				"version":         "1.0",
-				"current_context": "test",
-				"contexts": map[string]interface{}{
-					"test": map[string]interface{}{
-						"api_url":      server.URL,
-						"api_key":      tc.APIKey,
-						"organization": "test-org",
+				"current_account": "test-account",
+				"accounts": map[string]interface{}{
+					"test-account": map[string]interface{}{
+						"name":      "Test Account",
+						"api_url":   server.URL,
+						"auth_type": "api_key",
+						"auth": map[string]interface{}{
+							"api_key": tc.APIKey,
+						},
+						"organization": map[string]interface{}{
+							"ulid": "01JK3K3C89D4E0YYPKR4AEZ33Q",
+							"name": "Test Organization",
+							"slug": "test-org",
+						},
 					},
 				},
 			}
