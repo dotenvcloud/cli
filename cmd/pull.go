@@ -227,6 +227,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 		}
 	} else if !pullQuiet {
 		// Print to stdout
+		fmt.Println() // Add blank line for better readability
 		fmt.Print(output)
 	}
 
