@@ -7,8 +7,9 @@ import (
 
 	"github.com/spf13/viper"
 
-	"github.com/dotenv/cli/internal/auth/oauth"
+	"github.com/dotenv/cli/internal/auth"
 	"github.com/dotenv/cli/internal/config"
+	"github.com/dotenv/cli/internal/errors"
 	"github.com/dotenv/cli/internal/ui"
 	dotenv "github.com/dotenv/sdk-go"
 )
@@ -20,7 +21,7 @@ func getAPIClient() (*dotenv.Client, error) {
 
 	// If not set via flag, check environment variable
 	if apiKey == "" {
-		apiKey = os.Getenv("DOTENV_API_KEY")
+		apiKey = os.Getenv(config.EnvAPIKey)
 	}
 
 	// If API key is provided, bypass account system (for CI/CD)
@@ -30,19 +31,16 @@ func getAPIClient() (*dotenv.Client, error) {
 		}
 
 		// Check for custom API URL
-		apiURL := os.Getenv("DOTENV_API_URL")
-		if apiURL == "" {
-			apiURL = "https://api.dotenv.cloud"
-		}
+		apiURL := config.GetAPIURL("")
 		options = append(options, dotenv.WithBaseURL(apiURL))
 
 		// Check for organization from environment
-		if org := os.Getenv("DOTENV_ORGANIZATION"); org != "" {
+		if org := os.Getenv(config.EnvOrganization); org != "" {
 			options = append(options, dotenv.WithOrganization(org))
 		}
 
 		// Check for TLS skip verify (development mode)
-		if os.Getenv("DOTENV_TLS_SKIP_VERIFY") != "" {
+		if config.ShouldSkipTLSVerify() {
 			options = append(options, dotenv.WithInsecureSkipVerify())
 		}
 
@@ -68,34 +66,35 @@ func getAPIClient() (*dotenv.Client, error) {
 	options = append(options, dotenv.WithOrganization(orgULID))
 
 	// Check for TLS skip verify (development mode)
-	if os.Getenv("DOTENV_TLS_SKIP_VERIFY") != "" {
+	if config.ShouldSkipTLSVerify() {
 		options = append(options, dotenv.WithInsecureSkipVerify())
 	}
 
 	// Handle authentication based on account type
 	if account.IsOAuth() {
-		// Check if token is expired
+		// Use token manager to handle refresh
+		configPath, err := config.ConfigPath()
+		if err != nil {
+			return nil, fmt.Errorf("failed to locate config directory: %w", err)
+		}
+		am, err := config.NewAccountManager(configPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize account manager: %w", err)
+		}
+		
+		tokenManager := auth.NewTokenManager(am)
+		if err := tokenManager.RefreshTokenIfNeeded(context.Background(), account); err != nil {
+			if _, ok := err.(*errors.TokenExpiredError); ok {
+				ui.PrintInfo("OAuth token expired. Attempting to refresh...")
+			}
+			return nil, fmt.Errorf("authentication failed: %w. Please login again with 'dotenv login'", err)
+		}
+
+		// Reload account after potential refresh
 		if account.IsTokenExpired() {
-			ui.PrintInfo("OAuth token expired. Attempting to refresh...")
-
-			// Try to refresh the token
-			configPath, err := config.ConfigPath()
-			if err != nil {
-				return nil, fmt.Errorf("failed to locate config directory for token refresh: %w", err)
-			}
-			am, err := config.NewAccountManager(configPath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to initialize account manager at '%s': %w", configPath, err)
-			}
-
-			if err := refreshOAuthToken(am, account); err != nil {
-				return nil, fmt.Errorf("failed to refresh token: %w. Please login again with 'dotenv login'", err)
-			}
-
-			// Reload account after refresh
 			account, err = am.GetCurrent()
 			if err != nil {
-				return nil, fmt.Errorf("failed to reload account '%s' after token refresh: %w", account.Name, err)
+				return nil, fmt.Errorf("failed to reload account after token refresh: %w", err)
 			}
 		}
 
@@ -104,7 +103,10 @@ func getAPIClient() (*dotenv.Client, error) {
 		// API key authentication
 		apiKey := account.GetToken()
 		if apiKey == "" {
-			return nil, fmt.Errorf("no API key found in account '%s'", account.Name)
+			return nil, &errors.ConfigurationError{
+				Field:   "api_key",
+				Message: fmt.Sprintf("no API key found in account '%s'", account.Name),
+			}
 		}
 		options = append(options, dotenv.WithAPIKey(apiKey))
 	}
@@ -112,65 +114,42 @@ func getAPIClient() (*dotenv.Client, error) {
 	// Create client
 	client := dotenv.NewClient(options...)
 
-	// Check if organization data needs refresh
-	if account.NeedsOrganizationRefresh() {
-		// Create account manager
-		configPath, err := config.ConfigPath()
-		if err == nil {
-			am, err := config.NewAccountManager(configPath)
-			if err == nil {
-				// Attempt to refresh organizations (non-blocking)
-				go func() {
-					ctx := context.Background()
-					if account.IsOAuth() {
-						orgs, _, err := client.Organizations.List(ctx, nil)
-						if err == nil && len(orgs) > 0 {
-							orgInfos := make([]config.OrgInfo, len(orgs))
-							for i, org := range orgs {
-								// Use ID if ULID is empty (API returns ULID in ID field)
-								ulid := org.ULID
-								if ulid == "" && org.ID != "" {
-									ulid = org.ID
-								}
-								orgInfos[i] = config.OrgInfo{
-									ULID: ulid,
-									Name: org.Name,
-								}
-							}
-							orgRemoved, _ := am.RefreshOrganizations(account.Name, orgInfos)
-							if orgRemoved {
-								// Note: We can't show the error here since this is in a goroutine
-								// The error will be shown on the next command that needs the org
-							}
-						}
-					} else if account.Organization != nil {
-						// For API key accounts, fetch the current org details
-						orgs, _, err := client.Organizations.List(ctx, nil)
-						if err == nil && len(orgs) > 0 {
-							// Find the current org by ULID
-							for _, org := range orgs {
-								// Use ID if ULID is empty (API returns ULID in ID field)
-								ulid := org.ULID
-								if ulid == "" && org.ID != "" {
-									ulid = org.ID
-								}
-								if ulid == account.Organization.ULID {
-									orgInfo := config.OrgInfo{
-										ULID: ulid,
-										Name: org.Name,
-									}
-									_, _ = am.RefreshOrganizations(account.Name, []config.OrgInfo{orgInfo})
-									break
-								}
-							}
-						}
-					}
-				}()
-			}
-		}
+	return client, nil
+}
+
+// RefreshOrganizationsIfNeeded checks if organizations need refresh and refreshes them
+// This should be called explicitly when needed, not in a background goroutine
+func RefreshOrganizationsIfNeeded(ctx context.Context) error {
+	account, err := getCurrentAccount()
+	if err != nil {
+		return err
 	}
 
-	return client, nil
+	if !account.NeedsOrganizationRefresh() {
+		return nil
+	}
+
+	configPath, err := config.ConfigPath()
+	if err != nil {
+		return fmt.Errorf("failed to locate config directory: %w", err)
+	}
+
+	am, err := config.NewAccountManager(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to initialize account manager: %w", err)
+	}
+
+	tokenManager := auth.NewTokenManager(am)
+	orgRemoved, err := tokenManager.RefreshOrganizationsIfNeeded(ctx, account)
+	if err != nil {
+		return fmt.Errorf("failed to refresh organizations: %w", err)
+	}
+
+	if orgRemoved {
+		ui.PrintWarning("Current organization no longer exists. Please select a new one with 'dotenv org use'")
+	}
+
+	return nil
 }
 
 // getCurrentAccount returns the current account
@@ -226,46 +205,6 @@ func ensureAuthenticated() error {
 	return err
 }
 
-// refreshOAuthToken attempts to refresh an expired OAuth token
-func refreshOAuthToken(am *config.AccountManager, account *config.Account) error {
-	if !account.IsOAuth() {
-		return fmt.Errorf("not an OAuth account")
-	}
-
-	if account.Auth.RefreshToken == "" {
-		return fmt.Errorf("no refresh token available")
-	}
-
-	// Create SDK client without authentication (OAuth token endpoint doesn't require auth)
-	client := dotenv.NewClient(
-		dotenv.WithBaseURL(account.APIURL),
-	)
-
-	// Check for TLS skip verify (development mode)
-	if os.Getenv("DOTENV_TLS_SKIP_VERIFY") != "" {
-		client = dotenv.NewClient(
-			dotenv.WithBaseURL(account.APIURL),
-			dotenv.WithInsecureSkipVerify(),
-		)
-	}
-
-	// Attempt to refresh the token using SDK
-	sdkTokenResp, _, err := client.OAuth.RefreshToken(context.Background(), account.Auth.RefreshToken, oauth.ClientID)
-	if err != nil {
-		return fmt.Errorf("token refresh failed: %w", err)
-	}
-
-	// Update the stored tokens using AccountManager
-	tokenResp := config.TokenResponse{
-		AccessToken:  sdkTokenResp.AccessToken,
-		RefreshToken: sdkTokenResp.RefreshToken,
-		TokenType:    sdkTokenResp.TokenType,
-		ExpiresIn:    sdkTokenResp.ExpiresIn,
-	}
-
-	// Save the new tokens
-	return am.RefreshToken(account.Name, tokenResp)
-}
 
 // getAPIClientWithoutOrgContext returns a configured API client without organization context
 // This is useful for operations like listing organizations where we don't need/have an org selected
@@ -275,7 +214,7 @@ func getAPIClientWithoutOrgContext() (*dotenv.Client, error) {
 
 	// If not set via flag, check environment variable
 	if apiKey == "" {
-		apiKey = os.Getenv("DOTENV_API_KEY")
+		apiKey = os.Getenv(config.EnvAPIKey)
 	}
 
 	// If API key is provided, bypass account system (for CI/CD)
@@ -285,14 +224,11 @@ func getAPIClientWithoutOrgContext() (*dotenv.Client, error) {
 		}
 
 		// Check for custom API URL
-		apiURL := os.Getenv("DOTENV_API_URL")
-		if apiURL == "" {
-			apiURL = "https://api.dotenv.cloud"
-		}
+		apiURL := config.GetAPIURL("")
 		options = append(options, dotenv.WithBaseURL(apiURL))
 
 		// Check for TLS skip verify (development mode)
-		if os.Getenv("DOTENV_TLS_SKIP_VERIFY") != "" {
+		if config.ShouldSkipTLSVerify() {
 			options = append(options, dotenv.WithInsecureSkipVerify())
 		}
 
@@ -311,34 +247,35 @@ func getAPIClientWithoutOrgContext() (*dotenv.Client, error) {
 	}
 
 	// Check for TLS skip verify (development mode)
-	if os.Getenv("DOTENV_TLS_SKIP_VERIFY") != "" {
+	if config.ShouldSkipTLSVerify() {
 		options = append(options, dotenv.WithInsecureSkipVerify())
-	}
+		}
 
 	// Handle authentication based on account type
 	if account.IsOAuth() {
-		// Check if token is expired
+		// Use token manager to handle refresh
+		configPath, err := config.ConfigPath()
+		if err != nil {
+			return nil, fmt.Errorf("failed to locate config directory: %w", err)
+		}
+		am, err := config.NewAccountManager(configPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize account manager: %w", err)
+		}
+		
+		tokenManager := auth.NewTokenManager(am)
+		if err := tokenManager.RefreshTokenIfNeeded(context.Background(), account); err != nil {
+			if _, ok := err.(*errors.TokenExpiredError); ok {
+				ui.PrintInfo("OAuth token expired. Attempting to refresh...")
+			}
+			return nil, fmt.Errorf("authentication failed: %w. Please login again with 'dotenv login'", err)
+		}
+
+		// Reload account after potential refresh
 		if account.IsTokenExpired() {
-			ui.PrintInfo("OAuth token expired. Attempting to refresh...")
-
-			// Try to refresh the token
-			configPath, err := config.ConfigPath()
-			if err != nil {
-				return nil, fmt.Errorf("failed to locate config directory for token refresh: %w", err)
-			}
-			am, err := config.NewAccountManager(configPath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to initialize account manager at '%s': %w", configPath, err)
-			}
-
-			if err := refreshOAuthToken(am, account); err != nil {
-				return nil, fmt.Errorf("failed to refresh token: %w. Please login again with 'dotenv login'", err)
-			}
-
-			// Reload account after refresh
 			account, err = am.GetCurrent()
 			if err != nil {
-				return nil, fmt.Errorf("failed to reload account '%s' after token refresh: %w", account.Name, err)
+				return nil, fmt.Errorf("failed to reload account after token refresh: %w", err)
 			}
 		}
 
@@ -347,10 +284,13 @@ func getAPIClientWithoutOrgContext() (*dotenv.Client, error) {
 		// API key authentication
 		apiKey := account.GetToken()
 		if apiKey == "" {
-			return nil, fmt.Errorf("no API key found in account '%s'", account.Name)
+			return nil, &errors.ConfigurationError{
+				Field:   "api_key",
+				Message: fmt.Sprintf("no API key found in account '%s'", account.Name),
+			}
 		}
 		options = append(options, dotenv.WithAPIKey(apiKey))
-	}
+		}
 
 	// Create client
 	return dotenv.NewClient(options...), nil

@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/dotenv/cli/internal/config"
+	"github.com/dotenv/cli/internal/constants"
 	"github.com/dotenv/cli/internal/telemetry"
 )
 
@@ -205,7 +206,7 @@ func initTelemetry() {
 	}
 
 	// Get API URL
-	apiURL := "https://api.dotenv.com"
+	apiURL := constants.DefaultAPIURL
 	if cfg.CurrentAccount != "" {
 		if acct, ok := cfg.Accounts[cfg.CurrentAccount]; ok && acct.APIURL != "" {
 			apiURL = acct.APIURL

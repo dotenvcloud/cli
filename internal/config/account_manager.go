@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"time"
+	
+	"github.com/dotenv/cli/internal/constants"
 )
 
 // AccountManager manages accounts in the configuration
@@ -45,12 +47,12 @@ func (am *AccountManager) Create(name string, apiURL string, authType string) er
 		return fmt.Errorf("account name cannot be empty")
 	}
 
-	if authType != "oauth" && authType != "api_key" {
+	if authType != constants.AuthTypeOAuth && authType != constants.AuthTypeAPIKey {
 		return fmt.Errorf("invalid auth type: %s (must be 'oauth' or 'api_key')", authType)
 	}
 
 	if apiURL == "" {
-		apiURL = "https://api.dotenv.cloud"
+		apiURL = constants.LegacyAPIURL
 	}
 
 	// Check if account already exists
@@ -79,7 +81,7 @@ func (am *AccountManager) Create(name string, apiURL string, authType string) er
 
 // CreateWithAPIKey creates a new API key account
 func (am *AccountManager) CreateWithAPIKey(name string, apiURL string, apiKey string, orgInfo *OrgInfo) error {
-	if err := am.Create(name, apiURL, "api_key"); err != nil {
+	if err := am.Create(name, apiURL, constants.AuthTypeAPIKey); err != nil {
 		return err
 	}
 
@@ -97,7 +99,7 @@ func (am *AccountManager) CreateWithAPIKey(name string, apiURL string, apiKey st
 
 // CreateWithOAuth creates a new OAuth account
 func (am *AccountManager) CreateWithOAuth(name string, apiURL string, tokens TokenResponse, orgs []OrgInfo, selectedOrgULID string) error {
-	if err := am.Create(name, apiURL, "oauth"); err != nil {
+	if err := am.Create(name, apiURL, constants.AuthTypeOAuth); err != nil {
 		return err
 	}
 

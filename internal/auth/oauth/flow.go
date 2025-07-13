@@ -10,14 +10,11 @@ import (
 	"github.com/pkg/browser"
 
 	"github.com/dotenv/cli/internal/config"
+	"github.com/dotenv/cli/internal/constants"
 	"github.com/dotenv/cli/internal/ui"
 	dotenv "github.com/dotenv/sdk-go"
 )
 
-const (
-	// OAuth2 client ID for the CLI
-	ClientID = "dotenv-cli"
-)
 
 // AuthFlow handles the complete OAuth2 authentication flow
 type AuthFlow struct {
@@ -42,7 +39,7 @@ type Organization struct {
 // Run executes the OAuth2 authentication flow
 func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 	// Create OAuth2 client
-	client := NewOAuth2Client(ClientID, af.BaseURL)
+	client := NewOAuth2Client(constants.OAuthClientID, af.BaseURL)
 
 	// Generate PKCE challenge
 	pkce, err := GeneratePKCEChallenge()
@@ -296,7 +293,7 @@ func (af *AuthFlow) fetchUserAndOrganizations(accessToken string) (userInfo stru
 	// For development, use API subdomain for API calls
 	apiURL := af.BaseURL
 	if strings.Contains(af.BaseURL, "dotenv.test") {
-		apiURL = "https://api.dotenv.test"
+		apiURL = constants.TestAPIURL
 	}
 
 	// Create API client with the OAuth token

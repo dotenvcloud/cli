@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/dotenv/cli/internal/constants"
 )
 
 // Account represents an authentication account (OAuth or API Key)
@@ -36,12 +38,12 @@ type OrgInfo struct {
 
 // IsOAuth returns true if this is an OAuth account
 func (a *Account) IsOAuth() bool {
-	return a.AuthType == "oauth"
+	return a.AuthType == constants.AuthTypeOAuth
 }
 
 // IsAPIKey returns true if this is an API key account
 func (a *Account) IsAPIKey() bool {
-	return a.AuthType == "api_key"
+	return a.AuthType == constants.AuthTypeAPIKey
 }
 
 // GetToken returns the appropriate authentication token
@@ -160,8 +162,8 @@ func (a *Account) NeedsOrganizationRefresh() bool {
 		return true
 	}
 
-	// Refresh if older than 24 hours
-	return time.Since(*fetchedAt) > 24*time.Hour
+	// Refresh if older than configured interval
+	return time.Since(*fetchedAt) > time.Duration(constants.OrganizationRefreshHours)*time.Hour
 }
 
 // ResolveOrganization finds an organization by ULID

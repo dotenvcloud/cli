@@ -10,8 +10,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dotenv/cli/internal/auth"
-	"github.com/dotenv/cli/internal/auth/oauth"
 	"github.com/dotenv/cli/internal/config"
+	"github.com/dotenv/cli/internal/constants"
 	"github.com/dotenv/cli/internal/ui"
 	"github.com/dotenv/cli/internal/utils"
 	dotenv "github.com/dotenv/sdk-go"
@@ -102,7 +102,7 @@ func getAPIURL() string {
 	if apiURL := os.Getenv("DOTENV_API_URL"); apiURL != "" {
 		return apiURL
 	}
-	return "https://api.dotenv.cloud"
+	return constants.LegacyAPIURL
 }
 func runAccountList(cmd *cobra.Command, args []string) error {
 	configPath, err := config.ConfigPath()
@@ -143,7 +143,7 @@ func runAccountList(cmd *cobra.Command, args []string) error {
 
 		authType := account.AuthType
 		if authType == "" {
-			authType = "api_key"
+			authType = constants.AuthTypeAPIKey
 		}
 
 		orgInfo := ""
@@ -395,15 +395,15 @@ func runAccountRefresh(cmd *cobra.Command, args []string) error {
 	)
 
 	// Check for TLS skip verify (development mode)
-	if os.Getenv("DOTENV_TLS_SKIP_VERIFY") != "" {
+	if config.ShouldSkipTLSVerify() {
 		client = dotenv.NewClient(
 			dotenv.WithBaseURL(account.APIURL),
 			dotenv.WithInsecureSkipVerify(),
 		)
-	}
+		}
 
 	// Refresh token using SDK
-	sdkTokenResp, _, err := client.OAuth.RefreshToken(cmd.Context(), account.Auth.RefreshToken, oauth.ClientID)
+	sdkTokenResp, _, err := client.OAuth.RefreshToken(cmd.Context(), account.Auth.RefreshToken, constants.OAuthClientID)
 	if err != nil {
 		return fmt.Errorf("failed to refresh token: %w", err)
 	}

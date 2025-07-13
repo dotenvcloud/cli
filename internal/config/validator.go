@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	
+	"github.com/dotenv/cli/internal/constants"
 )
 
 // Validator validates configuration values
@@ -132,12 +134,12 @@ func (v *Validator) ValidateConfig(config *Config) error {
 		}
 
 		// Validate account based on type
-		if account.AuthType == "oauth" {
+		if account.AuthType == constants.AuthTypeOAuth {
 			// OAuth accounts must have organizations
 			if len(account.Organizations) == 0 {
 				return fmt.Errorf("account '%s': OAuth account has no organizations", name)
 			}
-		} else if account.AuthType == "api_key" {
+		} else if account.AuthType == constants.AuthTypeAPIKey {
 			// API key accounts must have organization info
 			if account.Organization == nil {
 				return fmt.Errorf("account '%s': API key account missing organization info", name)

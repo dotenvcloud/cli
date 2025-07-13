@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/dotenv/cli/internal/config/crypto"
+	"github.com/dotenv/cli/internal/constants"
 	"gopkg.in/yaml.v3"
 )
 
@@ -139,18 +140,18 @@ func (l *Loader) validate(config *Config) error {
 	// Validate accounts
 	for name, account := range config.Accounts {
 		// Validate auth type
-		if account.AuthType != "oauth" && account.AuthType != "api_key" {
+		if account.AuthType != constants.AuthTypeOAuth && account.AuthType != constants.AuthTypeAPIKey {
 			return fmt.Errorf("account %s: invalid auth type '%s'", name, account.AuthType)
 		}
 
 		// Set default API URL if not specified
 		if account.APIURL == "" {
-			account.APIURL = "https://api.dotenv.cloud"
+			account.APIURL = constants.LegacyAPIURL
 			config.Accounts[name] = account
 		}
 
 		// Validate OAuth accounts
-		if account.AuthType == "oauth" {
+		if account.AuthType == constants.AuthTypeOAuth {
 			if len(account.Organizations) == 0 {
 				return fmt.Errorf("account %s: OAuth account has no organizations", name)
 			}
@@ -170,7 +171,7 @@ func (l *Loader) validate(config *Config) error {
 		}
 
 		// Validate API key accounts
-		if account.AuthType == "api_key" {
+		if account.AuthType == constants.AuthTypeAPIKey {
 			if account.Organization == nil {
 				return fmt.Errorf("account %s: API key account missing organization info", name)
 			}

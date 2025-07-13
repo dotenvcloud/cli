@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"time"
+	
+	"github.com/dotenv/cli/internal/constants"
 )
 
 // Config represents the complete CLI configuration
@@ -253,7 +255,7 @@ func (c *Config) GetAPIURL() (string, error) {
 	}
 
 	if acct.APIURL == "" {
-		return "https://api.dotenv.com", nil
+		return constants.DefaultAPIURL, nil
 	}
 
 	return acct.APIURL, nil
@@ -281,12 +283,12 @@ func ConfigDir() (string, error) {
 
 // IsOAuthContext returns true if this is an OAuth context
 func (c *Context) IsOAuthContext() bool {
-	return c.AuthType == "oauth"
+	return c.AuthType == constants.AuthTypeOAuth
 }
 
 // IsAPIKeyContext returns true if this is an API key context
 func (c *Context) IsAPIKeyContext() bool {
-	return c.AuthType == "api_key" || c.AuthType == ""
+	return c.AuthType == constants.AuthTypeAPIKey || c.AuthType == ""
 }
 
 // IsTokenExpired returns true if the OAuth token is expired

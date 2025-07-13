@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dotenv/cli/internal/build"
+	"github.com/dotenv/cli/internal/constants"
 	"github.com/dotenv/cli/internal/ui"
 )
 
@@ -135,7 +136,7 @@ func getLatestRelease(ctx context.Context) (*ReleaseInfo, error) {
 	}
 
 	// GitHub requires a user agent
-	req.Header.Set("User-Agent", "dotenv-cli")
+	req.Header.Set("User-Agent", constants.UserAgent)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	
+	"github.com/dotenv/cli/internal/constants"
 )
 
 // OAuth2Client handles OAuth2 authentication flow
@@ -40,7 +42,7 @@ type AuthorizeParams struct {
 // NewOAuth2Client creates a new OAuth2 client
 func NewOAuth2Client(clientID, baseURL string) *OAuth2Client {
 	if baseURL == "" {
-		baseURL = "https://api.dotenv.com"
+		baseURL = constants.DefaultAPIURL
 	}
 
 	// Remove /api/v1 suffix if present
@@ -87,8 +89,8 @@ func (c *OAuth2Client) ExchangeCode(ctx context.Context, code, codeVerifier, red
 	// For development, the token endpoint is on the API subdomain
 	tokenURL := c.BaseURL
 	if strings.Contains(c.BaseURL, "dotenv.test") {
-		tokenURL = "https://api.dotenv.test"
-	} else if c.BaseURL == "https://api.dotenv.com" {
+		tokenURL = constants.TestAPIURL
+	} else if c.BaseURL == constants.DefaultAPIURL {
 		// Production already has the right URL
 		tokenURL = c.BaseURL
 	}
@@ -140,8 +142,8 @@ func (c *OAuth2Client) RefreshToken(ctx context.Context, refreshToken string) (*
 	// For development, the token endpoint is on the API subdomain
 	tokenURL := c.BaseURL
 	if strings.Contains(c.BaseURL, "dotenv.test") {
-		tokenURL = "https://api.dotenv.test"
-	} else if c.BaseURL == "https://api.dotenv.com" {
+		tokenURL = constants.TestAPIURL
+	} else if c.BaseURL == constants.DefaultAPIURL {
 		// Production already has the right URL
 		tokenURL = c.BaseURL
 	}

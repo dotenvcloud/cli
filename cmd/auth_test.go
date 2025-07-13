@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dotenv/cli/cmd"
+	"github.com/dotenv/cli/internal/constants"
 	"github.com/dotenv/cli/test/helpers"
 	dotenv "github.com/dotenv/sdk-go"
 )
@@ -333,7 +334,7 @@ func TestAuthInfoCommand_WithAccount(t *testing.T) {
 			"test-account": map[string]interface{}{
 				"name":      "test-account",
 				"api_url":   server.URL,
-				"auth_type": "oauth",
+				"auth_type": constants.AuthTypeOAuth,
 				"auth": map[string]interface{}{
 					"access_token":  "test-access-token",
 					"refresh_token": "test-refresh-token",

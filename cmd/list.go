@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/dotenv/cli/internal/config"
+	"github.com/dotenv/cli/internal/constants"
 	"github.com/dotenv/cli/internal/ui"
 	dotenv "github.com/dotenv/sdk-go"
 )
@@ -245,7 +246,7 @@ func listAccounts(cmd *cobra.Command) error {
 
 			authType := account.AuthType
 			if authType == "" {
-				authType = "api_key"
+				authType = constants.AuthTypeAPIKey
 			}
 
 			orgName := ""
@@ -259,7 +260,7 @@ func listAccounts(cmd *cobra.Command) error {
 			}
 
 			apiURL := account.APIURL
-			if apiURL == "https://api.dotenv.cloud" {
+			if apiURL == constants.LegacyAPIURL {
 				apiURL = "default"
 			}
 
