@@ -142,7 +142,6 @@ func runAPIKeyLogin(am *config.AccountManager, apiURL string) error {
 	orgInfo := config.OrgInfo{
 		ULID: organization,
 		Name: organization,
-		Slug: organization,
 	}
 
 	// Create API key account

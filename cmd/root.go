@@ -103,9 +103,10 @@ For more information, visit: https://dotenv.com/docs/cli`,
 		pushCmd,
 		listCmd,
 		exportCmd,
-		accountCmd, // New account management
-		orgCmd,     // Updated org management
-		statusCmd,  // New status command
+		accountCmd,       // New account management
+		orgCmd,           // Updated org management
+		organizationsCmd, // Organizations API management
+		statusCmd,        // New status command
 		refreshCmd,
 		updateCmd,
 		versionCmd,

@@ -11,7 +11,6 @@ import (
 
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/ui"
-	"github.com/dotenv/cli/internal/utils"
 	dotenv "github.com/dotenv/sdk-go"
 )
 
@@ -35,8 +34,8 @@ type OrganizationResponse struct {
 
 // Organization represents an organization the user has access to
 type Organization struct {
-	ID   int64  `json:"id"`
-	Slug string `json:"ulid"` // Laravel uses 'ulid' field for slug
+	ID   string `json:"id"`   // ULID comes in ID field from API
+	ULID string `json:"ulid"` // Not used but kept for compatibility
 	Name string `json:"name"`
 }
 
@@ -141,7 +140,12 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 			ui.PrintInfo("\nAvailable organizations:")
 			orgOptions := make([]string, len(orgs))
 			for i, org := range orgs {
-				orgOptions[i] = fmt.Sprintf("%s (%s)", org.Name, org.Slug)
+				// Show ULID from ID field
+				ulid := org.ULID
+				if ulid == "" && org.ID != "" {
+					ulid = org.ID
+				}
+				orgOptions[i] = fmt.Sprintf("%s (%s)", org.Name, ulid)
 			}
 
 			selected, err := ui.Select("Select your organization", orgOptions)
@@ -149,9 +153,9 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 				return err
 			}
 
-			// Find selected org
+			// Find selected org by name
 			for _, org := range orgs {
-				if strings.Contains(selected, org.Slug) {
+				if strings.Contains(selected, org.Name) {
 					selectedOrg = org
 					break
 				}
@@ -159,7 +163,12 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 		} else if len(orgs) == 1 {
 			// Single org, use it
 			selectedOrg = orgs[0]
-			ui.PrintInfo("Using organization: %s (%s)", selectedOrg.Name, selectedOrg.Slug)
+			// Show ULID from ID field
+			ulid := selectedOrg.ULID
+			if ulid == "" && selectedOrg.ID != "" {
+				ulid = selectedOrg.ID
+			}
+			ui.PrintInfo("Using organization: %s (%s)", selectedOrg.Name, ulid)
 		} else {
 			// No orgs
 			return fmt.Errorf("no organizations found for this account")
@@ -198,10 +207,14 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 		// Convert organizations to config format
 		var orgInfos []config.OrgInfo
 		for _, org := range orgs {
+			// Use ID if ULID is empty (API returns ULID in ID field)
+			ulid := org.ULID
+			if ulid == "" && org.ID != "" {
+				ulid = org.ID
+			}
 			orgInfos = append(orgInfos, config.OrgInfo{
-				ULID: org.Slug, // Using ULID field for the Laravel ulid value
+				ULID: ulid,
 				Name: org.Name,
-				Slug: utils.Slugify(org.Name), // Generate slug from name
 			})
 		}
 
@@ -231,12 +244,22 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 			}
 
 			// Update current organization if needed
-			if err := am.SetOrganization(accountName, selectedOrg.Slug); err != nil {
+			// Use ID if ULID is empty (API returns ULID in ID field)
+			selectedOrgULID := selectedOrg.ULID
+			if selectedOrgULID == "" && selectedOrg.ID != "" {
+				selectedOrgULID = selectedOrg.ID
+			}
+			if err := am.SetOrganization(accountName, selectedOrgULID); err != nil {
 				return fmt.Errorf("failed to set organization: %w", err)
 			}
 		} else {
 			// Create new account
-			if err := am.CreateWithOAuth(accountName, af.BaseURL, tokenResp, orgInfos, selectedOrg.Slug); err != nil {
+			// Use ID if ULID is empty (API returns ULID in ID field)
+			selectedOrgULID := selectedOrg.ULID
+			if selectedOrgULID == "" && selectedOrg.ID != "" {
+				selectedOrgULID = selectedOrg.ID
+			}
+			if err := am.CreateWithOAuth(accountName, af.BaseURL, tokenResp, orgInfos, selectedOrgULID); err != nil {
 				return fmt.Errorf("failed to create account: %w", err)
 			}
 		}
@@ -251,7 +274,7 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 		ui.PrintInfo("Current organization: %s", selectedOrg.Name)
 
 		if len(orgs) > 1 {
-			ui.PrintInfo("\nTo switch organizations, use: dotenv org use <slug>")
+			ui.PrintInfo("\nTo switch organizations, use: dotenv org use <ulid>")
 		}
 
 		return nil

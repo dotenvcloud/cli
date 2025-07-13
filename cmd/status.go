@@ -108,10 +108,9 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				ui.PrintWarning("  No organization selected")
 				ui.PrintInfo("  Run 'dotenv org list' to see available organizations")
-				ui.PrintInfo("  Run 'dotenv org use <slug>' to select one")
+				ui.PrintInfo("  Run 'dotenv org use <ulid>' to select one")
 			} else {
 				fmt.Printf("  Current: %s\n", org.Name)
-				fmt.Printf("  Slug: %s\n", org.Slug)
 				fmt.Printf("  ULID: %s\n", org.ULID)
 			}
 
@@ -134,7 +133,6 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			ui.PrintInfo("  Run 'dotenv org refresh' to fetch organization details")
 		} else {
 			fmt.Printf("  Name: %s\n", account.Organization.Name)
-			fmt.Printf("  Slug: %s\n", account.Organization.Slug)
 			fmt.Printf("  ULID: %s\n", account.Organization.ULID)
 
 			if account.OrganizationFetchedAt != nil {

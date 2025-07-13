@@ -142,8 +142,9 @@ func (v *Validator) ValidateConfig(config *Config) error {
 			if account.Organization == nil {
 				return fmt.Errorf("account '%s': API key account missing organization info", name)
 			}
-			if err := v.ValidateOrganization(account.Organization.Slug); err != nil {
-				return fmt.Errorf("account '%s': %w", name, err)
+			// We don't validate organization slug anymore since we use ULID
+			if account.Organization.ULID == "" {
+				return fmt.Errorf("account '%s': API key account missing organization ULID", name)
 			}
 		}
 

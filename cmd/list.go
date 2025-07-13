@@ -29,8 +29,12 @@ var listCmd = &cobra.Command{
 	Short: "List resources",
 	Long: `List DotEnv resources in a hierarchical structure.
 
+Note: When listing organizations:
+- OAuth authentication: Shows all organizations you belong to
+- API key authentication: Shows only the organization tied to the API key
+
 Resources:
-  organizations  - List all organizations
+  organizations  - List organizations (behavior depends on auth type)
   projects      - List projects in current organization
   targets       - List targets in a project
   environments  - List environments in a target
@@ -274,15 +278,20 @@ func listAccounts(cmd *cobra.Command) error {
 }
 
 func listOrganizations(cmd *cobra.Command) error {
-	client, err := getAPIClient()
+	// Use client without org context since we're listing organizations
+	client, err := getAPIClientWithoutOrgContext()
 	if err != nil {
 		return err
 	}
 
 	ui.PrintInfo("Fetching organizations...")
 
-	orgs, _, err := client.Organizations.List(context.Background(), nil)
+	orgs, resp, err := client.Organizations.List(context.Background(), nil)
 	if err != nil {
+		// Check if using API key authentication
+		if resp != nil && resp.StatusCode == 403 {
+			return fmt.Errorf("API key authentication only shows the organization tied to the key. Use OAuth for listing all organizations")
+		}
 		account, _ := getCurrentAccount()
 		return HandleAPIError(err, account)
 	}
@@ -300,11 +309,31 @@ func listOrganizations(cmd *cobra.Command) error {
 
 	case "yaml":
 		// Simple YAML output
+		// Get current organization for comparison
+		account, _ := getCurrentAccount()
+		currentOrgID := ""
+		if account != nil {
+			if account.IsOAuth() && account.CurrentOrganization != "" {
+				currentOrgID = account.CurrentOrganization
+			} else if account.Organization != nil {
+				currentOrgID = account.Organization.ULID
+			}
+		}
+		
 		for _, org := range orgs {
+			// Use ID if ULID is empty (API might return ULID in ID field)
+			ulid := org.ULID
+			if ulid == "" && org.ID != "" {
+				ulid = org.ID
+			}
+			
 			fmt.Printf("- name: %s\n", org.Name)
-			fmt.Printf("  slug: %s\n", org.Slug)
+			fmt.Printf("  ulid: %s\n", ulid)
 			fmt.Printf("  plan: %s\n", org.PlanName)
 			fmt.Printf("  status: %s\n", org.Status)
+			if org.ID == currentOrgID || org.ULID == currentOrgID {
+				fmt.Printf("  current: true\n")
+			}
 			fmt.Println()
 		}
 		return nil
@@ -312,14 +341,37 @@ func listOrganizations(cmd *cobra.Command) error {
 	default:
 		// Table format
 		table := tablewriter.NewWriter(os.Stdout)
-		table.Header("NAME", "SLUG", "PLAN", "STATUS")
+		table.Header("NAME", "ULID", "PLAN", "STATUS", "CURRENT")
+
+		// Get current organization for comparison
+		account, _ := getCurrentAccount()
+		currentOrgID := ""
+		if account != nil {
+			if account.IsOAuth() && account.CurrentOrganization != "" {
+				currentOrgID = account.CurrentOrganization
+			} else if account.Organization != nil {
+				currentOrgID = account.Organization.ULID
+			}
+		}
 
 		for _, org := range orgs {
+			current := ""
+			if org.ID == currentOrgID || org.ULID == currentOrgID {
+				current = "*"
+			}
+			
+			// Use ID if ULID is empty (API might return ULID in ID field)
+			ulid := org.ULID
+			if ulid == "" && org.ID != "" {
+				ulid = org.ID
+			}
+			
 			table.Append([]string{
 				org.Name,
-				org.Slug,
+				ulid,
 				org.PlanName,
 				org.Status,
+				current,
 			})
 		}
 

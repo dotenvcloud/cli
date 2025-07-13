@@ -274,14 +274,18 @@ func runAccountAdd(cmd *cobra.Command, args []string) error {
 
 		// For API key, we expect single org
 		org := orgs[0]
+		// Use ID if ULID is empty (API returns ULID in ID field)
+		ulid := org.ULID
+		if ulid == "" && org.ID != "" {
+			ulid = org.ID
+		}
 		orgInfo := config.OrgInfo{
-			ULID: org.Slug,
+			ULID: ulid,
 			Name: org.Name,
-			Slug: utils.Slugify(org.Name),
 		}
 
-		// Default account name is org slug
-		defaultName := orgInfo.Slug
+		// Default account name is org name
+		defaultName := utils.Slugify(org.Name)
 		accountName, err := ui.Input("Account name", defaultName, nil)
 		if err != nil {
 			return err

@@ -236,7 +236,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 		orgInfo := config.OrgInfo{
 			ULID: organization,
 			Name: organization,
-			Slug: organization,
 		}
 
 		// Create API key account

@@ -32,7 +32,6 @@ type Account struct {
 type OrgInfo struct {
 	ULID string `yaml:"ulid"`
 	Name string `yaml:"name"`
-	Slug string `yaml:"slug"`
 }
 
 // IsOAuth returns true if this is an OAuth account
@@ -165,13 +164,13 @@ func (a *Account) NeedsOrganizationRefresh() bool {
 	return time.Since(*fetchedAt) > 24*time.Hour
 }
 
-// ResolveOrganization finds an organization by ULID or slug
+// ResolveOrganization finds an organization by ULID
 func ResolveOrganization(identifier string, orgs []OrgInfo) (*OrgInfo, error) {
 	if identifier == "" {
 		return nil, fmt.Errorf("organization identifier cannot be empty")
 	}
 
-	// First check if it's a valid ULID (26 characters, uppercase alphanumeric)
+	// Check if it's a valid ULID (26 characters, uppercase alphanumeric)
 	if len(identifier) == 26 && isValidULID(identifier) {
 		// Find by ULID
 		for _, org := range orgs {
@@ -182,20 +181,19 @@ func ResolveOrganization(identifier string, orgs []OrgInfo) (*OrgInfo, error) {
 		return nil, fmt.Errorf("Organization not found: %s", identifier)
 	}
 
-	// Find by slug (exact match)
+	// Try exact name match first (case insensitive)
+	lowerIdent := strings.ToLower(identifier)
 	for _, org := range orgs {
-		if org.Slug == identifier {
+		if strings.ToLower(org.Name) == lowerIdent {
 			return &org, nil
 		}
 	}
-
-	// If no exact match, suggest similar slugs
+	
+	// If no exact match, try to find partial matches for suggestions
 	var suggestions []string
-	lowerIdent := strings.ToLower(identifier)
 	for _, org := range orgs {
-		if strings.Contains(strings.ToLower(org.Slug), lowerIdent) ||
-			strings.Contains(strings.ToLower(org.Name), lowerIdent) {
-			suggestions = append(suggestions, org.Slug)
+		if strings.Contains(strings.ToLower(org.Name), lowerIdent) {
+			suggestions = append(suggestions, fmt.Sprintf("%s (%s)", org.Name, org.ULID))
 		}
 	}
 
@@ -215,7 +213,8 @@ func isValidULID(s string) bool {
 	}
 
 	// Check if all characters are valid base32 (excluding I, L, O, U)
-	validChars := "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+	// Accept both uppercase and lowercase
+	validChars := "0123456789ABCDEFGHJKMNPQRSTVWXYZabcdefghjkmnpqrstvwxyz"
 	for _, c := range s {
 		if !strings.ContainsRune(validChars, c) {
 			return false

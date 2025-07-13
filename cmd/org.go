@@ -96,7 +96,6 @@ func runOrgList(cmd *cobra.Command, args []string) error {
 
 		ui.PrintInfo("Organization for API key account '%s':", account.Name)
 		fmt.Printf("  Name: %s\n", account.Organization.Name)
-		fmt.Printf("  Slug: %s\n", account.Organization.Slug)
 		fmt.Printf("  ULID: %s\n", account.Organization.ULID)
 
 		if account.OrganizationFetchedAt != nil {
@@ -122,7 +121,7 @@ func runOrgList(cmd *cobra.Command, args []string) error {
 
 	// Create table
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "CURRENT\tNAME\tSLUG\tULID")
+	fmt.Fprintln(w, "CURRENT\tNAME\tULID")
 
 	for _, org := range account.Organizations {
 		current := " "
@@ -130,7 +129,7 @@ func runOrgList(cmd *cobra.Command, args []string) error {
 			current = "*"
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", current, org.Name, org.Slug, org.ULID)
+		fmt.Fprintf(w, "%s\t%s\t%s\n", current, org.Name, org.ULID)
 	}
 
 	w.Flush()
@@ -180,7 +179,7 @@ func runOrgUse(cmd *cobra.Command, args []string) error {
 	}
 
 	ui.PrintSuccess("Switched to organization: %s", org.Name)
-	ui.PrintInfo("Slug: %s", org.Slug)
+	ui.PrintInfo("ULID: %s", org.ULID)
 
 	return nil
 }
@@ -248,10 +247,14 @@ func runOrgRefresh(cmd *cobra.Command, args []string) error {
 	// Convert to OrgInfo format
 	var orgInfos []config.OrgInfo
 	for _, org := range orgs {
+		// Use ID if ULID is empty (API returns ULID in ID field)
+		ulid := org.ULID
+		if ulid == "" && org.ID != "" {
+			ulid = org.ID
+		}
 		orgInfos = append(orgInfos, config.OrgInfo{
-			ULID: org.Slug, // Laravel returns ULID in slug field
+			ULID: ulid,
 			Name: org.Name,
-			Slug: org.Slug, // For now, using ULID as slug
 		})
 	}
 
@@ -308,7 +311,6 @@ func runOrgShow(cmd *cobra.Command, args []string) error {
 
 	ui.PrintInfo("Current organization details:")
 	fmt.Printf("  Name: %s\n", currentOrg.Name)
-	fmt.Printf("  Slug: %s\n", currentOrg.Slug)
 	fmt.Printf("  ULID: %s\n", currentOrg.ULID)
 
 	// Show when it was last refreshed
