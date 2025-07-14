@@ -2,7 +2,7 @@ package config
 
 import (
 	"os"
-	
+
 	"github.com/dotenv/cli/internal/constants"
 )
 
@@ -15,12 +15,12 @@ func GetAPIURL(defaultURL string) string {
 	if apiURL := os.Getenv(EnvAPIURL); apiURL != "" {
 		return apiURL
 	}
-	
+
 	// Second priority: provided default (e.g., from account)
 	if defaultURL != "" {
 		return defaultURL
 	}
-	
+
 	// Final fallback: default API URL
 	return constants.DefaultAPIURL
 }

@@ -93,7 +93,7 @@ func (tm *TokenManager) RefreshOrganizationsIfNeeded(ctx context.Context, accoun
 		if err := tm.RefreshTokenIfNeeded(ctx, account); err != nil {
 			return false, err
 		}
-		
+
 		client = dotenv.NewClient(
 			dotenv.WithBearerToken(account.Auth.AccessToken),
 			dotenv.WithBaseURL(account.APIURL),

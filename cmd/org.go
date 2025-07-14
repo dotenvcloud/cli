@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"os"
-	"text/tabwriter"
 
+	"github.com/AlecAivazis/survey/v2"
+	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 
 	"github.com/dotenv/cli/internal/config"
@@ -12,9 +15,15 @@ import (
 	dotenv "github.com/dotenv/sdk-go"
 )
 
+var (
+	orgListFormat string
+	orgNoRefresh  bool
+)
+
 var orgCmd = &cobra.Command{
-	Use:   "org",
-	Short: "Manage organizations within accounts",
+	Use:     "org",
+	Aliases: []string{"orgs", "organization", "organizations"},
+	Short:   "Manage organizations within accounts",
 	Long: `Manage organizations for the current account.
 
 For OAuth accounts, you can switch between multiple organizations.
@@ -32,7 +41,16 @@ For API key accounts, only the single organization is available.`,
 var orgListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List organizations for the current account",
-	RunE:  runOrgList,
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if !orgNoRefresh {
+			if err := RefreshOrganizationsIfNeeded(cmd.Context()); err != nil {
+				ui.PrintWarning("Could not refresh organizations: %v", err)
+				// Continue anyway with cached data
+			}
+		}
+		return nil
+	},
+	RunE: runOrgList,
 }
 
 var orgUseCmd = &cobra.Command{
@@ -40,8 +58,18 @@ var orgUseCmd = &cobra.Command{
 	Short: "Switch to a different organization",
 	Long: `Switch to a different organization within the current account.
 
-You can specify the organization by its slug or ULID.`,
-	Args: cobra.ExactArgs(1),
+You can specify the organization by its slug or ULID.
+If no organization is specified, an interactive selection will be shown.`,
+	Args: cobra.MaximumNArgs(1),
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if !orgNoRefresh {
+			if err := RefreshOrganizationsIfNeeded(cmd.Context()); err != nil {
+				ui.PrintWarning("Could not refresh organizations: %v", err)
+				// Continue anyway with cached data
+			}
+		}
+		return nil
+	},
 	RunE: runOrgUse,
 }
 
@@ -65,6 +93,14 @@ func init() {
 	orgCmd.AddCommand(orgUseCmd)
 	orgCmd.AddCommand(orgRefreshCmd)
 	orgCmd.AddCommand(orgShowCmd)
+
+	// Add format flag to list command
+	orgListCmd.Flags().StringVarP(&orgListFormat, "format", "f", "table",
+		"Output format: table, json, yaml")
+
+	// Add no-refresh flag to commands that support auto-refresh
+	orgCmd.PersistentFlags().BoolVar(&orgNoRefresh, "no-refresh", false,
+		"Skip automatic organization refresh")
 }
 
 func runOrgList(cmd *cobra.Command, args []string) error {
@@ -73,72 +109,106 @@ func runOrgList(cmd *cobra.Command, args []string) error {
 		ui.PrintWarning("Could not display account info: %v", err)
 	}
 
-	configPath, err := config.ConfigPath()
+	// Use client without org context since we're listing organizations
+	client, err := getAPIClientWithoutOrgContext()
 	if err != nil {
 		return err
 	}
-	am, err := config.NewAccountManager(configPath)
+
+	ui.PrintInfo("Fetching organizations...")
+
+	orgs, resp, err := client.Organizations.List(context.Background(), nil)
 	if err != nil {
-		return err
+		// Check if using API key authentication
+		if resp != nil && resp.StatusCode == 403 {
+			return fmt.Errorf("API key authentication only shows the organization tied to the key. Use OAuth for listing all organizations")
+		}
+		account, _ := getCurrentAccount()
+		return HandleAPIError(err, account)
 	}
 
-	account, err := am.GetCurrent()
-	if err != nil {
-		return fmt.Errorf("no current account: %w", err)
-	}
-
-	if account.IsAPIKey() {
-		// API key account - single organization
-		if account.Organization == nil {
-			ui.PrintWarning("No organization information available. Run 'dotenv org refresh' to fetch.")
-			return nil
-		}
-
-		ui.PrintInfo("Organization for API key account '%s':", account.Name)
-		fmt.Printf("  Name: %s\n", account.Organization.Name)
-		fmt.Printf("  ULID: %s\n", account.Organization.ULID)
-
-		if account.OrganizationFetchedAt != nil {
-			fmt.Printf("  Last Updated: %s\n", account.OrganizationFetchedAt.Format("2006-01-02 15:04:05"))
-		}
-
+	if len(orgs) == 0 {
+		ui.PrintWarning("No organizations found")
 		return nil
 	}
 
-	// OAuth account - multiple organizations
-	if len(account.Organizations) == 0 {
-		ui.PrintWarning("No organizations found. Run 'dotenv org refresh' to fetch.")
-		return nil
-	}
+	switch orgListFormat {
+	case "json":
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(orgs)
 
-	currentOrg, _ := account.GetCurrentOrganization()
-	currentULID := ""
-	if currentOrg != nil {
-		currentULID = currentOrg.ULID
-	}
-
-	ui.PrintInfo("Organizations for OAuth account '%s':", account.Name)
-
-	// Create table
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "CURRENT\tNAME\tULID")
-
-	for _, org := range account.Organizations {
-		current := " "
-		if org.ULID == currentULID {
-			current = "*"
+	case "yaml":
+		// Simple YAML output
+		// Get current organization for comparison
+		account, _ := getCurrentAccount()
+		currentOrgID := ""
+		if account != nil {
+			if account.IsOAuth() && account.CurrentOrganization != "" {
+				currentOrgID = account.CurrentOrganization
+			} else if account.Organization != nil {
+				currentOrgID = account.Organization.ULID
+			}
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\n", current, org.Name, org.ULID)
+		for _, org := range orgs {
+			// Use ID if ULID is empty (API might return ULID in ID field)
+			ulid := org.ULID
+			if ulid == "" && org.ID != "" {
+				ulid = org.ID
+			}
+
+			fmt.Printf("- name: %s\n", org.Name)
+			fmt.Printf("  ulid: %s\n", ulid)
+			fmt.Printf("  plan: %s\n", org.PlanName)
+			fmt.Printf("  status: %s\n", org.Status)
+			if org.ID == currentOrgID || org.ULID == currentOrgID {
+				fmt.Printf("  current: true\n")
+			}
+			fmt.Println()
+		}
+		return nil
+
+	default:
+		// Table format
+		table := tablewriter.NewWriter(os.Stdout)
+		table.Header("NAME", "ULID", "PLAN", "STATUS", "CURRENT")
+
+		// Get current organization for comparison
+		account, _ := getCurrentAccount()
+		currentOrgID := ""
+		if account != nil {
+			if account.IsOAuth() && account.CurrentOrganization != "" {
+				currentOrgID = account.CurrentOrganization
+			} else if account.Organization != nil {
+				currentOrgID = account.Organization.ULID
+			}
+		}
+
+		for _, org := range orgs {
+			current := ""
+			if org.ID == currentOrgID || org.ULID == currentOrgID {
+				current = "*"
+			}
+
+			// Use ID if ULID is empty (API might return ULID in ID field)
+			ulid := org.ULID
+			if ulid == "" && org.ID != "" {
+				ulid = org.ID
+			}
+
+			table.Append([]string{
+				org.Name,
+				ulid,
+				org.PlanName,
+				org.Status,
+				current,
+			})
+		}
+
+		table.Render()
+		return nil
 	}
-
-	w.Flush()
-
-	if account.OrganizationsFetchedAt != nil {
-		fmt.Printf("\nLast Updated: %s\n", account.OrganizationsFetchedAt.Format("2006-01-02 15:04:05"))
-	}
-
-	return nil
 }
 
 func runOrgUse(cmd *cobra.Command, args []string) error {
@@ -165,21 +235,66 @@ func runOrgUse(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("cannot switch organizations for API key account")
 	}
 
-	identifier := args[0]
+	// Check if we need to refresh organizations
+	if len(account.Organizations) == 0 {
+		ui.PrintWarning("No organizations found. Run 'dotenv org refresh' to fetch.")
+		return nil
+	}
 
-	// Resolve organization
-	org, err := config.ResolveOrganization(identifier, account.Organizations)
-	if err != nil {
-		return err
+	var selectedOrg *config.OrgInfo
+
+	// If argument provided, use it
+	if len(args) > 0 {
+		identifier := args[0]
+
+		// Resolve organization
+		org, err := config.ResolveOrganization(identifier, account.Organizations)
+		if err != nil {
+			return err
+		}
+		selectedOrg = org
+	} else {
+		// Interactive selection
+		var options []string
+		orgMap := make(map[string]*config.OrgInfo)
+
+		// Get current org for highlighting
+		currentOrg, _ := account.GetCurrentOrganization()
+		currentULID := ""
+		if currentOrg != nil {
+			currentULID = currentOrg.ULID
+		}
+
+		for i := range account.Organizations {
+			org := &account.Organizations[i]
+			label := fmt.Sprintf("%s (%s)", org.Name, org.ULID)
+			if org.ULID == currentULID {
+				label = fmt.Sprintf("→ %s", label)
+			}
+			options = append(options, label)
+			orgMap[label] = org
+		}
+
+		var selected string
+		prompt := &survey.Select{
+			Message: "Select an organization:",
+			Options: options,
+		}
+
+		if err := survey.AskOne(prompt, &selected); err != nil {
+			return fmt.Errorf("selection cancelled")
+		}
+
+		selectedOrg = orgMap[selected]
 	}
 
 	// Set as current organization
-	if err := am.SetOrganization(account.Name, org.ULID); err != nil {
+	if err := am.SetOrganization(account.Name, selectedOrg.ULID); err != nil {
 		return err
 	}
 
-	ui.PrintSuccess("Switched to organization: %s", org.Name)
-	ui.PrintInfo("ULID: %s", org.ULID)
+	ui.PrintSuccess("Switched to organization: %s", selectedOrg.Name)
+	ui.PrintInfo("ULID: %s", selectedOrg.ULID)
 
 	return nil
 }

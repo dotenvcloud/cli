@@ -147,20 +147,20 @@ func runExplore(cmd *cobra.Command, args []string) error {
 				ui.PrintError("Failed to get output file: %v", err)
 				continue
 			}
-			
+
 			// Set the output file
 			pullOutput = outputFile
-			
+
 			if outputFile != "" {
 				ui.PrintInfo("Running: dotenv pull %s --output=%s", selectedPath, outputFile)
 			} else {
 				ui.PrintInfo("Running: dotenv pull %s", selectedPath)
 			}
-			
+
 			// Run pull command
 			err = runPull(cmd, []string{selectedPath})
 			pullOutput = "" // Reset for next use
-			
+
 			if err != nil {
 				// Show error with helpful context
 				ShowErrorWithHelp(err)
@@ -180,22 +180,22 @@ func runExplore(cmd *cobra.Command, args []string) error {
 				ui.PrintError("Failed to get output file: %v", err)
 				continue
 			}
-			
+
 			// Set the output file and flag
 			pullOutput = outputFile
 			pullLevelOnly = true
-			
+
 			if outputFile != "" {
 				ui.PrintInfo("Running: dotenv pull %s --level-only --output=%s", selectedPath, outputFile)
 			} else {
 				ui.PrintInfo("Running: dotenv pull %s --level-only", selectedPath)
 			}
-			
+
 			// Run pull command
 			err = runPull(cmd, []string{selectedPath})
-			pullOutput = "" // Reset for next use
+			pullOutput = ""       // Reset for next use
 			pullLevelOnly = false // Reset flag
-			
+
 			if err != nil {
 				// Show error with helpful context
 				ShowErrorWithHelp(err)

@@ -3,7 +3,7 @@ package config
 import (
 	"fmt"
 	"time"
-	
+
 	"github.com/dotenv/cli/internal/constants"
 )
 

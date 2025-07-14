@@ -17,7 +17,7 @@ import (
 // setupTestConfig creates a test configuration directory with a default config file
 func setupTestConfig(t *testing.T) (string, *config.AccountManager) {
 	configDir := t.TempDir()
-	
+
 	// Create a default config file
 	defaultConfig := config.DefaultConfig()
 	configFile := filepath.Join(configDir, constants.ConfigFileName)
@@ -25,17 +25,17 @@ func setupTestConfig(t *testing.T) (string, *config.AccountManager) {
 	assert.NoError(t, err)
 	err = os.WriteFile(configFile, data, 0600)
 	assert.NoError(t, err)
-	
+
 	// Pass the full path to the config file, not just the directory
 	am, err := config.NewAccountManager(configFile)
 	assert.NoError(t, err)
-	
+
 	return configDir, am
 }
 
 func TestTokenManager_NewTokenManager(t *testing.T) {
 	_, am := setupTestConfig(t)
-	
+
 	tm := NewTokenManager(am)
 	assert.NotNil(t, tm)
 	assert.NotNil(t, tm.accountManager)
@@ -44,9 +44,9 @@ func TestTokenManager_NewTokenManager(t *testing.T) {
 func TestTokenManager_RefreshTokenIfNeeded_APIKey(t *testing.T) {
 	ctx := context.Background()
 	_, am := setupTestConfig(t)
-	
+
 	tm := NewTokenManager(am)
-	
+
 	// Test with API key account - should not need refresh
 	account := &config.Account{
 		AuthType: constants.AuthTypeAPIKey,
@@ -54,7 +54,7 @@ func TestTokenManager_RefreshTokenIfNeeded_APIKey(t *testing.T) {
 			APIKey: "test-api-key",
 		},
 	}
-	
+
 	err := tm.RefreshTokenIfNeeded(ctx, account)
 	assert.NoError(t, err)
 }
@@ -62,9 +62,9 @@ func TestTokenManager_RefreshTokenIfNeeded_APIKey(t *testing.T) {
 func TestTokenManager_RefreshTokenIfNeeded_ValidToken(t *testing.T) {
 	ctx := context.Background()
 	_, am := setupTestConfig(t)
-	
+
 	tm := NewTokenManager(am)
-	
+
 	// Test with valid OAuth token - should not need refresh
 	account := &config.Account{
 		AuthType: constants.AuthTypeOAuth,
@@ -73,7 +73,7 @@ func TestTokenManager_RefreshTokenIfNeeded_ValidToken(t *testing.T) {
 			ExpiresAt:   time.Now().Add(1 * time.Hour),
 		},
 	}
-	
+
 	err := tm.RefreshTokenIfNeeded(ctx, account)
 	assert.NoError(t, err)
 }
@@ -81,9 +81,9 @@ func TestTokenManager_RefreshTokenIfNeeded_ValidToken(t *testing.T) {
 func TestTokenManager_RefreshTokenIfNeeded_ExpiredRefreshToken(t *testing.T) {
 	ctx := context.Background()
 	_, am := setupTestConfig(t)
-	
+
 	tm := NewTokenManager(am)
-	
+
 	// Test with expired refresh token
 	account := &config.Account{
 		AuthType: constants.AuthTypeOAuth,
@@ -94,7 +94,7 @@ func TestTokenManager_RefreshTokenIfNeeded_ExpiredRefreshToken(t *testing.T) {
 			RefreshTokenExpiresAt: time.Now().Add(-1 * time.Hour),
 		},
 	}
-	
+
 	err := tm.RefreshTokenIfNeeded(ctx, account)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "token expired")
@@ -103,9 +103,9 @@ func TestTokenManager_RefreshTokenIfNeeded_ExpiredRefreshToken(t *testing.T) {
 func TestTokenManager_RefreshOrganizationsIfNeeded_NoRefreshNeeded(t *testing.T) {
 	ctx := context.Background()
 	_, am := setupTestConfig(t)
-	
+
 	tm := NewTokenManager(am)
-	
+
 	// Test with recently fetched organizations
 	fetchedAt := time.Now().Add(-1 * time.Hour)
 	account := &config.Account{
@@ -116,7 +116,7 @@ func TestTokenManager_RefreshOrganizationsIfNeeded_NoRefreshNeeded(t *testing.T)
 		},
 		OrganizationsFetchedAt: &fetchedAt,
 	}
-	
+
 	orgRemoved, err := tm.RefreshOrganizationsIfNeeded(ctx, account)
 	assert.NoError(t, err)
 	assert.False(t, orgRemoved)

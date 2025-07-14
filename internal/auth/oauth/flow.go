@@ -15,7 +15,6 @@ import (
 	dotenv "github.com/dotenv/sdk-go"
 )
 
-
 // AuthFlow handles the complete OAuth2 authentication flow
 type AuthFlow struct {
 	BaseURL       string

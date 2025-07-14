@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"time"
-	
+
 	"github.com/dotenv/cli/internal/constants"
 )
 

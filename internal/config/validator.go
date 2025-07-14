@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-	
+
 	"github.com/dotenv/cli/internal/constants"
 )
 

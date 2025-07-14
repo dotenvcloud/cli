@@ -52,6 +52,14 @@ You can push to any level of the hierarchy.`,
   dotenv push myproject/staging .env --force`,
 
 	Args: cobra.RangeArgs(1, 2),
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		// Try to refresh organizations if needed
+		if err := RefreshOrganizationsIfNeeded(cmd.Context()); err != nil {
+			// Don't fail the command, just warn
+			ui.PrintWarning("Could not refresh organizations: %v", err)
+		}
+		return nil
+	},
 	RunE: runPush,
 }
 

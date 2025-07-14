@@ -5,14 +5,14 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/oklog/ulid/v2"
 	dotenv "github.com/dotenv/sdk-go"
+	"github.com/oklog/ulid/v2"
 )
 
 const (
 	// ULIDLength is the standard length of a ULID
 	ULIDLength = 26
-	
+
 	// ValidULIDChars contains all valid characters for a ULID (Crockford's base32)
 	// Excludes I, L, O, U to avoid confusion
 	ValidULIDChars = "0123456789ABCDEFGHJKMNPQRSTVWXYZabcdefghjkmnpqrstvwxyz"
@@ -24,12 +24,12 @@ func GetULIDFromOrg(org *dotenv.Organization) string {
 	if org == nil {
 		return ""
 	}
-	
+
 	// Use ULID if available
 	if org.ULID != "" {
 		return org.ULID
 	}
-	
+
 	// Fall back to ID field (API sometimes returns ULID in ID field)
 	return org.ID
 }
@@ -62,15 +62,15 @@ func ValidateULID(ulid string) error {
 	if ulid == "" {
 		return fmt.Errorf("ULID cannot be empty")
 	}
-	
+
 	if len(ulid) != ULIDLength {
 		return fmt.Errorf("ULID must be exactly 26 characters long")
 	}
-	
+
 	if !IsValidULID(ulid) {
 		return fmt.Errorf("ULID contains invalid characters")
 	}
-	
+
 	return nil
 }
 
@@ -81,12 +81,12 @@ func ExtractULIDFromIdentifier(identifier string) string {
 	// We use word boundaries to ensure we get complete ULIDs
 	pattern := fmt.Sprintf(`\b[%s]{%d}\b`, strings.ReplaceAll(ValidULIDChars, "]", "\\]"), ULIDLength)
 	re := regexp.MustCompile(pattern)
-	
+
 	match := re.FindString(identifier)
 	if match != "" && IsValidULID(match) {
 		return match
 	}
-	
+
 	return ""
 }
 

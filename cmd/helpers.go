@@ -81,7 +81,7 @@ func getAPIClient() (*dotenv.Client, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize account manager: %w", err)
 		}
-		
+
 		tokenManager := auth.NewTokenManager(am)
 		if err := tokenManager.RefreshTokenIfNeeded(context.Background(), account); err != nil {
 			if _, ok := err.(*errors.TokenExpiredError); ok {
@@ -205,7 +205,6 @@ func ensureAuthenticated() error {
 	return err
 }
 
-
 // getAPIClientWithoutOrgContext returns a configured API client without organization context
 // This is useful for operations like listing organizations where we don't need/have an org selected
 func getAPIClientWithoutOrgContext() (*dotenv.Client, error) {
@@ -249,7 +248,7 @@ func getAPIClientWithoutOrgContext() (*dotenv.Client, error) {
 	// Check for TLS skip verify (development mode)
 	if config.ShouldSkipTLSVerify() {
 		options = append(options, dotenv.WithInsecureSkipVerify())
-		}
+	}
 
 	// Handle authentication based on account type
 	if account.IsOAuth() {
@@ -262,7 +261,7 @@ func getAPIClientWithoutOrgContext() (*dotenv.Client, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize account manager: %w", err)
 		}
-		
+
 		tokenManager := auth.NewTokenManager(am)
 		if err := tokenManager.RefreshTokenIfNeeded(context.Background(), account); err != nil {
 			if _, ok := err.(*errors.TokenExpiredError); ok {
@@ -290,7 +289,7 @@ func getAPIClientWithoutOrgContext() (*dotenv.Client, error) {
 			}
 		}
 		options = append(options, dotenv.WithAPIKey(apiKey))
-		}
+	}
 
 	// Create client
 	return dotenv.NewClient(options...), nil

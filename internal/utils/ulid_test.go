@@ -3,8 +3,8 @@ package utils
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	dotenv "github.com/dotenv/sdk-go"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestValidateULID(t *testing.T) {

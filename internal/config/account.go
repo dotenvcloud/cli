@@ -190,7 +190,7 @@ func ResolveOrganization(identifier string, orgs []OrgInfo) (*OrgInfo, error) {
 			return &org, nil
 		}
 	}
-	
+
 	// If no exact match, try to find partial matches for suggestions
 	var suggestions []string
 	for _, org := range orgs {

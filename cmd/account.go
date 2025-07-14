@@ -400,7 +400,7 @@ func runAccountRefresh(cmd *cobra.Command, args []string) error {
 			dotenv.WithBaseURL(account.APIURL),
 			dotenv.WithInsecureSkipVerify(),
 		)
-		}
+	}
 
 	// Refresh token using SDK
 	sdkTokenResp, _, err := client.OAuth.RefreshToken(cmd.Context(), account.Auth.RefreshToken, constants.OAuthClientID)

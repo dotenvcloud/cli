@@ -64,7 +64,15 @@ Resources:
   dotenv list all --paths`,
 
 	ValidArgs: []string{"organizations", "projects", "targets", "environments", "accounts", "all"},
-	RunE:      runList,
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		// Try to refresh organizations if needed
+		if err := RefreshOrganizationsIfNeeded(cmd.Context()); err != nil {
+			// Don't fail the command, just warn
+			ui.PrintWarning("Could not refresh organizations: %v", err)
+		}
+		return nil
+	},
+	RunE: runList,
 }
 
 func init() {
@@ -320,14 +328,14 @@ func listOrganizations(cmd *cobra.Command) error {
 				currentOrgID = account.Organization.ULID
 			}
 		}
-		
+
 		for _, org := range orgs {
 			// Use ID if ULID is empty (API might return ULID in ID field)
 			ulid := org.ULID
 			if ulid == "" && org.ID != "" {
 				ulid = org.ID
 			}
-			
+
 			fmt.Printf("- name: %s\n", org.Name)
 			fmt.Printf("  ulid: %s\n", ulid)
 			fmt.Printf("  plan: %s\n", org.PlanName)
@@ -360,13 +368,13 @@ func listOrganizations(cmd *cobra.Command) error {
 			if org.ID == currentOrgID || org.ULID == currentOrgID {
 				current = "*"
 			}
-			
+
 			// Use ID if ULID is empty (API might return ULID in ID field)
 			ulid := org.ULID
 			if ulid == "" && org.ID != "" {
 				ulid = org.ID
 			}
-			
+
 			table.Append([]string{
 				org.Name,
 				ulid,

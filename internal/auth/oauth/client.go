@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
-	
+
 	"github.com/dotenv/cli/internal/constants"
 )
 

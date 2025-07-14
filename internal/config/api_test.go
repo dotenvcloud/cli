@@ -4,8 +4,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/dotenv/cli/internal/constants"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestGetAPIURL(t *testing.T) {
@@ -20,10 +20,10 @@ func TestGetAPIURL(t *testing.T) {
 	}()
 
 	tests := []struct {
-		name        string
-		envValue    string
-		defaultURL  string
-		expected    string
+		name       string
+		envValue   string
+		defaultURL string
+		expected   string
 	}{
 		{
 			name:       "environment variable takes precedence",
