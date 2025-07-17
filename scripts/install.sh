@@ -7,8 +7,8 @@
 # and installs it to /usr/local/bin.
 #
 # Usage:
-#   curl -sSL https://dotenv.com/install.sh | bash
-#   wget -qO- https://dotenv.com/install.sh | bash
+#   curl -sSL https://dotenv.cloud/install.sh | bash
+#   wget -qO- https://dotenv.cloud/install.sh | bash
 #
 
 set -e
@@ -20,9 +20,11 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Configuration
-GITHUB_REPO="dotenv/cli"
-INSTALL_DIR="/usr/local/bin"
+GITHUB_REPO="lostlink/dotenv-cli"
+INSTALL_DIR_ROOT="/usr/local/bin"
+INSTALL_DIR_USER="$HOME/.local/bin"
 BINARY_NAME="dotenv"
+INSTALL_URL="https://dotenv.cloud/install.sh"
 
 # Helper functions
 info() {
@@ -80,7 +82,7 @@ install_dotenv() {
     info "Installing DotEnv CLI $VERSION for $OS/$ARCH..."
     
     # Construct download URL
-    FILENAME="dotenv_${VERSION#v}_${OS}_${ARCH}"
+    FILENAME="dotenv-cli_${VERSION#v}_${OS}_${ARCH}"
     if [ "$OS" = "windows" ]; then
         FILENAME="${FILENAME}.zip"
     else
@@ -116,6 +118,15 @@ install_dotenv() {
     if [ "$OS" = "windows" ]; then
         warn "Please move ${BINARY_NAME}.exe to a directory in your PATH"
     else
+        # Determine installation directory
+        if [ -w "$INSTALL_DIR_ROOT" ]; then
+            INSTALL_DIR="$INSTALL_DIR_ROOT"
+        else
+            INSTALL_DIR="$INSTALL_DIR_USER"
+            # Create user bin directory if it doesn't exist
+            mkdir -p "$INSTALL_DIR"
+        fi
+        
         info "Installing to $INSTALL_DIR..."
         if [ -w "$INSTALL_DIR" ]; then
             mv "$BINARY_NAME" "$INSTALL_DIR/"
@@ -133,6 +144,15 @@ install_dotenv() {
     else
         warn "Installation completed but 'dotenv' command not found in PATH"
         warn "You may need to add $INSTALL_DIR to your PATH"
+        if [ "$INSTALL_DIR" = "$INSTALL_DIR_USER" ]; then
+            echo
+            info "To add to PATH, run:"
+            info "  echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> ~/.bashrc"
+            info "  source ~/.bashrc"
+            info "Or for zsh:"
+            info "  echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> ~/.zshrc"
+            info "  source ~/.zshrc"
+        fi
     fi
 }
 
@@ -156,7 +176,7 @@ main() {
     echo "  2. Run 'dotenv login' to authenticate"
     echo "  3. Run 'dotenv pull <project>' to pull your secrets"
     echo
-    echo "For more information, visit: https://dotenv.com/docs/cli"
+    echo "For more information, visit: https://dotenv.cloud/docs/cli"
 }
 
 main "$@"

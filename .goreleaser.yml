@@ -1,23 +1,30 @@
-project_name: dotenv
+project_name: dotenv-cli
 
 before:
   hooks:
     - go mod tidy
     - go generate ./...
+    - make completions  # Generate shell completions
 
 builds:
   - id: dotenv
+    main: ./main.go
     binary: dotenv
-    main: .
+    env:
+      - CGO_ENABLED=0
     goos:
       - linux
-      - darwin
       - windows
+      - darwin
     goarch:
       - amd64
       - arm64
-    env:
-      - CGO_ENABLED=0
+      - "386"
+    ignore:
+      - goos: darwin
+        goarch: "386"
+      - goos: windows
+        goarch: arm64  # Not common yet
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
@@ -26,69 +33,203 @@ builds:
       - -X main.goVersion={{.Runtime.Goversion}}
 
 archives:
-  - id: dotenv
-    name_template: >-
-      {{ .ProjectName }}_
-      {{- .Version }}_
-      {{- title .Os }}_
-      {{- if eq .Arch "amd64" }}x86_64
-      {{- else if eq .Arch "386" }}i386
-      {{- else }}{{ .Arch }}{{ end }}
+  - format: tar.gz
     format_overrides:
       - goos: windows
         format: zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
-      - README.md
       - LICENSE
+      - README.md
+      - CHANGELOG.md
+      - completions/*
 
 checksum:
   name_template: 'checksums.txt'
-  algorithm: sha256
+
+signs:
+  - cmd: cosign
+    certificate: '${artifact}.pem'
+    args:
+      - sign-blob
+      - '--output-certificate=${certificate}'
+      - '--output-signature=${signature}'
+      - '${artifact}'
+      - '--yes'
+    artifacts: checksum
+    output: true
+
+sboms:
+  - artifacts: archive
+    args: ["$artifact", "--file", "$sbom", "--output", "cyclonedx-json"]
 
 snapshot:
-  name_template: "{{ incpatch .Version }}-dev"
-
-changelog:
-  sort: asc
-  filters:
-    exclude:
-      - '^docs:'
-      - '^test:'
-      - '^chore:'
+  name_template: "{{ incpatch .Version }}-next"
 
 brews:
-  - repository:
-      owner: dotenv
-      name: homebrew-tap
+  - name: dotenv-cli
+    tap:
+      owner: lostlink
+      name: dotenv-homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     folder: Formula
-    homepage: https://dotenv.com
-    description: Secure environment variable management CLI
-    license: MIT
+    homepage: "https://dotenv.cloud"
+    description: "Secure environment variable management CLI"
+    license: "MIT"
+    dependencies:
+      - name: ca-certificates
+        type: optional
+    install: |
+      bin.install "dotenv"
+      
+      bash_completion.install "completions/dotenv.bash" => "dotenv"
+      zsh_completion.install "completions/dotenv.zsh" => "_dotenv"
+      fish_completion.install "completions/dotenv.fish"
     test: |
       system "#{bin}/dotenv", "version"
+    caveats: |
+      To use dotenv CLI, you need to authenticate first:
+        dotenv login
 
+      For more information, visit:
+        https://dotenv.cloud/docs/cli
+
+scoops:
+  - bucket:
+      owner: lostlink
+      name: dotenv-scoop-bucket
+      token: "{{ .Env.SCOOP_BUCKET_GITHUB_TOKEN }}"
+    folder: bucket
+    homepage: "https://dotenv.cloud"
+    description: "Secure environment variable management CLI"
+    license: MIT
+
+# Phase 2: Linux packages
 nfpms:
   - id: packages
     package_name: dotenv-cli
     vendor: DotEnv
-    homepage: https://dotenv.com
-    maintainer: DotEnv Team <support@dotenv.com>
+    homepage: https://dotenv.cloud
+    maintainer: DotEnv <support@dotenv.cloud>
     description: Secure environment variable management CLI
     license: MIT
     formats:
       - deb
       - rpm
       - apk
+    dependencies:
+      - ca-certificates
+    contents:
+      - src: ./completions/dotenv.bash
+        dst: /etc/bash_completion.d/dotenv
+      - src: ./completions/dotenv.zsh
+        dst: /usr/share/zsh/site-functions/_dotenv
+      - src: ./completions/dotenv.fish
+        dst: /usr/share/fish/vendor_completions.d/dotenv.fish
 
-# GitHub release
+# Phase 3: Snap package
+snaps:
+  - name: dotenv-cli
+    summary: Secure environment variable management CLI
+    description: |
+      DotEnv CLI provides secure access to environment variables stored in the cloud.
+      Features include encryption, team collaboration, and audit logging.
+    grade: stable
+    confinement: strict
+    license: MIT
+    apps:
+      dotenv:
+        command: dotenv
+        plugs: [network, home]
+
+# Docker images
+dockers:
+  - image_templates:
+      - "lostlink/{{ .ProjectName }}:{{ .Version }}-amd64"
+      - "ghcr.io/lostlink/{{ .ProjectName }}:{{ .Version }}-amd64"
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+    dockerfile: Dockerfile
+  
+  - image_templates:
+      - "lostlink/{{ .ProjectName }}:{{ .Version }}-arm64"
+      - "ghcr.io/lostlink/{{ .ProjectName }}:{{ .Version }}-arm64"
+    use: buildx
+    goarch: arm64
+    build_flag_templates:
+      - "--platform=linux/arm64"
+    dockerfile: Dockerfile
+
+docker_manifests:
+  - name_template: "lostlink/{{ .ProjectName }}:{{ .Version }}"
+    image_templates:
+      - "lostlink/{{ .ProjectName }}:{{ .Version }}-amd64"
+      - "lostlink/{{ .ProjectName }}:{{ .Version }}-arm64"
+  
+  - name_template: "lostlink/{{ .ProjectName }}:latest"
+    image_templates:
+      - "lostlink/{{ .ProjectName }}:{{ .Version }}-amd64"
+      - "lostlink/{{ .ProjectName }}:{{ .Version }}-arm64"
+    skip_push: "{{ .Prerelease }}"
+
+  - name_template: "ghcr.io/lostlink/{{ .ProjectName }}:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/lostlink/{{ .ProjectName }}:{{ .Version }}-amd64"
+      - "ghcr.io/lostlink/{{ .ProjectName }}:{{ .Version }}-arm64"
+  
+  - name_template: "ghcr.io/lostlink/{{ .ProjectName }}:latest"
+    image_templates:
+      - "ghcr.io/lostlink/{{ .ProjectName }}:{{ .Version }}-amd64"
+      - "ghcr.io/lostlink/{{ .ProjectName }}:{{ .Version }}-arm64"
+    skip_push: "{{ .Prerelease }}"
+
 release:
   github:
-    owner: dotenv
-    name: cli
+    owner: lostlink
+    name: dotenv-cli
   draft: false
   prerelease: auto
-  name_template: "{{.ProjectName}} v{{.Version}}"
-  header: |
-    ## What's Changed
+  name_template: "v{{.Version}}"
   footer: |
-    **Full Changelog**: https://github.com/dotenv/cli/compare/{{ .PreviousTag }}...{{ .Tag }}
+    ## Installation
+    
+    ### Homebrew
+    ```bash
+    brew tap lostlink/dotenv
+    brew install dotenv-cli
+    ```
+    
+    ### Scoop
+    ```bash
+    scoop bucket add dotenv https://github.com/lostlink/dotenv-scoop-bucket
+    scoop install dotenv-cli
+    ```
+    
+    ### Direct Download
+    ```bash
+    curl -sSL https://dotenv.cloud/install.sh | bash
+    ```
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - 'Merge pull request'
+      - 'Merge branch'
+  groups:
+    - title: Features
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 0
+    - title: Bug fixes
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 1
+    - title: Security
+      regexp: "^.*security[(\\w)]*:+.*$"
+      order: 2
+    - title: Other
+      order: 999

@@ -1,0 +1,84 @@
+name: Post-Release Test
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to test'
+        required: true
+
+jobs:
+  test-homebrew:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    steps:
+      - name: Install Homebrew (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          echo "/home/linuxbrew/.linuxbrew/bin" >> $GITHUB_PATH
+      
+      - name: Test Homebrew installation
+        run: |
+          brew tap lostlink/dotenv
+          brew install dotenv-cli
+          dotenv version
+          dotenv --help
+      
+      - name: Test basic functionality
+        run: |
+          dotenv status || true
+          dotenv list projects || echo "Not authenticated"
+
+  test-scoop:
+    runs-on: windows-latest
+    steps:
+      - name: Test Scoop installation
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+          iwr -useb get.scoop.sh | iex
+          scoop bucket add dotenv https://github.com/lostlink/dotenv-scoop-bucket
+          scoop install dotenv-cli
+          dotenv version
+          dotenv --help
+
+  test-direct-install:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Test direct installation
+        run: |
+          curl -sSL https://dotenv.cloud/install.sh | bash
+          export PATH="$HOME/.local/bin:$PATH"
+          dotenv version
+
+  test-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test Docker image
+        run: |
+          docker run --rm lostlink/dotenv-cli:latest version
+          docker run --rm ghcr.io/lostlink/dotenv-cli:latest version
+
+  test-linux-packages:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download and test DEB package
+        run: |
+          VERSION=${{ github.event.release.tag_name || github.event.inputs.version }}
+          curl -L -o dotenv.deb \
+            "https://github.com/lostlink/dotenv-cli/releases/download/${VERSION}/dotenv-cli_${VERSION#v}_linux_amd64.deb"
+          sudo dpkg -i dotenv.deb
+          dotenv version
+      
+      - name: Test package installation
+        run: |
+          which dotenv
+          dotenv --help
