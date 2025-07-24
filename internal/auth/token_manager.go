@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dotenv/cli/internal/client"
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/constants"
 	"github.com/dotenv/cli/internal/errors"
@@ -15,12 +16,14 @@ import (
 // TokenManager handles OAuth token refresh and validation
 type TokenManager struct {
 	accountManager *config.AccountManager
+	clientFactory  *client.Factory
 }
 
 // NewTokenManager creates a new token manager
 func NewTokenManager(am *config.AccountManager) *TokenManager {
 	return &TokenManager{
 		accountManager: am,
+		clientFactory:  client.NewFactory(config.GetAPIURL("")),
 	}
 }
 
@@ -46,21 +49,11 @@ func (tm *TokenManager) RefreshTokenIfNeeded(ctx context.Context, account *confi
 
 // RefreshToken refreshes the OAuth token for the given account
 func (tm *TokenManager) RefreshToken(ctx context.Context, account *config.Account) error {
-	// Create SDK client without authentication
-	client := dotenv.NewClient(
-		dotenv.WithBaseURL(account.APIURL),
-	)
-
-	// Check for TLS skip verify (development mode)
-	if config.ShouldSkipTLSVerify() {
-		client = dotenv.NewClient(
-			dotenv.WithBaseURL(account.APIURL),
-			dotenv.WithInsecureSkipVerify(),
-		)
-	}
+	// Create unauthenticated SDK client for token refresh
+	sdkClient := tm.clientFactory.NewUnauthenticatedClient(account.APIURL, config.ShouldSkipTLSVerify())
 
 	// Refresh token using SDK
-	tokenResp, _, err := client.OAuth.RefreshToken(ctx, account.Auth.RefreshToken, constants.OAuthClientID)
+	tokenResp, _, err := sdkClient.OAuth.RefreshToken(ctx, account.Auth.RefreshToken, constants.OAuthClientID)
 	if err != nil {
 		return errors.NewAuthError(constants.AuthTypeOAuth, "failed to refresh token", err)
 	}
@@ -87,32 +80,30 @@ func (tm *TokenManager) RefreshOrganizationsIfNeeded(ctx context.Context, accoun
 	}
 
 	// Create client with appropriate authentication
-	var client *dotenv.Client
+	var sdkClient *dotenv.Client
+	var err error
+
 	if account.IsOAuth() {
 		// Ensure token is valid first
 		if err := tm.RefreshTokenIfNeeded(ctx, account); err != nil {
 			return false, err
 		}
 
-		client = dotenv.NewClient(
-			dotenv.WithBearerToken(account.Auth.AccessToken),
-			dotenv.WithBaseURL(account.APIURL),
-		)
-	} else {
-		// API key account
-		client = dotenv.NewClient(
-			dotenv.WithAPIKey(account.Auth.APIKey),
-			dotenv.WithBaseURL(account.APIURL),
-		)
+		// Reload account to get refreshed tokens
+		account, err = tm.accountManager.Get(account.Name)
+		if err != nil {
+			return false, fmt.Errorf("failed to reload account after token refresh: %w", err)
+		}
 	}
 
-	// Set TLS skip verify for development
-	if config.ShouldSkipTLSVerify() {
-		client.SetTLSSkipVerify(true)
+	// Create client from account (without organization context)
+	sdkClient, err = tm.clientFactory.NewClientFromAccount(account, false)
+	if err != nil {
+		return false, fmt.Errorf("failed to create API client: %w", err)
 	}
 
 	// Fetch organizations
-	orgs, _, err := client.Organizations.List(ctx, nil)
+	orgs, _, err := sdkClient.Organizations.List(ctx, nil)
 	if err != nil {
 		return false, fmt.Errorf("failed to fetch organizations: %w", err)
 	}

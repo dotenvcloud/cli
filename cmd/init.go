@@ -3,15 +3,14 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dotenv/cli/internal/auth"
+	"github.com/dotenv/cli/internal/client"
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/ui"
-	dotenv "github.com/dotenv/sdk-go"
 )
 
 var (
@@ -174,13 +173,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 
 		// Try to verify API key and get organization info
-		tempClient := dotenv.NewClient(
-			dotenv.WithAPIKey(apiKey),
-			dotenv.WithBaseURL(apiURL),
-		)
-		if os.Getenv("DOTENV_TLS_SKIP_VERIFY") != "" {
-			tempClient.SetTLSSkipVerify(true)
-		}
+		factory := client.NewFactory(apiURL)
+		tempClient := factory.NewClientFromAPIKey(apiKey, apiURL, "")
 
 		orgs, _, err := tempClient.Organizations.List(context.Background(), nil)
 		if err != nil {

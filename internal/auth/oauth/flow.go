@@ -3,12 +3,13 @@ package oauth
 import (
 	"context"
 	"fmt"
-	"os"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/pkg/browser"
 
+	"github.com/dotenv/cli/internal/client"
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/constants"
 	"github.com/dotenv/cli/internal/ui"
@@ -21,6 +22,7 @@ type AuthFlow struct {
 	CallbackPort  string
 	NoBrowser     bool
 	IsInteractive bool
+	clientFactory *client.Factory
 }
 
 // OrganizationResponse represents the API response for user organizations
@@ -37,8 +39,10 @@ type Organization struct {
 
 // Run executes the OAuth2 authentication flow
 func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
-	// Create OAuth2 client
-	client := NewOAuth2Client(constants.OAuthClientID, af.BaseURL)
+	// Initialize client factory if not already set
+	if af.clientFactory == nil {
+		af.clientFactory = client.NewFactory(af.BaseURL)
+	}
 
 	// Generate PKCE challenge
 	pkce, err := GeneratePKCEChallenge()
@@ -70,12 +74,7 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 	}
 
 	// Build authorization URL
-	authURL := client.GetAuthorizationURL(AuthorizeParams{
-		RedirectURI:         callbackServer.GetCallbackURL(),
-		State:               state,
-		CodeChallenge:       pkce.Challenge,
-		CodeChallengeMethod: pkce.Method,
-	})
+	authURL := af.buildAuthorizationURL(callbackServer.GetCallbackURL(), state, pkce.Challenge, pkce.Method)
 
 	// Open browser or print URL
 	if af.NoBrowser {
@@ -105,7 +104,17 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 		// Exchange code for tokens
 		ui.PrintInfo("Exchanging authorization code for tokens...")
 
-		tokens, err := client.ExchangeCode(timeoutCtx, code, pkce.Verifier, callbackServer.GetCallbackURL())
+		// Create unauthenticated SDK client for OAuth operations
+		sdkClient := af.clientFactory.NewUnauthenticatedClient(af.BaseURL, config.ShouldSkipTLSVerify())
+
+		// Use SDK to exchange code for tokens
+		req := dotenv.OAuthTokenAuthCodeRequest{
+			Code:         code,
+			CodeVerifier: pkce.Verifier,
+			ClientID:     constants.OAuthClientID,
+		}
+
+		tokenResp, _, err := sdkClient.OAuth.ExchangeToken(timeoutCtx, req)
 		if err != nil {
 			return fmt.Errorf("failed to exchange code: %w", err)
 		}
@@ -113,7 +122,7 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 		// Fetch user info and organizations
 		ui.PrintInfo("Fetching user information...")
 
-		userInfo, orgs, err := af.fetchUserAndOrganizations(tokens.AccessToken)
+		userInfo, orgs, err := af.fetchUserAndOrganizations(tokenResp.AccessToken)
 		if err != nil {
 			return fmt.Errorf("failed to fetch user info: %w", err)
 		}
@@ -215,11 +224,11 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 		}
 
 		// Create OAuth account with tokens and organizations
-		tokenResp := config.TokenResponse{
-			AccessToken:  tokens.AccessToken,
-			RefreshToken: tokens.RefreshToken,
-			TokenType:    tokens.TokenType,
-			ExpiresIn:    tokens.ExpiresIn,
+		configTokenResp := config.TokenResponse{
+			AccessToken:  tokenResp.AccessToken,
+			RefreshToken: tokenResp.RefreshToken,
+			TokenType:    tokenResp.TokenType,
+			ExpiresIn:    tokenResp.ExpiresIn,
 		}
 
 		// Check if account already exists
@@ -229,7 +238,7 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 			ui.PrintInfo("Updating existing account: %s", accountName)
 
 			// Update tokens
-			if err := am.RefreshToken(accountName, tokenResp); err != nil {
+			if err := am.RefreshToken(accountName, configTokenResp); err != nil {
 				return fmt.Errorf("failed to update tokens: %w", err)
 			}
 
@@ -255,7 +264,7 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 			if selectedOrgULID == "" && selectedOrg.ID != "" {
 				selectedOrgULID = selectedOrg.ID
 			}
-			if err := am.CreateWithOAuth(accountName, af.BaseURL, tokenResp, orgInfos, selectedOrgULID); err != nil {
+			if err := am.CreateWithOAuth(accountName, af.BaseURL, configTokenResp, orgInfos, selectedOrgULID); err != nil {
 				return fmt.Errorf("failed to create account: %w", err)
 			}
 		}
@@ -295,38 +304,75 @@ func (af *AuthFlow) fetchUserAndOrganizations(accessToken string) (userInfo stru
 		apiURL = constants.TestAPIURL
 	}
 
-	// Create API client with the OAuth token
-	client := dotenv.NewClient(
-		dotenv.WithBearerToken(accessToken),
-		dotenv.WithBaseURL(apiURL),
-	)
+	// Create API client with the OAuth token using factory
+	sdkClient := af.clientFactory.NewClient(client.Options{
+		BaseURL:            apiURL,
+		BearerToken:        accessToken,
+		InsecureSkipVerify: config.ShouldSkipTLSVerify(),
+	})
 
-	// For development
-	if os.Getenv("DOTENV_TLS_SKIP_VERIFY") != "" {
-		client.SetTLSSkipVerify(true)
-	}
-
-	// Get user info which includes organizations
-	req, err := client.NewRequest(context.Background(), "GET", "/api/v1/user", nil)
-	if err != nil {
-		return userInfo, nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	var userResp struct {
-		ID            int64          `json:"id"`
-		Email         string         `json:"email"`
-		Name          string         `json:"name"`
-		Organizations []Organization `json:"organizations"`
-	}
-
-	_, err = client.Do(context.Background(), req, &userResp)
+	// Use the SDK's UserService to get user info
+	user, sdkOrgs, _, err := sdkClient.User.GetAuthenticatedUser(context.Background())
 	if err != nil {
 		return userInfo, nil, fmt.Errorf("failed to fetch user info: %w", err)
 	}
 
-	userInfo.ID = userResp.ID
-	userInfo.Email = userResp.Email
-	userInfo.Name = userResp.Name
+	// Convert user ID from string to int64
+	var userID int64
+	if _, err := fmt.Sscanf(user.ID, "%d", &userID); err != nil {
+		// If conversion fails, just use 0
+		userID = 0
+	}
 
-	return userInfo, userResp.Organizations, nil
+	userInfo.ID = userID
+	userInfo.Email = user.Email
+	userInfo.Name = user.Name
+
+	// Convert SDK organizations to CLI organizations
+	orgs = make([]Organization, len(sdkOrgs))
+	for i, sdkOrg := range sdkOrgs {
+		orgs[i] = Organization{
+			ID:   sdkOrg.ID,   // This contains the ULID from the API
+			ULID: sdkOrg.ULID, // Also populate ULID field for compatibility
+			Name: sdkOrg.Name,
+		}
+	}
+
+	return userInfo, orgs, nil
+}
+
+// buildAuthorizationURL constructs the OAuth authorization URL
+func (af *AuthFlow) buildAuthorizationURL(redirectURI, state, codeChallenge, challengeMethod string) string {
+	// Store original base URL for OAuth URL construction
+	oauthBaseURL := af.BaseURL
+
+	// Remove /api/v1 suffix if present
+	oauthBaseURL = strings.TrimSuffix(oauthBaseURL, "/api/v1")
+	oauthBaseURL = strings.TrimSuffix(oauthBaseURL, "/api")
+
+	// For development, use the web URL for OAuth endpoints
+	if strings.Contains(oauthBaseURL, "dotenv.test") || strings.Contains(oauthBaseURL, "api.dotenv.test") {
+		oauthBaseURL = "https://dotenv.test"
+	}
+
+	u, err := url.Parse(oauthBaseURL)
+	if err != nil {
+		// Fallback to default URL if parsing fails
+		u = &url.URL{
+			Scheme: "https",
+			Host:   "api.dotenv.com",
+		}
+	}
+	u.Path = "/oauth/authorize"
+
+	q := u.Query()
+	q.Set("client_id", constants.OAuthClientID)
+	q.Set("redirect_uri", redirectURI)
+	q.Set("response_type", "code")
+	q.Set("state", state)
+	q.Set("code_challenge", codeChallenge)
+	q.Set("code_challenge_method", challengeMethod)
+
+	u.RawQuery = q.Encode()
+	return u.String()
 }

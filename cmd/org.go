@@ -10,6 +10,7 @@ import (
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 
+	"github.com/dotenv/cli/internal/client"
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/ui"
 	dotenv "github.com/dotenv/sdk-go"
@@ -321,36 +322,27 @@ func runOrgRefresh(cmd *cobra.Command, args []string) error {
 
 	ui.PrintInfo("Refreshing organizations...")
 
-	// Create API client
-	var client *dotenv.Client
+	// Use factory to create API client
+	factory := client.NewFactory(config.GetAPIURL(""))
 
+	// Handle OAuth token refresh if needed
+	var sdkClient *dotenv.Client
 	if account.IsOAuth() {
-		// Check if token needs refresh
-		if account.IsTokenExpired() {
-			ui.PrintInfo("Token expired, refreshing...")
-			// TODO: Implement token refresh here
-			return fmt.Errorf("token expired, please run 'dotenv account refresh' first")
+		// Use factory to handle refresh
+		sdkClient, err = factory.RefreshTokenAndCreateClient(cmd.Context(), account, am, false)
+		if err != nil {
+			return fmt.Errorf("failed to create API client: %w", err)
 		}
-
-		client = dotenv.NewClient(
-			dotenv.WithBearerToken(account.Auth.AccessToken),
-			dotenv.WithBaseURL(account.APIURL),
-		)
 	} else {
-		// API key account
-		client = dotenv.NewClient(
-			dotenv.WithAPIKey(account.Auth.APIKey),
-			dotenv.WithBaseURL(account.APIURL),
-		)
-	}
-
-	// Set TLS skip verify for development
-	if os.Getenv("DOTENV_TLS_SKIP_VERIFY") != "" {
-		client.SetTLSSkipVerify(true)
+		// Create client from account (without organization context)
+		sdkClient, err = factory.NewClientFromAccount(account, false)
+		if err != nil {
+			return fmt.Errorf("failed to create API client: %w", err)
+		}
 	}
 
 	// Fetch organizations
-	orgs, _, err := client.Organizations.List(cmd.Context(), nil)
+	orgs, _, err := sdkClient.Organizations.List(cmd.Context(), nil)
 	if err != nil {
 		return fmt.Errorf("failed to fetch organizations: %w", err)
 	}

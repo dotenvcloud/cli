@@ -1,16 +1,14 @@
 package telemetry
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"runtime"
 	"sync"
 	"time"
 
+	dotenv "github.com/dotenv/sdk-go"
 	"github.com/google/uuid"
 )
 
@@ -36,28 +34,22 @@ type Context struct {
 // Client handles telemetry data collection and submission
 type Client struct {
 	enabled     bool
-	apiURL      string
-	apiKey      string
 	analyticsID string
 	sessionID   string
-	httpClient  *http.Client
+	sdkClient   *dotenv.Client
 	queue       chan Event
 	wg          sync.WaitGroup
 	mu          sync.RWMutex
 }
 
 // NewClient creates a new telemetry client
-func NewClient(apiURL, apiKey, analyticsID string) *Client {
+func NewClient(sdkClient *dotenv.Client, analyticsID string) *Client {
 	client := &Client{
 		enabled:     false, // Opt-in by default
-		apiURL:      apiURL,
-		apiKey:      apiKey,
 		analyticsID: analyticsID,
 		sessionID:   uuid.New().String(),
-		httpClient: &http.Client{
-			Timeout: 5 * time.Second,
-		},
-		queue: make(chan Event, 100),
+		sdkClient:   sdkClient,
+		queue:       make(chan Event, 100),
 	}
 
 	// Start background worker
@@ -166,38 +158,41 @@ func (c *Client) worker() {
 
 // sendBatch sends a batch of events to the telemetry endpoint
 func (c *Client) sendBatch(events []Event) {
-	if c.apiURL == "" || c.apiKey == "" {
+	if c.sdkClient == nil {
 		return
 	}
 
-	payload := map[string]interface{}{
-		"events": events,
-	}
-
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return
+	// Convert our Event type to SDK's TelemetryEvent type
+	sdkEvents := make([]dotenv.TelemetryEvent, len(events))
+	for i, event := range events {
+		sdkEvents[i] = dotenv.TelemetryEvent{
+			ID:         event.ID,
+			Name:       event.Name,
+			Properties: event.Properties,
+			Context: dotenv.TelemetryContext{
+				OS:          event.Context.OS,
+				Arch:        event.Context.Arch,
+				Version:     event.Context.Version,
+				CI:          event.Context.CI,
+				SessionID:   event.Context.SessionID,
+				AnalyticsID: event.Context.AnalyticsID,
+			},
+			Timestamp: event.Timestamp,
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", c.apiURL+"/api/v1/cli/telemetry", bytes.NewReader(data))
+	// Add CLI version to context for the SDK to use
+	ctx = context.WithValue(ctx, "cli-version", "1.0.0") // TODO: Get from version package
+
+	// Use SDK to send batch
+	_, err := c.sdkClient.Telemetry.SendBatch(ctx, sdkEvents)
 	if err != nil {
+		// Silently ignore errors as telemetry is optional
 		return
 	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("X-CLI-Version", "1.0.0") // TODO: Get from version package
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return
-	}
-	defer resp.Body.Close()
-
-	// We don't care about the response, just that it was sent
 }
 
 // isCI detects if running in a CI environment

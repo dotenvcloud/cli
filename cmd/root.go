@@ -222,9 +222,12 @@ func initTelemetry() {
 		loader.Save(cfg)
 	}
 
+	// Create unauthenticated SDK client for telemetry
+	sdkClient := getUnauthenticatedSDKClient(apiURL)
+
 	// Create telemetry client
 	// Note: We're not using an API key for telemetry as it's anonymous
-	telemetryClient = telemetry.NewClient(apiURL, "", analyticsID)
+	telemetryClient = telemetry.NewClient(sdkClient, analyticsID)
 	telemetryClient.SetEnabled(true)
 }
 

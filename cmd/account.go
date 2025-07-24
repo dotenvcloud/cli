@@ -10,11 +10,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dotenv/cli/internal/auth"
+	"github.com/dotenv/cli/internal/client"
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/constants"
 	"github.com/dotenv/cli/internal/ui"
 	"github.com/dotenv/cli/internal/utils"
-	dotenv "github.com/dotenv/sdk-go"
 )
 
 var accountCmd = &cobra.Command{
@@ -255,15 +255,10 @@ func runAccountAdd(cmd *cobra.Command, args []string) error {
 		}
 
 		// Try to fetch organization info
-		client := dotenv.NewClient(
-			dotenv.WithAPIKey(apiKey),
-			dotenv.WithBaseURL(getAPIURL()),
-		)
-		if os.Getenv("DOTENV_TLS_SKIP_VERIFY") != "" {
-			client.SetTLSSkipVerify(true)
-		}
+		factory := client.NewFactory(getAPIURL())
+		sdkClient := factory.NewClientFromAPIKey(apiKey, getAPIURL(), "")
 
-		orgs, _, err := client.Organizations.List(cmd.Context(), nil)
+		orgs, _, err := sdkClient.Organizations.List(cmd.Context(), nil)
 		if err != nil {
 			return fmt.Errorf("failed to verify API key: %w", err)
 		}
@@ -390,20 +385,11 @@ func runAccountRefresh(cmd *cobra.Command, args []string) error {
 	ui.PrintInfo("Refreshing OAuth token...")
 
 	// Create SDK client without authentication (OAuth token endpoint doesn't require auth)
-	client := dotenv.NewClient(
-		dotenv.WithBaseURL(account.APIURL),
-	)
-
-	// Check for TLS skip verify (development mode)
-	if config.ShouldSkipTLSVerify() {
-		client = dotenv.NewClient(
-			dotenv.WithBaseURL(account.APIURL),
-			dotenv.WithInsecureSkipVerify(),
-		)
-	}
+	factory := client.NewFactory(account.APIURL)
+	sdkClient := factory.NewUnauthenticatedClient(account.APIURL, config.ShouldSkipTLSVerify())
 
 	// Refresh token using SDK
-	sdkTokenResp, _, err := client.OAuth.RefreshToken(cmd.Context(), account.Auth.RefreshToken, constants.OAuthClientID)
+	sdkTokenResp, _, err := sdkClient.OAuth.RefreshToken(cmd.Context(), account.Auth.RefreshToken, constants.OAuthClientID)
 	if err != nil {
 		return fmt.Errorf("failed to refresh token: %w", err)
 	}
