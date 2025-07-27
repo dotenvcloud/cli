@@ -1,40 +1,35 @@
 # Build stage
 FROM golang:1.23-alpine AS builder
 
-# Install dependencies
-RUN apk add --no-cache git make ca-certificates
+RUN apk add --no-cache git ca-certificates
 
-# Create non-root user
-RUN adduser -D -g '' appuser
-
-WORKDIR /app
-
-# Copy go mod files
+WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source
 COPY . .
-
-# Build
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-w -s -X main.version=docker" \
-    -a -installsuffix cgo \
-    -o dotenv .
+    -ldflags="-w -s -X main.version=$(git describe --tags --always)" \
+    -o dotenv ./cmd/dotenv
 
 # Final stage
-FROM scratch
+FROM alpine:3.19
 
-# Copy CA certificates
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+RUN apk add --no-cache ca-certificates
 
-# Copy user
-COPY --from=builder /etc/passwd /etc/passwd
+# Create non-root user
+RUN addgroup -g 1000 -S dotenv && \
+    adduser -u 1000 -S dotenv -G dotenv
 
 # Copy binary
-COPY --from=builder /app/dotenv /dotenv
+COPY --from=builder /build/dotenv /usr/local/bin/dotenv
 
-# Use non-root user
-USER appuser
+# Create config directory
+RUN mkdir -p /home/dotenv/.config/dotenv && \
+    chown -R dotenv:dotenv /home/dotenv
 
-ENTRYPOINT ["/dotenv"]
+USER dotenv
+WORKDIR /home/dotenv
+
+ENTRYPOINT ["dotenv"]
+CMD ["--help"]

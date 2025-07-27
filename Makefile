@@ -167,9 +167,48 @@ test-all: test test-compatibility test-sdk test-sdk-integration
 ci: clean build test-coverage test-race lint
 	@echo "CI pipeline complete"
 
+# Docker commands
+docker-build:
+	@echo "Building CLI Docker image..."
+	docker build -t lostlink/dotenv-cli:local .
+
+# Multi-platform Docker build
+docker-build-multi:
+	@echo "Building multi-platform CLI Docker image..."
+	docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t lostlink/dotenv-cli:local .
+
+# Push Docker image to registry
+docker-push:
+	docker push lostlink/dotenv-cli:latest
+
+# Pull Docker image from registry
+docker-pull:
+	docker pull lostlink/dotenv-cli:latest
+
+# Test CLI in Docker
+docker-test:
+	@echo "Running CLI tests in Docker..."
+	docker run --rm lostlink/dotenv-cli:local test
+
+# Shell into Docker container for debugging
+docker-shell:
+	docker run --rm -it lostlink/dotenv-cli:local sh
+
+# Run CLI in Docker with custom arguments
+# Usage: make docker-run ARGS="login --email=user@example.com"
+docker-run:
+	docker run --rm -it lostlink/dotenv-cli:local $(ARGS)
+
+# Clean Docker images
+docker-clean:
+	docker image prune -f
+	docker rmi lostlink/dotenv-cli:local || true
+
 # Show help
 help:
 	@echo "Available targets:"
+	@echo ""
+	@echo "Build & Test:"
 	@echo "  make build          - Build for current platform"
 	@echo "  make build-all      - Build for all platforms"
 	@echo "  make install        - Install to /usr/local/bin"
@@ -183,6 +222,18 @@ help:
 	@echo "  make test-sdk       - Run SDK tests"
 	@echo "  make test-all       - Run all tests including SDK"
 	@echo "  make ci             - Run CI pipeline locally"
+	@echo ""
+	@echo "Docker Commands:"
+	@echo "  make docker-build   - Build Docker image"
+	@echo "  make docker-build-multi - Build multi-platform image"
+	@echo "  make docker-push    - Push image to registry"
+	@echo "  make docker-pull    - Pull image from registry"
+	@echo "  make docker-test    - Run tests in Docker"
+	@echo "  make docker-shell   - Shell into container"
+	@echo "  make docker-run     - Run CLI in Docker"
+	@echo "  make docker-clean   - Clean Docker images"
+	@echo ""
+	@echo "Maintenance:"
 	@echo "  make clean          - Clean build artifacts"
 	@echo "  make lint           - Run linters"
 	@echo "  make fmt            - Format code"
