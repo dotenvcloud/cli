@@ -3,7 +3,7 @@ package constants
 // API URLs
 const (
 	// DefaultAPIURL is the default DotEnv API URL
-	DefaultAPIURL = "https://api.dotenv.com"
+	DefaultAPIURL = "https://api.dotenv.cloud"
 
 	// LegacyAPIURL is the legacy DotEnv API URL for backward compatibility
 	LegacyAPIURL = "https://api.dotenv.cloud"

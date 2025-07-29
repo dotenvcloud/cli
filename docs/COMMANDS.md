@@ -29,7 +29,7 @@ dotenv init [flags]
 - `--non-interactive` - Use defaults without prompting
 
 **Interactive Prompts:**
-1. API URL (default: https://api.dotenv.com)
+1. API URL (default: https://api.dotenv.cloud)
 2. Authentication method (browser/manual)
 3. Organization selection
 4. Telemetry opt-in

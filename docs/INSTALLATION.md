@@ -32,8 +32,8 @@ brew install dotenv
 ### Linux (APT/Debian/Ubuntu)
 
 ```bash
-curl -sSL https://dotenv.com/public.key | sudo apt-key add -
-echo "deb https://dotenv.com/apt stable main" | sudo tee /etc/apt/sources.list.d/dotenv.list
+curl -sSL https://dotenv.cloud/public.key | sudo apt-key add -
+echo "deb https://dotenv.cloud/apt stable main" | sudo tee /etc/apt/sources.list.d/dotenv.list
 sudo apt update
 sudo apt install dotenv-cli
 ```
@@ -41,8 +41,8 @@ sudo apt install dotenv-cli
 ### Linux (YUM/RHEL/CentOS/Fedora)
 
 ```bash
-sudo rpm --import https://dotenv.com/public.key
-sudo curl -o /etc/yum.repos.d/dotenv.repo https://dotenv.com/yum/dotenv.repo
+sudo rpm --import https://dotenv.cloud/public.key
+sudo curl -o /etc/yum.repos.d/dotenv.repo https://dotenv.cloud/yum/dotenv.repo
 sudo yum install dotenv-cli
 ```
 
@@ -60,7 +60,7 @@ scoop install dotenv
 #### Using the Install Script
 
 ```bash
-curl -sSL https://dotenv.com/install.sh | bash
+curl -sSL https://dotenv.cloud/install.sh | bash
 ```
 
 This script will:
@@ -90,7 +90,7 @@ This script will:
 #### Using the Install Script
 
 ```bash
-curl -sSL https://dotenv.com/install.sh | bash
+curl -sSL https://dotenv.cloud/install.sh | bash
 ```
 
 #### Manual Installation
@@ -124,7 +124,7 @@ Run PowerShell as Administrator:
 
 ```powershell
 Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
-iwr -useb https://dotenv.com/install.ps1 | iex
+iwr -useb https://dotenv.cloud/install.ps1 | iex
 ```
 
 #### Using Chocolatey
@@ -147,7 +147,7 @@ choco install dotenv-cli
 ```dockerfile
 FROM alpine:latest
 RUN apk add --no-cache curl \
-    && curl -sSL https://dotenv.com/install.sh | sh
+    && curl -sSL https://dotenv.cloud/install.sh | sh
 ```
 
 Or use our official image:
@@ -317,10 +317,10 @@ If you get permission errors:
 
 ```bash
 # Option 1: Use sudo
-curl -sSL https://dotenv.com/install.sh | sudo bash
+curl -sSL https://dotenv.cloud/install.sh | sudo bash
 
 # Option 2: Install to user directory
-curl -sSL https://dotenv.com/install.sh | bash -s -- --prefix=$HOME/.local
+curl -sSL https://dotenv.cloud/install.sh | bash -s -- --prefix=$HOME/.local
 ```
 
 Then add to PATH:
@@ -344,7 +344,7 @@ If behind a corporate proxy:
 ```bash
 export HTTP_PROXY=http://proxy.company.com:8080
 export HTTPS_PROXY=http://proxy.company.com:8080
-curl -sSL https://dotenv.com/install.sh | bash
+curl -sSL https://dotenv.cloud/install.sh | bash
 ```
 
 ### Architecture Mismatch

@@ -41,7 +41,7 @@ Solutions for common issues with DotEnv CLI.
 
 3. **Reinstall**:
    ```bash
-   curl -sSL https://dotenv.com/install.sh | bash
+   curl -sSL https://dotenv.cloud/install.sh | bash
    ```
 
 ### Permission Denied
@@ -52,12 +52,12 @@ Solutions for common issues with DotEnv CLI.
 
 1. **Use sudo**:
    ```bash
-   curl -sSL https://dotenv.com/install.sh | sudo bash
+   curl -sSL https://dotenv.cloud/install.sh | sudo bash
    ```
 
 2. **Install to user directory**:
    ```bash
-   curl -sSL https://dotenv.com/install.sh | bash -s -- --prefix=$HOME/.local
+   curl -sSL https://dotenv.cloud/install.sh | bash -s -- --prefix=$HOME/.local
    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
    ```
 
@@ -238,8 +238,8 @@ Solutions for common issues with DotEnv CLI.
 
 1. **Check internet connection**:
    ```bash
-   ping api.dotenv.com
-   curl -I https://api.dotenv.com
+   ping api.dotenv.cloud
+   curl -I https://api.dotenv.cloud
    ```
 
 2. **Proxy configuration**:
@@ -250,7 +250,7 @@ Solutions for common issues with DotEnv CLI.
    ```
 
 3. **Firewall rules**:
-   - Allow HTTPS (443) to api.dotenv.com
+   - Allow HTTPS (443) to api.dotenv.cloud
    - Check corporate firewall settings
 
 ### SSL Certificate Error
@@ -411,8 +411,8 @@ Solutions for common issues with DotEnv CLI.
 
 1. **Check network latency**:
    ```bash
-   ping api.dotenv.com
-   traceroute api.dotenv.com
+   ping api.dotenv.cloud
+   traceroute api.dotenv.cloud
    ```
 
 2. **Enable caching**:
@@ -477,10 +477,10 @@ export DOTENV_LOG_LEVEL=debug
 
 ### Support Channels
 
-1. **Documentation**: https://dotenv.com/docs/cli
+1. **Documentation**: https://dotenv.cloud/docs/cli
 2. **GitHub Issues**: https://github.com/dotenv/cli/issues
 3. **Discord Community**: https://discord.gg/dotenv
-4. **Email Support**: support@dotenv.com
+4. **Email Support**: support@dotenv.cloud
 
 ### Reporting Bugs
 
@@ -510,7 +510,7 @@ Include:
 ```bash
 # Complete reset
 rm -rf ~/.dotenv
-curl -sSL https://dotenv.com/install.sh | bash
+curl -sSL https://dotenv.cloud/install.sh | bash
 dotenv init
 dotenv login
 ```
@@ -520,7 +520,7 @@ dotenv login
 ```bash
 # Test API connection
 curl -H "Authorization: Bearer $DOTENV_API_KEY" \
-  https://api.dotenv.com/v1/organizations
+  https://api.dotenv.cloud/v1/organizations
 ```
 
 ### Verify Installation

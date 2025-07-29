@@ -360,7 +360,7 @@ func (af *AuthFlow) buildAuthorizationURL(redirectURI, state, codeChallenge, cha
 		// Fallback to default URL if parsing fails
 		u = &url.URL{
 			Scheme: "https",
-			Host:   "api.dotenv.com",
+			Host:   "api.dotenv.cloud",
 		}
 	}
 	u.Path = "/oauth/authorize"

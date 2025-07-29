@@ -9,7 +9,7 @@ import (
 // GetAPIURL returns the API URL with proper precedence:
 // 1. From environment variable DOTENV_API_URL
 // 2. From provided default (e.g., from current account)
-// 3. Default to https://api.dotenv.com
+// 3. Default to https://api.dotenv.cloud
 func GetAPIURL(defaultURL string) string {
 	// First priority: environment variable
 	if apiURL := os.Getenv(EnvAPIURL); apiURL != "" {

@@ -23,7 +23,7 @@ func TestNewFactory(t *testing.T) {
 		{
 			name:           "with empty base URL",
 			defaultBaseURL: "",
-			expected:       "https://api.dotenv.com",
+			expected:       "https://api.dotenv.cloud",
 		},
 	}
 

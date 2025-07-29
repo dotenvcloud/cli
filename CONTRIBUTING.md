@@ -15,7 +15,7 @@ First off, thank you for considering contributing to DotEnv CLI! It's people lik
 
 ## Code of Conduct
 
-This project and everyone participating in it is governed by our Code of Conduct. By participating, you are expected to uphold this code. Please report unacceptable behavior to conduct@dotenv.com.
+This project and everyone participating in it is governed by our Code of Conduct. By participating, you are expected to uphold this code. Please report unacceptable behavior to conduct@dotenv.cloud.
 
 ### Our Standards
 
@@ -400,6 +400,6 @@ We value all contributions! Contributors are:
 Feel free to:
 - Open an issue for questions
 - Ask in Discord
-- Email us at contributors@dotenv.com
+- Email us at contributors@dotenv.cloud
 
 Thank you for contributing to DotEnv CLI! 💙

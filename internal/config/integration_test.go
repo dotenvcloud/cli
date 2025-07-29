@@ -33,7 +33,7 @@ func TestIntegrationFullWorkflow(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create second context
-	err = cm.Create("prod", "https://api.dotenv.com", "dotenv_01ARZ3NDEKTSV4RRFFQ69G5FAV_prod456", "prod-org")
+	err = cm.Create("prod", "https://api.dotenv.cloud", "dotenv_01ARZ3NDEKTSV4RRFFQ69G5FAV_prod456", "prod-org")
 	require.NoError(t, err)
 
 	// Switch to prod
@@ -48,7 +48,7 @@ func TestIntegrationFullWorkflow(t *testing.T) {
 	ctx, err := mgr.GetCurrentContext()
 	require.NoError(t, err)
 	assert.Equal(t, "prod-org", ctx.Organization)
-	assert.Equal(t, "https://api.dotenv.com", ctx.APIURL)
+	assert.Equal(t, "https://api.dotenv.cloud", ctx.APIURL)
 
 	// Update telemetry
 	err = mgr.SetTelemetryOptIn(true)

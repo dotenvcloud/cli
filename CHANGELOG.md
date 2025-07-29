@@ -141,8 +141,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Bug Reports**: [GitHub Issues](https://github.com/dotenv/cli/issues)
 - **Feature Requests**: [GitHub Discussions](https://github.com/dotenv/cli/discussions)
-- **Security Issues**: security@dotenv.com
-- **General Support**: support@dotenv.com
+- **Security Issues**: security@dotenv.cloud
+- **General Support**: support@dotenv.cloud
 
 ---
 

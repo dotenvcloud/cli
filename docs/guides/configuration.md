@@ -45,7 +45,7 @@ current_context: production
 contexts:
   production:
     name: production
-    api_url: https://api.dotenv.com
+    api_url: https://api.dotenv.cloud
     api_key: <encrypted>
     organization: acme-corp
     created_at: 2024-01-01T00:00:00Z
@@ -61,7 +61,7 @@ contexts:
   
   staging:
     name: staging
-    api_url: https://api.dotenv.com
+    api_url: https://api.dotenv.cloud
     api_key: <encrypted>
     organization: acme-staging
     created_at: 2024-01-01T00:00:00Z
@@ -136,9 +136,9 @@ dotenv list contexts
 
 # Output:
 # NAME         ORGANIZATION    API URL                   CURRENT
-# production   acme-corp       https://api.dotenv.com    *
-# staging      acme-staging    https://api.dotenv.com
-# personal     john-doe        https://api.dotenv.com
+# production   acme-corp       https://api.dotenv.cloud    *
+# staging      acme-staging    https://api.dotenv.cloud
+# personal     john-doe        https://api.dotenv.cloud
 
 # Switch context
 dotenv use-context staging
@@ -330,7 +330,7 @@ export DOTENV_CONTEXT="staging"
 
 ```bash
 # API endpoint
-export DOTENV_API_URL="https://api.staging.dotenv.com"
+export DOTENV_API_URL="https://api.staging.dotenv.cloud"
 
 # Request timeout (seconds)
 export DOTENV_TIMEOUT=30
@@ -459,7 +459,7 @@ For corporate environments:
 ```yaml
 contexts:
   corporate:
-    api_url: https://api.dotenv.com
+    api_url: https://api.dotenv.cloud
     proxy:
       http_proxy: http://proxy.corp.com:8080
       https_proxy: http://proxy.corp.com:8080

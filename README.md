@@ -1,7 +1,7 @@
 # DotEnv CLI
 
 <div align="center">
-  <img src="https://dotenv.com/logo.svg" alt="DotEnv Logo" width="200">
+  <img src="https://dotenv.cloud/logo.svg" alt="DotEnv Logo" width="200">
   
   [![Version](https://img.shields.io/github/v/release/dotenv/cli)](https://github.com/dotenv/cli/releases)
   [![Build Status](https://img.shields.io/github/workflow/status/dotenv/cli/test)](https://github.com/dotenv/cli/actions)
@@ -36,7 +36,7 @@ brew install dotenv
 
 Using curl:
 ```bash
-curl -sSL https://dotenv.com/install.sh | bash
+curl -sSL https://dotenv.cloud/install.sh | bash
 ```
 
 ### Windows
@@ -49,7 +49,7 @@ scoop install dotenv
 
 Using PowerShell:
 ```powershell
-iwr -useb https://dotenv.com/install.ps1 | iex
+iwr -useb https://dotenv.cloud/install.ps1 | iex
 ```
 
 ### From Source
@@ -181,10 +181,10 @@ telemetry_enabled: true
 current_context: production
 contexts:
   production:
-    api_url: https://api.dotenv.com
+    api_url: https://api.dotenv.cloud
     organization: acme-corp
   staging:
-    api_url: https://api.dotenv.com
+    api_url: https://api.dotenv.cloud
     organization: acme-corp-staging
 ```
 
@@ -280,13 +280,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- 📧 Email: support@dotenv.com
+- 📧 Email: support@dotenv.cloud
 - 💬 Discord: [Join our community](https://discord.gg/dotenv)
 - 🐛 Issues: [GitHub Issues](https://github.com/dotenv/cli/issues)
-- 📖 Docs: [Documentation](https://dotenv.com/docs/cli)
+- 📖 Docs: [Documentation](https://dotenv.cloud/docs/cli)
 
 ---
 
 <p align="center">
-  Made with ❤️ by the <a href="https://dotenv.com">DotEnv</a> team
+  Made with ❤️ by the <a href="https://dotenv.cloud">DotEnv</a> team
 </p>

@@ -42,7 +42,7 @@ org, _ := mgr.GetOrganization()
 cm := mgr.GetContextManager()
 
 // Create a new context
-err = cm.Create("production", "https://api.dotenv.com", "your-api-key", "my-org")
+err = cm.Create("production", "https://api.dotenv.cloud", "your-api-key", "my-org")
 
 // Switch contexts
 err = cm.Use("production")
@@ -83,7 +83,7 @@ current_context: production
 contexts:
   production:
     name: production
-    api_url: https://api.dotenv.com
+    api_url: https://api.dotenv.cloud
     api_key: <encrypted>
     organization: my-org
     created_at: 2025-06-18T10:00:00Z

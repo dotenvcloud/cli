@@ -17,7 +17,7 @@ Welcome to DotEnv CLI! This guide will walk you through the initial setup and ba
 
 Before you begin, ensure you have:
 
-1. **A DotEnv account** - Sign up at [dotenv.com](https://dotenv.com)
+1. **A DotEnv account** - Sign up at [dotenv.cloud](https://dotenv.cloud)
 2. **An organization** - Created during signup
 3. **A project** - Create one in the dashboard
 4. **Terminal access** - Command line on macOS, Linux, or Windows
@@ -28,12 +28,12 @@ Before you begin, ensure you have:
 
 **macOS/Linux:**
 ```bash
-curl -sSL https://dotenv.com/install.sh | bash
+curl -sSL https://dotenv.cloud/install.sh | bash
 ```
 
 **Windows (PowerShell as Administrator):**
 ```powershell
-iwr -useb https://dotenv.com/install.ps1 | iex
+iwr -useb https://dotenv.cloud/install.ps1 | iex
 ```
 
 ### Verify Installation
@@ -59,7 +59,7 @@ dotenv init
 
 You'll be prompted for:
 
-1. **API URL**: Press Enter to use the default (https://api.dotenv.com)
+1. **API URL**: Press Enter to use the default (https://api.dotenv.cloud)
 2. **Authentication**: Choose 'browser' for the easiest setup
 3. **Telemetry**: Choose whether to help improve DotEnv CLI
 
@@ -68,7 +68,7 @@ Example session:
 $ dotenv init
 Welcome to DotEnv CLI! Let's get you set up.
 
-API URL [https://api.dotenv.com]: ↵
+API URL [https://api.dotenv.cloud]: ↵
 Authentication method (browser/token) [browser]: ↵
 Enable telemetry to help improve DotEnv CLI? [y/N]: y
 
@@ -94,7 +94,7 @@ Example:
 ```
 $ dotenv login
 Opening browser for authentication...
-If the browser doesn't open, visit: https://app.dotenv.com/cli/auth?token=abc123
+If the browser doesn't open, visit: https://app.dotenv.cloud/cli/auth?token=abc123
 
 Waiting for authentication...
 ✓ Authentication successful!

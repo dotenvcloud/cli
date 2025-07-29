@@ -37,7 +37,7 @@ func NewRootCommand() *cobra.Command {
 		Long: `DotEnv CLI provides secure management of environment variables
 across projects, targets, and environments with client-side encryption support.
 
-For more information, visit: https://dotenv.com/docs/cli`,
+For more information, visit: https://dotenv.cloud/docs/cli`,
 
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			// Disable color if requested

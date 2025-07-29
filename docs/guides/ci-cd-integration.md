@@ -66,7 +66,7 @@ jobs:
     
     - name: Install DotEnv CLI
       run: |
-        curl -sSL https://dotenv.com/install.sh | bash
+        curl -sSL https://dotenv.cloud/install.sh | bash
         echo "$HOME/.local/bin" >> $GITHUB_PATH
     
     - name: Pull Secrets
@@ -124,7 +124,7 @@ runs:
       shell: bash
       run: |
         if ! command -v dotenv &> /dev/null; then
-          curl -sSL https://dotenv.com/install.sh | bash
+          curl -sSL https://dotenv.cloud/install.sh | bash
           echo "$HOME/.local/bin" >> $GITHUB_PATH
         fi
     
@@ -190,7 +190,7 @@ variables:
 before_script:
   - |
     if ! command -v dotenv &> /dev/null; then
-      curl -sSL https://dotenv.com/install.sh | bash
+      curl -sSL https://dotenv.cloud/install.sh | bash
       export PATH="$HOME/.local/bin:$PATH"
     fi
 
@@ -290,7 +290,7 @@ pipeline {
       steps {
         sh '''
           if ! command -v dotenv &> /dev/null; then
-            curl -sSL https://dotenv.com/install.sh | bash
+            curl -sSL https://dotenv.cloud/install.sh | bash
             export PATH="$HOME/.local/bin:$PATH"
           fi
         '''
@@ -350,7 +350,7 @@ pipeline {
 def call(String project, String outputFile = '.env') {
   sh """
     if ! command -v dotenv &> /dev/null; then
-      curl -sSL https://dotenv.com/install.sh | bash
+      curl -sSL https://dotenv.cloud/install.sh | bash
       export PATH="\$HOME/.local/bin:\$PATH"
     fi
     dotenv pull ${project} --output=${outputFile}
@@ -389,7 +389,7 @@ jobs:
       - run:
           name: Install DotEnv CLI
           command: |
-            curl -sSL https://dotenv.com/install.sh | bash
+            curl -sSL https://dotenv.cloud/install.sh | bash
             echo 'export PATH="$HOME/.local/bin:$PATH"' >> $BASH_ENV
       
       - run:
@@ -422,7 +422,7 @@ jobs:
       - run:
           name: Install DotEnv CLI
           command: |
-            curl -sSL https://dotenv.com/install.sh | bash
+            curl -sSL https://dotenv.cloud/install.sh | bash
             echo 'export PATH="$HOME/.local/bin:$PATH"' >> $BASH_ENV
       
       - run:
@@ -471,7 +471,7 @@ steps:
     inputs:
       targetType: 'inline'
       script: |
-        curl -sSL https://dotenv.com/install.sh | bash
+        curl -sSL https://dotenv.cloud/install.sh | bash
         echo "##vso[task.prependpath]$HOME/.local/bin"
 
   - task: Bash@3
@@ -540,7 +540,7 @@ phases:
       nodejs: 16
     commands:
       - echo "Installing DotEnv CLI..."
-      - curl -sSL https://dotenv.com/install.sh | bash
+      - curl -sSL https://dotenv.cloud/install.sh | bash
       - export PATH="$HOME/.local/bin:$PATH"
   
   pre_build:
@@ -594,7 +594,7 @@ steps:
     args:
     - '-c'
     - |
-      curl -sSL https://dotenv.com/install.sh | bash
+      curl -sSL https://dotenv.cloud/install.sh | bash
       cp $$HOME/.local/bin/dotenv /workspace/dotenv
 
   # Pull secrets
@@ -681,7 +681,7 @@ definitions:
         script:
           - |
             if ! command -v dotenv &> /dev/null; then
-              curl -sSL https://dotenv.com/install.sh | bash
+              curl -sSL https://dotenv.cloud/install.sh | bash
             fi
           - export PATH="$HOME/.local/bin:$PATH"
     

@@ -121,12 +121,12 @@ dotenv export myapp/production/web --format=systemd
 current_context: production
 contexts:
   production:
-    api_url: https://api.dotenv.com
+    api_url: https://api.dotenv.cloud
     api_key: ${DOTENV_API_KEY}  # Can use env vars
     organization: acme-corp
     default_project: web-app
   staging:
-    api_url: https://staging-api.dotenv.com
+    api_url: https://staging-api.dotenv.cloud
     api_key: stored-securely
     organization: acme-corp-staging
 ```
@@ -233,7 +233,7 @@ GOOS=linux GOARCH=amd64 go build -o dotenv-linux-amd64
 brew install dotenv-cli
 
 # Linux/Windows
-curl -sSL https://get.dotenv.com | bash
+curl -sSL https://get.dotenv.cloud | bash
 
 # Go
 go install github.com/dotenv/cli@latest

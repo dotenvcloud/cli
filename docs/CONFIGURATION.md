@@ -22,7 +22,7 @@ current_context: production
 contexts:
   production:
     name: production
-    api_url: https://api.dotenv.com
+    api_url: https://api.dotenv.cloud
     api_key: <encrypted>
     organization: acme-corp
     created_at: 2024-01-01T00:00:00Z
@@ -37,7 +37,7 @@ contexts:
   
   staging:
     name: staging
-    api_url: https://api.dotenv.com
+    api_url: https://api.dotenv.cloud
     api_key: <encrypted>
     organization: acme-corp-staging
     created_at: 2024-01-01T00:00:00Z
@@ -126,7 +126,7 @@ export DOTENV_API_KEY="dotenv_xxx_yyy"
 export DOTENV_ORGANIZATION="different-org"
 
 # Override API URL
-export DOTENV_API_URL="https://api.staging.dotenv.com"
+export DOTENV_API_URL="https://api.staging.dotenv.cloud"
 
 # Skip TLS verification
 export DOTENV_TLS_SKIP_VERIFY=true
