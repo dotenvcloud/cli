@@ -15,7 +15,6 @@ on:
 # The App must be installed on lostlink/dotenv-sdk-go with Contents: Read.
 permissions:
   contents: read
-  security-events: write  # SARIF upload from gosec
 env:
   GOPRIVATE: github.com/lostlink/*
 
@@ -164,12 +163,14 @@ jobs:
           args: '-no-fail -fmt sarif -out results.sarif ./...'
 
       - name: Upload SARIF
-        # Requires GitHub Advanced Security on the repo. Non-fatal so
-        # govulncheck still runs where SARIF upload isn't available.
-        uses: github/codeql-action/upload-sarif@v4
-        continue-on-error: true
+        # Private repo: Code Scanning API needs GHAS. Persist SARIF as
+        # workflow artifact instead.
+        uses: actions/upload-artifact@v4
+        if: always()
         with:
-          sarif_file: results.sarif
+          name: gosec-sarif
+          path: results.sarif
+          retention-days: 30
 
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
