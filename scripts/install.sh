@@ -9,6 +9,7 @@
 # Usage:
 #   curl -sSL https://dotenv.cloud/install.sh | bash
 #   wget -qO- https://dotenv.cloud/install.sh | bash
+#   ./install.sh --dry-run     # CI smoke test, no side effects
 #
 
 set -e
@@ -63,11 +64,34 @@ detect_arch() {
     echo "$ARCH"
 }
 
-# Get the latest release version
+# Get the latest release version. Captures the HTTP status so callers can
+# distinguish "no releases yet" (404) from "rate-limited" (403) from a
+# real network failure (000) — all of which previously surfaced as the
+# same opaque empty string.
 get_latest_version() {
-    curl -s "https://api.github.com/repos/$GITHUB_REPO/releases/latest" | \
-        grep '"tag_name":' | \
-        sed -E 's/.*"([^"]+)".*/\1/'
+    local tmp code
+    tmp=$(mktemp)
+    code=$(curl -s -o "$tmp" -w '%{http_code}' \
+        "https://api.github.com/repos/$GITHUB_REPO/releases/latest" \
+        2>/dev/null || echo "000")
+    case "$code" in
+        200)
+            grep '"tag_name":' "$tmp" | sed -E 's/.*"([^"]+)".*/\1/'
+            ;;
+        404)
+            echo "[WARN] GitHub API: no releases yet for $GITHUB_REPO" >&2
+            ;;
+        403)
+            echo "[WARN] GitHub API rate-limited (HTTP 403) — retry later or set GITHUB_TOKEN" >&2
+            ;;
+        000)
+            echo "[WARN] Could not reach api.github.com (network error)" >&2
+            ;;
+        *)
+            echo "[WARN] GitHub API returned unexpected HTTP $code" >&2
+            ;;
+    esac
+    rm -f "$tmp"
 }
 
 # Download and install
@@ -78,13 +102,17 @@ install_dotenv() {
 
     if [ -z "$VERSION" ]; then
         if [ "$DRY_RUN" = "1" ]; then
-            warn "Could not determine latest version (no releases yet?); using placeholder for dry-run"
+            warn "Could not determine latest version; using placeholder for dry-run"
             VERSION="v0.0.0"
+            RESOLVED_TAG="placeholder"
         else
             error "Failed to get latest version"
         fi
+    else
+        RESOLVED_TAG="real"
     fi
 
+    info "Resolved tag: $VERSION ($RESOLVED_TAG)"
     info "Installing DotEnv CLI $VERSION for $OS/$ARCH..."
 
     # Construct download URL
@@ -99,7 +127,7 @@ install_dotenv() {
 
     if [ "$DRY_RUN" = "1" ]; then
         info "Dry-run: would download $DOWNLOAD_URL"
-        info "Dry-run: would install to ${INSTALL_DIR_ROOT} (fallback ${INSTALL_DIR_USER})"
+        info "Dry-run: would install to $INSTALL_DIR_ROOT if writable, else $INSTALL_DIR_USER"
         info "Dry-run: skipping download and install"
         return 0
     fi
@@ -179,11 +207,15 @@ main() {
                 shift
                 ;;
             -h|--help)
-                echo "Usage: install.sh [--dry-run]"
+                echo "Usage: install.sh [--dry-run] [-h|--help]"
                 exit 0
                 ;;
             *)
-                error "Unknown argument: $1"
+                # Warn-and-ignore so curl-pipe users hitting a future
+                # wrapper-passed flag are not killed by an unrecognised
+                # arg. CI invokes with known flags only.
+                warn "Unknown argument ignored: $1"
+                shift
                 ;;
         esac
     done
