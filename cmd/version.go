@@ -18,7 +18,7 @@ var versionCmd = &cobra.Command{
   # Show just the version number
   dotenv version --short`,
 
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(cmd *cobra.Command, _ []string) {
 		info := build.GetInfo()
 
 		if short, _ := cmd.Flags().GetBool("short"); short {
@@ -29,6 +29,7 @@ var versionCmd = &cobra.Command{
 	},
 }
 
+//nolint:gochecknoinits // cobra subcommand flag registration is idiomatic in init
 func init() {
 	versionCmd.Flags().BoolP("short", "s", false, "print just the version number")
 }

@@ -23,7 +23,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        go: ['1.21', '1.22', '1.23']
+        go: ['1.24', '1.25']
 
     steps:
     - name: Mint GitHub App token (SDK access)
@@ -94,7 +94,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.23'
+        go-version: '1.26'
 
     - name: Configure git for private SDK module
       run: |
@@ -107,11 +107,7 @@ jobs:
     - name: golangci-lint
       uses: golangci/golangci-lint-action@v6
       with:
-        # Pin to v1.54.x — repo's .golangci.yml uses pre-v1.55 schema
-        # (depguard.list-type, gci.local-prefixes, govet.check-shadowing,
-        # nolintlint.allow-leading-space, gomnd, maligned). Modernise config
-        # in a follow-up PR before unpinning.
-        version: v1.54.2
+        version: v1.64.8
         args: --timeout=5m
 
     - name: Check formatting
@@ -138,7 +134,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.23'
+        go-version: '1.26'
 
     - name: Configure git for private SDK module
       run: |

@@ -1,6 +1,7 @@
 package env
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/dotenv/cli/internal/formats"
@@ -84,7 +85,7 @@ func (h *Handler) ValidateKey(key string) error {
 }
 
 // ValidateValue implements Validator interface
-func (h *Handler) ValidateValue(value string) error {
+func (h *Handler) ValidateValue(_ string) error {
 	// ENV format accepts any string value
 	return nil
 }
@@ -99,7 +100,10 @@ func (h *Handler) GenerateWithComments(w io.Writer, result *formats.ParseResult,
 	return h.generator.GenerateExtended(w, result, opts)
 }
 
+//nolint:gochecknoinits // format registry self-registration is idiomatic for plugin-style handlers
 func init() {
 	// Register the handler with the default registry
-	formats.DefaultRegistry.Register(formats.FormatENV, NewHandler(nil))
+	if err := formats.DefaultRegistry.Register(formats.FormatENV, NewHandler(nil)); err != nil {
+		panic(fmt.Sprintf("env handler: failed to register: %v", err))
+	}
 }

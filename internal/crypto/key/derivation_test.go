@@ -8,6 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	samePasswordFixture      = "same-password"
+	benchmarkPasswordFixture = "benchmark-password"
+)
+
 func TestDeriveKey(t *testing.T) {
 	password := "test-password-123"
 	salt := []byte("saltsaltsalt")
@@ -129,7 +134,7 @@ func TestDeriveKey_DifferentPasswords(t *testing.T) {
 }
 
 func TestDeriveKey_DifferentSalts(t *testing.T) {
-	password := "same-password"
+	password := samePasswordFixture
 	iterations := 10000
 
 	key1, err := DeriveKey(password, []byte("salt-one-1234567"), iterations)
@@ -143,7 +148,7 @@ func TestDeriveKey_DifferentSalts(t *testing.T) {
 }
 
 func TestDeriveKey_DifferentIterations(t *testing.T) {
-	password := "same-password"
+	password := samePasswordFixture
 	salt := []byte("constant-salt-16")
 
 	key1, err := DeriveKey(password, salt, 10000)
@@ -174,7 +179,7 @@ func TestDeriveKey_KnownVector(t *testing.T) {
 }
 
 func BenchmarkDeriveKey_1000(b *testing.B) {
-	password := "benchmark-password"
+	password := benchmarkPasswordFixture
 	salt := []byte("benchmark-salt16")
 
 	b.ResetTimer()
@@ -187,7 +192,7 @@ func BenchmarkDeriveKey_1000(b *testing.B) {
 }
 
 func BenchmarkDeriveKey_10000(b *testing.B) {
-	password := "benchmark-password"
+	password := benchmarkPasswordFixture
 	salt := []byte("benchmark-salt16")
 
 	b.ResetTimer()
@@ -200,7 +205,7 @@ func BenchmarkDeriveKey_10000(b *testing.B) {
 }
 
 func BenchmarkDeriveKey_100000(b *testing.B) {
-	password := "benchmark-password"
+	password := benchmarkPasswordFixture
 	salt := []byte("benchmark-salt16")
 
 	b.ResetTimer()

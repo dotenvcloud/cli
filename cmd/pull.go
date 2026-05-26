@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -65,17 +65,18 @@ at more specific levels.`,
   dotenv pull myproject --format=json`,
 
 	Args: cobra.ExactArgs(1),
-	PreRunE: func(cmd *cobra.Command, args []string) error {
+	PreRunE: func(cmd *cobra.Command, _ []string) error {
 		// Try to refresh organizations if needed
 		if err := RefreshOrganizationsIfNeeded(cmd.Context()); err != nil {
 			// Don't fail the command, just warn
-			ui.PrintWarning("Could not refresh organizations: %v", err)
+			ui.PrintWarningf("Could not refresh organizations: %v", err)
 		}
 		return nil
 	},
 	RunE: runPull,
 }
 
+//nolint:gochecknoinits // cobra subcommand flag registration is idiomatic in init
 func init() {
 	pullCmd.Flags().StringVarP(&pullOutput, "output", "o", "",
 		"output to file instead of stdout")
@@ -96,156 +97,160 @@ func init() {
 }
 
 func runPull(cmd *cobra.Command, args []string) error {
-	// If level-only is set, disable merge
 	if pullLevelOnly {
 		pullMerge = false
 	}
 
-	// Display account/org info unless using API key override
 	if viper.GetString("api_key") == "" && os.Getenv("DOTENV_API_KEY") == "" {
 		if err := displayAccountInfo(); err != nil {
-			// Don't fail if we can't display account info
-			ui.PrintWarning("Could not display account info: %v", err)
+			ui.PrintWarningf("Could not display account info: %v", err)
 		}
 	}
 
-	// Parse hierarchy path
-	path := args[0]
-	parts := strings.Split(path, "/")
-
-	var projectSlug, targetSlug, environmentSlug string
-
-	switch len(parts) {
-	case 1:
-		projectSlug = parts[0]
-	case 2:
-		projectSlug = parts[0]
-		targetSlug = parts[1]
-	case 3:
-		projectSlug = parts[0]
-		targetSlug = parts[1]
-		environmentSlug = parts[2]
-	default:
-		return fmt.Errorf("invalid path format: use project[/target[/environment]]")
+	projectSlug, targetSlug, environmentSlug, err := parsePullPath(args[0])
+	if err != nil {
+		return err
 	}
 
-	// Get API client
 	client, err := getAPIClient()
 	if err != nil {
 		return err
 	}
 
 	if !pullQuiet {
-		ui.PrintInfo("Pulling secrets from %s...", path)
+		ui.PrintInfof("Pulling secrets from %s...", args[0])
 	}
 
-	// Retrieve secrets using GetProjectSecrets
-	hierarchyResp, _, err := client.Secrets.GetProjectSecrets(cmd.Context(), projectSlug, targetSlug, environmentSlug)
-	if err != nil {
-		// Get current account for better error messages
-		return HandleAPIError(err, accountForErrorContext())
-	}
-
-	// Check if we got any levels
-	if hierarchyResp == nil || hierarchyResp.Data.Attributes.Levels == nil || len(hierarchyResp.Data.Attributes.Levels) == 0 {
-		if !pullQuiet {
-			ui.PrintWarning("No secrets found")
-		}
-		return nil
-	}
-
-	// Process the hierarchical response
-	secrets, err := processHierarchicalSecrets(cmd.Context(), hierarchyResp, pullMerge, pullDecrypt, pullClientKey, projectSlug, client)
+	secrets, err := fetchAndProcessSecrets(cmd.Context(), client, projectSlug, targetSlug, environmentSlug)
 	if err != nil {
 		return err
 	}
-
 	if len(secrets) == 0 {
 		if !pullQuiet {
-			ui.PrintWarning("No secrets found")
+			ui.PrintWarningf("No secrets found")
 		}
 		return nil
 	}
 
-	// Resolve interpolation if requested
 	if pullResolve {
-		interpolator := interpolation.NewInterpolator(secrets, nil)
-		resolved, err := interpolator.InterpolateMap(secrets)
-		if err != nil {
-			if !pullQuiet {
-				ui.PrintWarning("Failed to resolve some variables: %v", err)
-			}
-		} else {
-			secrets = resolved
-		}
+		secrets = resolveInterpolation(secrets)
 	}
 
-	// Format output
 	output, err := formatSecrets(secrets, pullFormat)
 	if err != nil {
 		return fmt.Errorf("failed to format secrets as %s: %w", pullFormat, err)
 	}
 
-	// Write output
-	if pullOutput != "" {
-		// Ensure directory exists
-		dir := filepath.Dir(pullOutput)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("failed to create directory '%s': %w", dir, err)
-		}
+	return writePullOutput(cmd, output)
+}
 
-		// Check if file exists and create backup
-		if _, err := os.Stat(pullOutput); err == nil {
-			// File exists, create backup
-			backupPath := pullOutput + ".backup"
+func parsePullPath(path string) (projectSlug, targetSlug, environmentSlug string, err error) {
+	parts := strings.Split(path, "/")
+	switch len(parts) {
+	case 1:
+		projectSlug = parts[0]
+	case 2:
+		projectSlug, targetSlug = parts[0], parts[1]
+	case 3:
+		projectSlug, targetSlug, environmentSlug = parts[0], parts[1], parts[2]
+	default:
+		err = fmt.Errorf("invalid path format: use project[/target[/environment]]")
+	}
+	return
+}
 
-			// Ask for confirmation
-			if !pullQuiet {
-				confirm, err := ui.Confirm(fmt.Sprintf("File %s exists. Create backup at %s?", pullOutput, backupPath), true)
-				if err != nil {
-					return fmt.Errorf("failed to get user confirmation for backup: %w", err)
-				}
-				if !confirm {
-					return fmt.Errorf("operation cancelled by user")
-				}
-			}
+func fetchAndProcessSecrets(
+	ctx context.Context, client *dotenv.Client,
+	projectSlug, targetSlug, environmentSlug string,
+) (map[string]string, error) {
+	hierarchyResp, hResp, err := client.Secrets.GetProjectSecrets(ctx, projectSlug, targetSlug, environmentSlug)
+	if hResp != nil {
+		defer hResp.Body.Close()
+	}
+	if err != nil {
+		return nil, HandleAPIError(err, accountForErrorContext())
+	}
+	if hierarchyResp == nil || len(hierarchyResp.Data.Attributes.Levels) == 0 {
+		return nil, nil
+	}
+	return processHierarchicalSecrets(ctx, hierarchyResp, pullMerge, pullDecrypt, pullClientKey, projectSlug, client)
+}
 
-			// Copy existing file to backup
-			existingData, err := os.ReadFile(pullOutput)
-			if err != nil {
-				return fmt.Errorf("failed to read existing file '%s' for backup: %w", pullOutput, err)
-			}
-
-			if err := os.WriteFile(backupPath, existingData, 0600); err != nil {
-				return fmt.Errorf("failed to create backup file '%s': %w", backupPath, err)
-			}
-
-			if !pullQuiet {
-				ui.PrintInfo("Created backup at %s", backupPath)
-			}
-		}
-
-		// Write file
-		if err := os.WriteFile(pullOutput, []byte(output), 0600); err != nil {
-			return fmt.Errorf("failed to write secrets to file '%s': %w", pullOutput, err)
-		}
-
+func resolveInterpolation(secrets map[string]string) map[string]string {
+	interpolator := interpolation.NewInterpolator(secrets, nil)
+	resolved, interpErr := interpolator.InterpolateMap(secrets)
+	if interpErr != nil {
 		if !pullQuiet {
-			ui.PrintSuccess("Secrets written to %s", pullOutput)
+			ui.PrintWarningf("Failed to resolve some variables: %v", interpErr)
 		}
-	} else if !pullQuiet {
-		// Print to stdout — use the cobra-bound writer so tests can capture
-		// via rootCmd.SetOut.
-		out := cmd.OutOrStdout()
-		fmt.Fprintln(out)
-		fmt.Fprint(out, output)
+		return secrets
+	}
+	return resolved
+}
+
+func writePullOutput(cmd *cobra.Command, output string) error {
+	if pullOutput == "" {
+		if !pullQuiet {
+			out := cmd.OutOrStdout()
+			fmt.Fprintln(out)
+			fmt.Fprint(out, output)
+		}
+		return nil
 	}
 
+	dir := filepath.Dir(pullOutput)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return fmt.Errorf("failed to create directory '%s': %w", dir, err)
+	}
+
+	if err := backupExistingFile(pullOutput); err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(pullOutput, []byte(output), 0o600); err != nil {
+		return fmt.Errorf("failed to write secrets to file '%s': %w", pullOutput, err)
+	}
+	if !pullQuiet {
+		ui.PrintSuccessf("Secrets written to %s", pullOutput)
+	}
+	return nil
+}
+
+func backupExistingFile(path string) error {
+	if _, err := os.Stat(path); err != nil {
+		return nil
+	}
+	backupPath := path + ".backup"
+	if !pullQuiet {
+		confirm, err := ui.Confirm(fmt.Sprintf("File %s exists. Create backup at %s?", path, backupPath), true)
+		if err != nil {
+			return fmt.Errorf("failed to get user confirmation for backup: %w", err)
+		}
+		if !confirm {
+			return fmt.Errorf("operation canceled by user")
+		}
+	}
+	existingData, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read existing file '%s' for backup: %w", path, err)
+	}
+	if err := os.WriteFile(backupPath, existingData, 0o600); err != nil {
+		return fmt.Errorf("failed to create backup file '%s': %w", backupPath, err)
+	}
+	if !pullQuiet {
+		ui.PrintInfof("Created backup at %s", backupPath)
+	}
 	return nil
 }
 
 // processHierarchicalSecrets processes the hierarchical response from the API
-func processHierarchicalSecrets(ctx context.Context, resp *dotenv.SecretsHierarchyResponse, merge bool, decrypt bool, clientKeyPath string, projectSlug string, client *dotenv.Client) (map[string]string, error) {
+func processHierarchicalSecrets(
+	ctx context.Context,
+	resp *dotenv.SecretsHierarchyResponse,
+	merge, decrypt bool,
+	clientKeyPath, projectSlug string,
+	client *dotenv.Client,
+) (map[string]string, error) {
 	// Get encryption key if decryption is requested AND at least one level
 	// actually carries encrypted content. Plaintext-only responses don't need
 	// a server round-trip for the key.
@@ -266,7 +271,7 @@ func processHierarchicalSecrets(ctx context.Context, resp *dotenv.SecretsHierarc
 		if err != nil {
 			// If this is a client-managed key project and no key was provided, prompt for it
 			if err == ErrClientManagedKey && clientKeyPath == "" {
-				ui.PrintInfo("This project uses client-managed encryption. Please provide your encryption key.")
+				ui.PrintInfof("This project uses client-managed encryption. Please provide your encryption key.")
 				encKey, err = promptForClientKey()
 				if err != nil {
 					return nil, err
@@ -288,7 +293,7 @@ func processHierarchicalSecrets(ctx context.Context, resp *dotenv.SecretsHierarc
 }
 
 // getEncryptionKey retrieves the encryption key from client file or server
-func getEncryptionKey(ctx context.Context, clientKeyPath string, projectSlug string, client *dotenv.Client) ([]byte, error) {
+func getEncryptionKey(ctx context.Context, clientKeyPath, projectSlug string, client *dotenv.Client) ([]byte, error) {
 	if clientKeyPath != "" {
 		// Use client-provided key
 		keyData, err := os.ReadFile(clientKeyPath)
@@ -304,7 +309,10 @@ func getEncryptionKey(ctx context.Context, clientKeyPath string, projectSlug str
 	}
 
 	// Get encryption key from server
-	encKeyResp, _, err := client.Encryption.GetEncryptionKey(ctx, projectSlug)
+	encKeyResp, encResp, err := client.Encryption.GetEncryptionKey(ctx, projectSlug)
+	if encResp != nil {
+		defer encResp.Body.Close()
+	}
 	if err != nil {
 		// SDK now exposes a typed sentinel for the client-managed envelope
 		// (F-19); prefer that over HTTP-400 sniffing.
@@ -343,7 +351,12 @@ func determineTargetLevel(hierarchy struct {
 }
 
 // processSecretLevels processes each level and returns merged or single-level secrets
-func processSecretLevels(resp *dotenv.SecretsHierarchyResponse, merge bool, decrypt bool, encKey []byte, targetLevel string) (map[string]string, error) {
+func processSecretLevels(
+	resp *dotenv.SecretsHierarchyResponse,
+	merge, decrypt bool,
+	encKey []byte,
+	targetLevel string,
+) (map[string]string, error) {
 	allSecrets := make(map[string]string)
 
 	// Order matters for merging: project -> target -> environment
@@ -364,7 +377,7 @@ func processSecretLevels(resp *dotenv.SecretsHierarchyResponse, merge bool, decr
 		levelSecrets, err := processLevel(levelName, level, decrypt, encKey, resp.Data.Attributes.Format)
 		if err != nil {
 			// Log warning but continue processing other levels
-			ui.PrintWarning("Failed to process %s level: %v", levelName, err)
+			ui.PrintWarningf("Failed to process %s level: %v", levelName, err)
 			continue
 		}
 
@@ -404,13 +417,13 @@ func processLevel(levelName string, level dotenv.SecretLevel, decrypt bool, encK
 }
 
 // parseSecretContent parses the decrypted content based on format
-func parseSecretContent(content string, format string) (map[string]string, error) {
+func parseSecretContent(content, format string) (map[string]string, error) {
 	switch format {
-	case "env", "":
+	case formatENV, "":
 		// Use the existing env parser for proper .env format handling
 		parser := env.NewParser(nil)
 		return parser.Parse(strings.NewReader(content))
-	case "json":
+	case formatJSON:
 		// Parse JSON format
 		var jsonSecrets map[string]string
 		if err := json.Unmarshal([]byte(content), &jsonSecrets); err != nil {
@@ -443,15 +456,15 @@ func promptForClientKey() ([]byte, error) {
 
 func formatSecrets(secrets map[string]string, format string) (string, error) {
 	switch strings.ToLower(format) {
-	case "env":
+	case formatENV:
 		gen := env.NewGenerator(nil)
 		return gen.GenerateString(secrets)
 
-	case "json":
+	case formatJSON:
 		gen := jsonformat.NewHandler(nil)
 		return gen.GenerateString(secrets)
 
-	case "yaml", "yml":
+	case formatYAML, "yml":
 		gen := yaml.NewHandler(nil)
 		return gen.GenerateString(secrets)
 
@@ -471,7 +484,7 @@ func formatSecrets(secrets map[string]string, format string) (string, error) {
 			escaped = strings.ReplaceAll(escaped, `"`, `\"`)
 			escaped = strings.ReplaceAll(escaped, `$`, `\$`)
 			escaped = strings.ReplaceAll(escaped, "`", "\\`")
-			lines = append(lines, fmt.Sprintf(`export %s="%s"`, k, escaped))
+			lines = append(lines, `export `+k+`="`+escaped+`"`)
 		}
 		return strings.Join(lines, "\n") + "\n", nil
 
@@ -489,7 +502,7 @@ func formatSecrets(secrets map[string]string, format string) (string, error) {
 			// Escape quotes for Dockerfile
 			escaped := strings.ReplaceAll(v, `"`, `\"`)
 			escaped = strings.ReplaceAll(escaped, `\`, `\\`)
-			lines = append(lines, fmt.Sprintf(`ENV %s="%s"`, k, escaped))
+			lines = append(lines, `ENV `+k+`="`+escaped+`"`)
 		}
 		return strings.Join(lines, "\n") + "\n", nil
 

@@ -124,7 +124,8 @@ func (v *Validator) ValidateConfig(config *Config) error {
 	}
 
 	// Validate each account
-	for name, account := range config.Accounts {
+	for name := range config.Accounts {
+		account := config.Accounts[name]
 		if err := v.ValidateAccountName(name); err != nil {
 			return fmt.Errorf("account '%s': %w", name, err)
 		}

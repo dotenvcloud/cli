@@ -39,257 +39,210 @@ type Organization struct {
 
 // Run executes the OAuth2 authentication flow
 func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
-	// Initialize client factory if not already set
 	if af.clientFactory == nil {
 		af.clientFactory = client.NewFactory(af.BaseURL)
 	}
 
-	// Generate PKCE challenge
 	pkce, err := GeneratePKCEChallenge()
 	if err != nil {
 		return fmt.Errorf("failed to generate PKCE challenge: %w", err)
 	}
-
-	// Generate state
 	state, err := GenerateState()
 	if err != nil {
 		return fmt.Errorf("failed to generate state: %w", err)
 	}
 
-	// Create callback server
 	callbackServer := NewCallbackServer(state)
-
-	// Find available port
-	_, err = callbackServer.FindAvailablePort()
-	if err != nil {
+	if _, err = callbackServer.FindAvailablePort(); err != nil {
 		return fmt.Errorf("failed to find available port: %w", err)
 	}
 
-	// Start callback server
 	serverCtx, cancelServer := context.WithCancel(ctx)
 	defer cancelServer()
-
 	if err := callbackServer.Start(serverCtx); err != nil {
 		return fmt.Errorf("failed to start callback server: %w", err)
 	}
 
-	// Build authorization URL
 	authURL := af.buildAuthorizationURL(callbackServer.GetCallbackURL(), state, pkce.Challenge, pkce.Method)
+	af.presentAuthURL(authURL)
+	ui.PrintInfof("Waiting for authentication...")
 
-	// Open browser or print URL
-	if af.NoBrowser {
-		fmt.Println("Please open the following URL in your browser:")
-		fmt.Println()
-		fmt.Println(authURL)
-		fmt.Println()
-	} else {
-		ui.PrintInfo("Opening browser for authentication...")
-		if err := browser.OpenURL(authURL); err != nil {
-			ui.PrintWarning("Failed to open browser: %v", err)
-			fmt.Println("Please open the following URL manually:")
-			fmt.Println()
-			fmt.Println(authURL)
-			fmt.Println()
-		}
-	}
-
-	ui.PrintInfo("Waiting for authentication...")
-
-	// Wait for auth result
 	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
 	select {
 	case code := <-callbackServer.AuthCode:
-		// Exchange code for tokens
-		ui.PrintInfo("Exchanging authorization code for tokens...")
-
-		// Create unauthenticated SDK client for OAuth operations
-		sdkClient := af.clientFactory.NewUnauthenticatedClient(af.BaseURL, config.ShouldSkipTLSVerify())
-
-		// Use SDK to exchange code for tokens
-		req := dotenv.OAuthTokenAuthCodeRequest{
-			Code:         code,
-			CodeVerifier: pkce.Verifier,
-			ClientID:     constants.OAuthClientID,
-		}
-
-		tokenResp, _, err := sdkClient.OAuth.ExchangeToken(timeoutCtx, req)
-		if err != nil {
-			return fmt.Errorf("failed to exchange code: %w", err)
-		}
-
-		// Fetch user info and organizations
-		ui.PrintInfo("Fetching user information...")
-
-		userInfo, orgs, err := af.fetchUserAndOrganizations(tokenResp.AccessToken)
-		if err != nil {
-			return fmt.Errorf("failed to fetch user info: %w", err)
-		}
-
-		if len(orgs) == 0 {
-			return fmt.Errorf("no organizations found for this account")
-		}
-
-		// Authentication successful
-		ui.PrintSuccess("Authentication successful!")
-		ui.PrintInfo("Found %d organization(s)", len(orgs))
-
-		// Default account name is user email
-		defaultAccountName := userInfo.Email
-		accountName := defaultAccountName
-
-		// Let user select organization
-		var selectedOrg Organization
-		if len(orgs) > 1 && af.IsInteractive {
-			ui.PrintInfo("\nAvailable organizations:")
-			orgOptions := make([]string, len(orgs))
-			for i, org := range orgs {
-				// Show ULID from ID field
-				ulid := org.ULID
-				if ulid == "" && org.ID != "" {
-					ulid = org.ID
-				}
-				orgOptions[i] = fmt.Sprintf("%s (%s)", org.Name, ulid)
-			}
-
-			selected, err := ui.Select("Select your organization", orgOptions)
-			if err != nil {
-				return err
-			}
-
-			// Find selected org by name
-			for _, org := range orgs {
-				if strings.Contains(selected, org.Name) {
-					selectedOrg = org
-					break
-				}
-			}
-		} else if len(orgs) == 1 {
-			// Single org, use it
-			selectedOrg = orgs[0]
-			// Show ULID from ID field
-			ulid := selectedOrg.ULID
-			if ulid == "" && selectedOrg.ID != "" {
-				ulid = selectedOrg.ID
-			}
-			ui.PrintInfo("Using organization: %s (%s)", selectedOrg.Name, ulid)
-		} else {
-			// No orgs
-			return fmt.Errorf("no organizations found for this account")
-		}
-
-		// Get account name from user if interactive
-		if af.IsInteractive {
-			// Check if this account already exists
-			if existing, _ := am.Get(defaultAccountName); existing != nil {
-				// Account exists, ask if they want to update it
-				update, err := ui.Confirm(fmt.Sprintf("Update existing account '%s'?", defaultAccountName), true)
-				if err != nil {
-					return err
-				}
-
-				if update {
-					accountName = defaultAccountName
-				} else {
-					// Let them enter a different name
-					name, err := ui.Input("New account name", defaultAccountName+"-new", nil)
-					if err != nil {
-						return err
-					}
-					accountName = name
-				}
-			} else {
-				// New account
-				name, err := ui.Input("Account name", defaultAccountName, nil)
-				if err != nil {
-					return err
-				}
-				accountName = name
-			}
-		}
-
-		// Convert organizations to config format
-		var orgInfos []config.OrgInfo
-		for _, org := range orgs {
-			// Use ID if ULID is empty (API returns ULID in ID field)
-			ulid := org.ULID
-			if ulid == "" && org.ID != "" {
-				ulid = org.ID
-			}
-			orgInfos = append(orgInfos, config.OrgInfo{
-				ULID: ulid,
-				Name: org.Name,
-			})
-		}
-
-		// Create OAuth account with tokens and organizations
-		configTokenResp := config.TokenResponse{
-			AccessToken:  tokenResp.AccessToken,
-			RefreshToken: tokenResp.RefreshToken,
-			TokenType:    tokenResp.TokenType,
-			ExpiresIn:    tokenResp.ExpiresIn,
-		}
-
-		// Check if account already exists
-		existingAccount, err := am.Get(accountName)
-		if err == nil && existingAccount != nil {
-			// Account exists, update it
-			ui.PrintInfo("Updating existing account: %s", accountName)
-
-			// Update tokens
-			if err := am.RefreshToken(accountName, configTokenResp); err != nil {
-				return fmt.Errorf("failed to update tokens: %w", err)
-			}
-
-			// Update organizations
-			_, err := am.RefreshOrganizations(accountName, orgInfos)
-			if err != nil {
-				return fmt.Errorf("failed to update organizations: %w", err)
-			}
-
-			// Update current organization if needed
-			// Use ID if ULID is empty (API returns ULID in ID field)
-			selectedOrgULID := selectedOrg.ULID
-			if selectedOrgULID == "" && selectedOrg.ID != "" {
-				selectedOrgULID = selectedOrg.ID
-			}
-			if err := am.SetOrganization(accountName, selectedOrgULID); err != nil {
-				return fmt.Errorf("failed to set organization: %w", err)
-			}
-		} else {
-			// Create new account
-			// Use ID if ULID is empty (API returns ULID in ID field)
-			selectedOrgULID := selectedOrg.ULID
-			if selectedOrgULID == "" && selectedOrg.ID != "" {
-				selectedOrgULID = selectedOrg.ID
-			}
-			if err := am.CreateWithOAuth(accountName, af.BaseURL, configTokenResp, orgInfos, selectedOrgULID); err != nil {
-				return fmt.Errorf("failed to create account: %w", err)
-			}
-		}
-
-		// Set as current account
-		if err := am.Use(accountName); err != nil {
-			return fmt.Errorf("failed to set current account: %w", err)
-		}
-
-		ui.PrintSuccess("Login complete!")
-		ui.PrintInfo("Current account: %s", accountName)
-		ui.PrintInfo("Current organization: %s", selectedOrg.Name)
-
-		if len(orgs) > 1 {
-			ui.PrintInfo("\nTo switch organizations, use: dotenv org use <ulid>")
-		}
-
-		return nil
-
+		return af.handleAuthCode(timeoutCtx, am, code, pkce.Verifier)
 	case err := <-callbackServer.AuthError:
 		return fmt.Errorf("authentication failed: %w", err)
-
 	case <-timeoutCtx.Done():
 		return fmt.Errorf("authentication timed out")
 	}
+}
+
+func (af *AuthFlow) presentAuthURL(authURL string) {
+	if af.NoBrowser {
+		fmt.Println("Please open the following URL in your browser:")
+		fmt.Println()
+		fmt.Println(authURL)
+		fmt.Println()
+		return
+	}
+	ui.PrintInfof("Opening browser for authentication...")
+	if err := browser.OpenURL(authURL); err != nil {
+		ui.PrintWarningf("Failed to open browser: %v", err)
+		fmt.Println("Please open the following URL manually:")
+		fmt.Println()
+		fmt.Println(authURL)
+		fmt.Println()
+	}
+}
+
+func (af *AuthFlow) handleAuthCode(ctx context.Context, am *config.AccountManager, code, verifier string) error {
+	ui.PrintInfof("Exchanging authorization code for tokens...")
+
+	sdkClient := af.clientFactory.NewUnauthenticatedClient(af.BaseURL, config.ShouldSkipTLSVerify())
+	req := dotenv.OAuthTokenAuthCodeRequest{
+		Code:         code,
+		CodeVerifier: verifier,
+		ClientID:     constants.OAuthClientID,
+	}
+	tokenResp, exchangeResp, err := sdkClient.OAuth.ExchangeToken(ctx, req)
+	if exchangeResp != nil {
+		defer exchangeResp.Body.Close()
+	}
+	if err != nil {
+		return fmt.Errorf("failed to exchange code: %w", err)
+	}
+
+	ui.PrintInfof("Fetching user information...")
+	userInfo, orgs, err := af.fetchUserAndOrganizations(tokenResp.AccessToken)
+	if err != nil {
+		return fmt.Errorf("failed to fetch user info: %w", err)
+	}
+	if len(orgs) == 0 {
+		return fmt.Errorf("no organizations found for this account")
+	}
+
+	ui.PrintSuccessf("Authentication successful!")
+	ui.PrintInfof("Found %d organization(s)", len(orgs))
+
+	selectedOrg, err := af.selectOrganization(orgs)
+	if err != nil {
+		return err
+	}
+
+	accountName, err := af.resolveAccountName(am, userInfo.Email)
+	if err != nil {
+		return err
+	}
+
+	orgInfos := orgsToOrgInfos(orgs)
+	configTokenResp := config.TokenResponse{
+		AccessToken:  tokenResp.AccessToken,
+		RefreshToken: tokenResp.RefreshToken,
+		TokenType:    tokenResp.TokenType,
+		ExpiresIn:    tokenResp.ExpiresIn,
+	}
+
+	if err := af.persistAccount(am, accountName, configTokenResp, orgInfos, selectedOrg); err != nil {
+		return err
+	}
+	if err := am.Use(accountName); err != nil {
+		return fmt.Errorf("failed to set current account: %w", err)
+	}
+
+	ui.PrintSuccessf("Login complete!")
+	ui.PrintInfof("Current account: %s", accountName)
+	ui.PrintInfof("Current organization: %s", selectedOrg.Name)
+	if len(orgs) > 1 {
+		ui.PrintInfof("\nTo switch organizations, use: dotenv org use <ulid>")
+	}
+	return nil
+}
+
+func (af *AuthFlow) selectOrganization(orgs []Organization) (Organization, error) {
+	if len(orgs) == 1 {
+		ulid := orgULID(orgs[0])
+		ui.PrintInfof("Using organization: %s (%s)", orgs[0].Name, ulid)
+		return orgs[0], nil
+	}
+	if !af.IsInteractive {
+		return Organization{}, fmt.Errorf("multiple organizations found but no interactive selection available")
+	}
+	ui.PrintInfof("\nAvailable organizations:")
+	orgOptions := make([]string, len(orgs))
+	for i, org := range orgs {
+		orgOptions[i] = fmt.Sprintf("%s (%s)", org.Name, orgULID(org))
+	}
+	selected, err := ui.Select("Select your organization", orgOptions)
+	if err != nil {
+		return Organization{}, err
+	}
+	for _, org := range orgs {
+		if strings.Contains(selected, org.Name) {
+			return org, nil
+		}
+	}
+	return Organization{}, fmt.Errorf("selected organization not found")
+}
+
+func (af *AuthFlow) resolveAccountName(am *config.AccountManager, defaultAccountName string) (string, error) {
+	if !af.IsInteractive {
+		return defaultAccountName, nil
+	}
+	if existing, _ := am.Get(defaultAccountName); existing != nil {
+		update, confirmErr := ui.Confirm(fmt.Sprintf("Update existing account '%s'?", defaultAccountName), true)
+		if confirmErr != nil {
+			return "", confirmErr
+		}
+		if update {
+			return defaultAccountName, nil
+		}
+		return ui.Input("New account name", defaultAccountName+"-new", nil)
+	}
+	return ui.Input("Account name", defaultAccountName, nil)
+}
+
+func (af *AuthFlow) persistAccount(
+	am *config.AccountManager, accountName string,
+	tok config.TokenResponse, orgInfos []config.OrgInfo,
+	selectedOrg Organization,
+) error {
+	selectedOrgULID := orgULID(selectedOrg)
+	existingAccount, err := am.Get(accountName)
+	if err == nil && existingAccount != nil {
+		ui.PrintInfof("Updating existing account: %s", accountName)
+		if err := am.RefreshToken(accountName, tok); err != nil {
+			return fmt.Errorf("failed to update tokens: %w", err)
+		}
+		if _, err := am.RefreshOrganizations(accountName, orgInfos); err != nil {
+			return fmt.Errorf("failed to update organizations: %w", err)
+		}
+		if err := am.SetOrganization(accountName, selectedOrgULID); err != nil {
+			return fmt.Errorf("failed to set organization: %w", err)
+		}
+		return nil
+	}
+	if err := am.CreateWithOAuth(accountName, af.BaseURL, tok, orgInfos, selectedOrgULID); err != nil {
+		return fmt.Errorf("failed to create account: %w", err)
+	}
+	return nil
+}
+
+func orgULID(org Organization) string {
+	if org.ULID != "" {
+		return org.ULID
+	}
+	return org.ID
+}
+
+func orgsToOrgInfos(orgs []Organization) []config.OrgInfo {
+	orgInfos := make([]config.OrgInfo, 0, len(orgs))
+	for _, org := range orgs {
+		orgInfos = append(orgInfos, config.OrgInfo{ULID: orgULID(org), Name: org.Name})
+	}
+	return orgInfos
 }
 
 // fetchUserAndOrganizations fetches the user info and organizations
@@ -312,7 +265,10 @@ func (af *AuthFlow) fetchUserAndOrganizations(accessToken string) (userInfo stru
 	})
 
 	// Use the SDK's UserService to get user info
-	user, sdkOrgs, _, err := sdkClient.User.GetAuthenticatedUser(context.Background())
+	user, sdkOrgs, userResp, err := sdkClient.User.GetAuthenticatedUser(context.Background())
+	if userResp != nil {
+		defer userResp.Body.Close()
+	}
 	if err != nil {
 		return userInfo, nil, fmt.Errorf("failed to fetch user info: %w", err)
 	}

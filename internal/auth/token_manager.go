@@ -85,8 +85,8 @@ func (tm *TokenManager) RefreshOrganizationsIfNeeded(ctx context.Context, accoun
 
 	if account.IsOAuth() {
 		// Ensure token is valid first
-		if err := tm.RefreshTokenIfNeeded(ctx, account); err != nil {
-			return false, err
+		if refreshErr := tm.RefreshTokenIfNeeded(ctx, account); refreshErr != nil {
+			return false, refreshErr
 		}
 
 		// Reload account to get refreshed tokens

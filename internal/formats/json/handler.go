@@ -144,18 +144,21 @@ func (h *Handler) Validate(content []byte) error {
 }
 
 // ValidateKey validates a JSON key
-func (h *Handler) ValidateKey(key string) error {
+func (h *Handler) ValidateKey(_ string) error {
 	// JSON allows any string as key
 	return nil
 }
 
 // ValidateValue validates a JSON value
-func (h *Handler) ValidateValue(value string) error {
+func (h *Handler) ValidateValue(_ string) error {
 	// Any string is valid
 	return nil
 }
 
+//nolint:gochecknoinits // format registry self-registration is idiomatic for plugin-style handlers
 func init() {
 	// Register the handler with the default registry
-	formats.DefaultRegistry.Register(formats.FormatJSON, NewHandler(nil))
+	if err := formats.DefaultRegistry.Register(formats.FormatJSON, NewHandler(nil)); err != nil {
+		panic(fmt.Sprintf("json handler: failed to register: %v", err))
+	}
 }

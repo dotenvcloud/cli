@@ -1,10 +1,8 @@
 package auth
 
-// AuthProvider handles authentication flows
-type AuthProvider interface {
+// Provider handles authentication flows.
+type Provider interface {
 	Login() error
 	Refresh() error
 	GetToken() (string, error)
 }
-
-// TODO: This will be implemented by Agent 5

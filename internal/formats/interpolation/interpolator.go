@@ -97,13 +97,11 @@ func (i *Interpolator) interpolateWithDepth(text string, depth int, visiting map
 // was substituted), and any error.
 //
 // Uses brace-counting (not regex) so nested ${...} inside operands works.
-func (i *Interpolator) substitute(text string, visiting map[string]bool) (string, bool, error) {
+func (i *Interpolator) substitute(text string, visiting map[string]bool) (result string, changed bool, err error) {
 	var b strings.Builder
-	changed := false
 	n := len(text)
 	for pos := 0; pos < n; {
 		c := text[pos]
-		// Preserve escaped dollar: \$ is emitted literally.
 		if c == '\\' && pos+1 < n && text[pos+1] == '$' {
 			b.WriteByte('\\')
 			b.WriteByte('$')
@@ -115,83 +113,95 @@ func (i *Interpolator) substitute(text string, visiting map[string]bool) (string
 			pos++
 			continue
 		}
-		// $...
-		if pos+1 < n && text[pos+1] == '{' {
-			// find matching `}` with brace counting
-			depth := 1
-			end := pos + 2
-			for end < n {
-				switch text[end] {
-				case '{':
-					depth++
-				case '}':
-					depth--
-				}
-				if depth == 0 {
-					break
-				}
-				end++
-			}
-			if depth != 0 {
-				// unterminated; emit literal and continue
-				b.WriteByte('$')
-				pos++
-				continue
-			}
-			inner := text[pos+2 : end]
-			match := text[pos : end+1]
-			value, sub, err := i.evalBracedRef(inner, match, visiting)
-			if err != nil {
-				return "", false, err
-			}
-			if sub {
-				changed = true
-			}
-			b.WriteString(value)
-			pos = end + 1
-			continue
+		next, sub, dollarErr := i.handleDollar(text, pos, &b, visiting)
+		if dollarErr != nil {
+			return "", false, dollarErr
 		}
-		// $VAR (simple)
-		if pos+1 < n && isVarStart(text[pos+1]) {
-			j := pos + 1
-			for j < n && isVarChar(text[j]) {
-				j++
-			}
-			varName := text[pos+1 : j]
-			if visiting[varName] {
-				return "", false, fmt.Errorf("circular reference detected for variable '%s'", varName)
-			}
-			value := i.lookupVariable(varName)
-			if value != "" {
-				b.WriteString(value)
-				changed = true
-			} else if i.options.FailOnMissing {
-				return "", false, fmt.Errorf("variable %s is not set", varName)
-			} else if i.options.KeepUnresolved {
-				b.WriteString(text[pos:j])
-			} else {
-				changed = true
-			}
-			pos = j
-			continue
+		if sub {
+			changed = true
 		}
-		b.WriteByte(c)
-		pos++
+		pos = next
 	}
 	return b.String(), changed, nil
+}
+
+func (i *Interpolator) handleDollar(
+	text string, pos int, b *strings.Builder, visiting map[string]bool,
+) (next int, changed bool, err error) {
+	n := len(text)
+	if pos+1 < n && text[pos+1] == '{' {
+		end, ok := findMatchingBrace(text, pos+2)
+		if !ok {
+			b.WriteByte('$')
+			return pos + 1, false, nil
+		}
+		inner := text[pos+2 : end]
+		match := text[pos : end+1]
+		value, sub, err := i.evalBracedRef(inner, match, visiting)
+		if err != nil {
+			return 0, false, err
+		}
+		b.WriteString(value)
+		return end + 1, sub, nil
+	}
+	if pos+1 < n && isVarStart(text[pos+1]) {
+		return i.handleSimpleVar(text, pos, b, visiting)
+	}
+	b.WriteByte(text[pos])
+	return pos + 1, false, nil
+}
+
+func findMatchingBrace(text string, start int) (int, bool) {
+	depth := 1
+	for end := start; end < len(text); end++ {
+		switch text[end] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+		}
+		if depth == 0 {
+			return end, true
+		}
+	}
+	return 0, false
+}
+
+func (i *Interpolator) handleSimpleVar(
+	text string, pos int, b *strings.Builder, visiting map[string]bool,
+) (next int, changed bool, err error) {
+	j := pos + 1
+	for j < len(text) && isVarChar(text[j]) {
+		j++
+	}
+	varName := text[pos+1 : j]
+	if visiting[varName] {
+		return 0, false, fmt.Errorf("circular reference detected for variable '%s'", varName)
+	}
+	value := i.lookupVariable(varName)
+	switch {
+	case value != "":
+		b.WriteString(value)
+		return j, true, nil
+	case i.options.FailOnMissing:
+		return 0, false, fmt.Errorf("variable %s is not set", varName)
+	case i.options.KeepUnresolved:
+		b.WriteString(text[pos:j])
+		return j, false, nil
+	default:
+		return j, true, nil
+	}
 }
 
 // evalBracedRef evaluates the contents of a ${...} block. `match` is the
 // full original match (including the braces) used when we want to preserve
 // the source text for "keep unresolved" mode.
-func (i *Interpolator) evalBracedRef(inner, match string, visiting map[string]bool) (string, bool, error) {
-	// Parse VAR followed by optional :op operand.
+func (i *Interpolator) evalBracedRef(inner, match string, visiting map[string]bool) (value string, changed bool, err error) {
 	j := 0
 	for j < len(inner) && isVarChar(inner[j]) {
 		j++
 	}
 	if j == 0 {
-		// no var name; treat as literal
 		return match, false, nil
 	}
 	varName := inner[:j]
@@ -199,56 +209,62 @@ func (i *Interpolator) evalBracedRef(inner, match string, visiting map[string]bo
 		return "", false, fmt.Errorf("circular reference detected for variable '%s'", varName)
 	}
 
-	value := i.lookupVariable(varName)
+	value = i.lookupVariable(varName)
 	isSet := value != ""
 
 	if j == len(inner) {
-		// No operator
-		if isSet {
-			return value, true, nil
-		}
-		if i.options.FailOnMissing {
-			return "", false, fmt.Errorf("variable %s is not set", varName)
-		}
-		if i.options.KeepUnresolved {
-			return match, false, nil
-		}
-		return "", true, nil
+		return i.bareBracedRef(varName, value, isSet, match)
 	}
 
-	if inner[j] != ':' {
-		// Unknown format; emit literal.
-		return match, false, nil
-	}
-	if j+1 >= len(inner) {
+	if inner[j] != ':' || j+1 >= len(inner) {
 		return match, false, nil
 	}
 	op := inner[j+1]
 	operand := inner[j+2:]
 
-	// Recursively interpolate the operand so nested ${...} resolves.
+	operandResolved, opErr := i.resolveOperand(varName, operand, visiting)
+	if opErr != nil {
+		return "", false, opErr
+	}
+
+	return applyBracedOp(op, varName, value, isSet, operandResolved, match)
+}
+
+func (i *Interpolator) bareBracedRef(varName, value string, isSet bool, match string) (result string, changed bool, err error) {
+	if isSet {
+		return value, true, nil
+	}
+	if i.options.FailOnMissing {
+		return "", false, fmt.Errorf("variable %s is not set", varName)
+	}
+	if i.options.KeepUnresolved {
+		return match, false, nil
+	}
+	return "", true, nil
+}
+
+func (i *Interpolator) resolveOperand(varName, operand string, visiting map[string]bool) (string, error) {
 	newVisiting := make(map[string]bool, len(visiting)+1)
 	for k, v := range visiting {
 		newVisiting[k] = v
 	}
 	newVisiting[varName] = true
-	operandResolved, err := i.interpolateWithDepth(operand, 0, newVisiting)
-	if err != nil {
-		return "", false, err
-	}
+	return i.interpolateWithDepth(operand, 0, newVisiting)
+}
 
+func applyBracedOp(op byte, varName, value string, isSet bool, operandResolved, match string) (result string, changed bool, err error) {
 	switch op {
-	case '-': // use default if unset/empty
+	case '-':
 		if !isSet {
 			return operandResolved, true, nil
 		}
 		return value, true, nil
-	case '+': // use operand if set, empty otherwise
+	case '+':
 		if isSet {
 			return operandResolved, true, nil
 		}
 		return "", true, nil
-	case '?': // error if unset
+	case '?':
 		if !isSet {
 			if operandResolved != "" {
 				return "", false, fmt.Errorf("variable %s: %s", varName, operandResolved)
@@ -257,7 +273,6 @@ func (i *Interpolator) evalBracedRef(inner, match string, visiting map[string]bo
 		}
 		return value, true, nil
 	default:
-		// Unknown operator; emit literal.
 		return match, false, nil
 	}
 }
@@ -278,26 +293,11 @@ func extractRefs(text string) []string {
 			continue
 		}
 		if pos+1 < n && text[pos+1] == '{' {
-			// var name follows {
-			j := pos + 2
-			for j < n && isVarChar(text[j]) {
-				j++
+			ref, next := extractBracedRef(text, pos)
+			if ref != "" {
+				refs = append(refs, ref)
 			}
-			if j > pos+2 {
-				refs = append(refs, text[pos+2:j])
-			}
-			// skip to matching brace
-			depth := 1
-			for j < n && depth > 0 {
-				switch text[j] {
-				case '{':
-					depth++
-				case '}':
-					depth--
-				}
-				j++
-			}
-			pos = j
+			pos = next
 			continue
 		}
 		if pos+1 < n && isVarStart(text[pos+1]) {
@@ -312,6 +312,28 @@ func extractRefs(text string) []string {
 		pos++
 	}
 	return refs
+}
+
+func extractBracedRef(text string, pos int) (ref string, next int) {
+	n := len(text)
+	next = pos + 2
+	for next < n && isVarChar(text[next]) {
+		next++
+	}
+	if next > pos+2 {
+		ref = text[pos+2 : next]
+	}
+	depth := 1
+	for next < n && depth > 0 {
+		switch text[next] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+		}
+		next++
+	}
+	return ref, next
 }
 
 func isVarStart(b byte) bool {

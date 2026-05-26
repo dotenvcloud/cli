@@ -17,34 +17,34 @@ var Stdout io.Writer = os.Stdout
 // Stderr is the destination for PrintError. Defaults to os.Stderr; tests swap.
 var Stderr io.Writer = os.Stderr
 
-// PrintSuccess prints a success message
-func PrintSuccess(format string, args ...interface{}) {
+// PrintSuccessf prints a success message
+func PrintSuccessf(format string, args ...interface{}) {
 	if !viper.GetBool("quiet") {
 		fmt.Fprintf(Stdout, "%s %s\n", Success("✓"), fmt.Sprintf(format, args...))
 	}
 }
 
-// PrintError prints an error message
-func PrintError(format string, args ...interface{}) {
+// PrintErrorf prints an error message
+func PrintErrorf(format string, args ...interface{}) {
 	fmt.Fprintf(Stderr, "%s %s\n", Error("✗"), fmt.Sprintf(format, args...))
 }
 
-// PrintWarning prints a warning message
-func PrintWarning(format string, args ...interface{}) {
+// PrintWarningf prints a warning message
+func PrintWarningf(format string, args ...interface{}) {
 	if !viper.GetBool("quiet") {
 		fmt.Fprintf(Stdout, "%s %s\n", Warning("!"), fmt.Sprintf(format, args...))
 	}
 }
 
-// PrintInfo prints an info message
-func PrintInfo(format string, args ...interface{}) {
+// PrintInfof prints an info message
+func PrintInfof(format string, args ...interface{}) {
 	if !viper.GetBool("quiet") {
 		fmt.Fprintf(Stdout, "%s %s\n", Info("ℹ"), fmt.Sprintf(format, args...))
 	}
 }
 
-// PrintDebug prints a debug message
-func PrintDebug(format string, args ...interface{}) {
+// PrintDebugf prints a debug message
+func PrintDebugf(format string, args ...interface{}) {
 	if viper.GetBool("debug") {
 		fmt.Fprintf(Stdout, "%s %s\n", "[DEBUG]", fmt.Sprintf(format, args...))
 	}
@@ -58,7 +58,7 @@ func StartSpinner(message string) *spinner.Spinner {
 
 	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
 	s.Suffix = " " + message
-	s.Color("cyan")
+	_ = s.Color("cyan")
 	s.Start()
 	return s
 }
@@ -67,7 +67,7 @@ func StartSpinner(message string) *spinner.Spinner {
 func StopSpinner(s *spinner.Spinner, message string) {
 	if s != nil {
 		s.Stop()
-		PrintSuccess(message)
+		PrintSuccessf("%s", message)
 	}
 }
 
@@ -75,7 +75,7 @@ func StopSpinner(s *spinner.Spinner, message string) {
 func StopSpinnerError(s *spinner.Spinner, message string) {
 	if s != nil {
 		s.Stop()
-		PrintError(message)
+		PrintErrorf("%s", message)
 	}
 }
 

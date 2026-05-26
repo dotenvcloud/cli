@@ -53,6 +53,7 @@ var (
 	apiKeyExpires   string
 )
 
+//nolint:gochecknoinits // cobra subcommand registration is idiomatic in init
 func init() {
 	// List command
 	apikeysListCmd = &cobra.Command{
@@ -88,7 +89,9 @@ Available abilities:
 		"comma-separated list of abilities (required)")
 	apikeysCreateCmd.Flags().StringVar(&apiKeyExpires, "expires", "",
 		"expiration date (RFC3339 format, e.g. 2024-12-31T23:59:59Z)")
-	apikeysCreateCmd.MarkFlagRequired("abilities")
+	if err := apikeysCreateCmd.MarkFlagRequired("abilities"); err != nil {
+		panic(fmt.Sprintf("failed to mark abilities required: %v", err))
+	}
 
 	// Update command
 	apikeysUpdateCmd = &cobra.Command{
@@ -100,7 +103,9 @@ Available abilities:
 	}
 	apikeysUpdateCmd.Flags().StringVar(&apiKeyName, "name", "",
 		"new name for the API key (required)")
-	apikeysUpdateCmd.MarkFlagRequired("name")
+	if err := apikeysUpdateCmd.MarkFlagRequired("name"); err != nil {
+		panic(fmt.Sprintf("failed to mark name required: %v", err))
+	}
 
 	// Delete command
 	apikeysDeleteCmd = &cobra.Command{
@@ -129,7 +134,7 @@ permissions and configuration. The old token will be immediately invalidated.`,
 	apikeysCmd.AddCommand(apikeysRotateCmd)
 }
 
-func runAPIKeysList(cmd *cobra.Command, args []string) error {
+func runAPIKeysList(cmd *cobra.Command, _ []string) error {
 	// Get API client
 	client, err := getAPIClient()
 	if err != nil {
@@ -142,16 +147,19 @@ func runAPIKeysList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("organization not set in configuration")
 	}
 
-	ui.PrintInfo("Listing API keys for organization %s...", org)
+	ui.PrintInfof("Listing API keys for organization %s...", org)
 
 	// List API keys
-	keys, _, err := client.APIKeys.List(cmd.Context(), org)
+	keys, listResp, err := client.APIKeys.List(cmd.Context(), org)
+	if listResp != nil {
+		defer listResp.Body.Close()
+	}
 	if err != nil {
 		return HandleAPIError(err, accountForErrorContext())
 	}
 
 	if len(keys) == 0 {
-		ui.PrintWarning("No API keys found")
+		ui.PrintWarningf("No API keys found")
 		return nil
 	}
 
@@ -203,14 +211,14 @@ func runAPIKeysCreate(cmd *cobra.Command, args []string) error {
 	// Parse expiration if provided
 	var expiresAt *time.Time
 	if apiKeyExpires != "" {
-		t, err := time.Parse(time.RFC3339, apiKeyExpires)
-		if err != nil {
-			return fmt.Errorf("invalid expiration date format: %w", err)
+		t, parseErr := time.Parse(time.RFC3339, apiKeyExpires)
+		if parseErr != nil {
+			return fmt.Errorf("invalid expiration date format: %w", parseErr)
 		}
 		expiresAt = &t
 	}
 
-	ui.PrintInfo("Creating API key '%s' with abilities: %s", name, strings.Join(apiKeyAbilities, ", "))
+	ui.PrintInfof("Creating API key '%s' with abilities: %s", name, strings.Join(apiKeyAbilities, ", "))
 
 	// Create request
 	createReq := dotenv.APIKeyCreateRequest{
@@ -220,20 +228,23 @@ func runAPIKeysCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create API key
-	resp, _, err := client.APIKeys.Create(cmd.Context(), org, createReq)
+	resp, createResp, err := client.APIKeys.Create(cmd.Context(), org, createReq)
+	if createResp != nil {
+		defer createResp.Body.Close()
+	}
 	if err != nil {
 		return HandleAPIError(err, accountForErrorContext())
 	}
 
-	ui.PrintSuccess("API key created successfully!")
+	ui.PrintSuccessf("API key created successfully!")
 	fmt.Println()
-	ui.PrintWarning("IMPORTANT: Save this token - it will not be shown again!")
+	ui.PrintWarningf("IMPORTANT: Save this token - it will not be shown again!")
 	fmt.Println()
 	fmt.Printf("ID:    %s\n", resp.ID)
 	fmt.Printf("Name:  %s\n", resp.Name)
 	fmt.Printf("Token: %s\n", resp.Token)
 	fmt.Println()
-	ui.PrintInfo("To use this API key:")
+	ui.PrintInfof("To use this API key:")
 	fmt.Println("  export DOTENV_API_KEY=" + resp.Token)
 	fmt.Println("  # or")
 	fmt.Println("  dotenv --api-key=" + resp.Token + " pull myproject")
@@ -256,7 +267,7 @@ func runAPIKeysUpdate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("organization not set in configuration")
 	}
 
-	ui.PrintInfo("Updating API key %s...", keyID)
+	ui.PrintInfof("Updating API key %s...", keyID)
 
 	// Update request
 	updateReq := dotenv.APIKeyUpdateRequest{
@@ -264,12 +275,15 @@ func runAPIKeysUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Update API key
-	key, _, err := client.APIKeys.Update(cmd.Context(), org, keyID, updateReq)
+	key, updateResp, err := client.APIKeys.Update(cmd.Context(), org, keyID, updateReq)
+	if updateResp != nil {
+		defer updateResp.Body.Close()
+	}
 	if err != nil {
 		return HandleAPIError(err, accountForErrorContext())
 	}
 
-	ui.PrintSuccess("API key updated successfully!")
+	ui.PrintSuccessf("API key updated successfully!")
 	fmt.Printf("ID:   %s\n", key.ID)
 	fmt.Printf("Name: %s\n", key.Name)
 
@@ -297,19 +311,22 @@ func runAPIKeysDelete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if !confirmed {
-		ui.PrintInfo("Deletion cancelled")
+		ui.PrintInfof("Deletion canceled")
 		return nil
 	}
 
-	ui.PrintInfo("Deleting API key %s...", keyID)
+	ui.PrintInfof("Deleting API key %s...", keyID)
 
 	// Delete API key
-	_, err = client.APIKeys.Delete(cmd.Context(), org, keyID)
+	delResp, err := client.APIKeys.Delete(cmd.Context(), org, keyID)
+	if delResp != nil {
+		defer delResp.Body.Close()
+	}
 	if err != nil {
 		return HandleAPIError(err, accountForErrorContext())
 	}
 
-	ui.PrintSuccess("API key deleted successfully!")
+	ui.PrintSuccessf("API key deleted successfully!")
 
 	return nil
 }
@@ -330,33 +347,39 @@ func runAPIKeysRotate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Confirm rotation
-	confirmed, err := ui.Confirm(fmt.Sprintf("Are you sure you want to rotate API key %s? The old token will be immediately invalidated.", keyID), false)
+	confirmed, err := ui.Confirm(
+		fmt.Sprintf("Are you sure you want to rotate API key %s? The old token will be immediately invalidated.", keyID),
+		false,
+	)
 	if err != nil {
 		return err
 	}
 	if !confirmed {
-		ui.PrintInfo("Rotation cancelled")
+		ui.PrintInfof("Rotation canceled")
 		return nil
 	}
 
-	ui.PrintInfo("Rotating API key %s...", keyID)
+	ui.PrintInfof("Rotating API key %s...", keyID)
 
 	// Rotate API key
-	resp, _, err := client.APIKeys.Rotate(cmd.Context(), org, keyID)
+	resp, rotateResp, err := client.APIKeys.Rotate(cmd.Context(), org, keyID)
+	if rotateResp != nil {
+		defer rotateResp.Body.Close()
+	}
 	if err != nil {
 		return HandleAPIError(err, accountForErrorContext())
 	}
 
-	ui.PrintSuccess("API key rotated successfully!")
+	ui.PrintSuccessf("API key rotated successfully!")
 	fmt.Println()
-	ui.PrintWarning("IMPORTANT: Save this new token - it will not be shown again!")
-	ui.PrintWarning("The old token has been invalidated.")
+	ui.PrintWarningf("IMPORTANT: Save this new token - it will not be shown again!")
+	ui.PrintWarningf("The old token has been invalidated.")
 	fmt.Println()
 	fmt.Printf("ID:    %s\n", resp.ID)
 	fmt.Printf("Name:  %s\n", resp.Name)
 	fmt.Printf("Token: %s\n", resp.Token)
 	fmt.Println()
-	ui.PrintInfo("To use this API key:")
+	ui.PrintInfof("To use this API key:")
 	fmt.Println("  export DOTENV_API_KEY=" + resp.Token)
 	fmt.Println("  # or")
 	fmt.Println("  dotenv --api-key=" + resp.Token + " pull myproject")

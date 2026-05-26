@@ -145,7 +145,7 @@ func (g *Generator) quoteValue(value string) string {
 	value = strings.ReplaceAll(value, "\r", "\\r")
 	value = strings.ReplaceAll(value, "\t", "\\t")
 
-	return fmt.Sprintf("\"%s\"", value)
+	return `"` + value + `"`
 }
 
 // GenerateExtended generates with additional options
@@ -154,60 +154,65 @@ func (g *Generator) GenerateExtended(w io.Writer, result *formats.ParseResult, o
 		opts = &formats.GenerateOptions{Options: g.options}
 	}
 
-	// Write header if provided
-	if opts.Header != "" {
-		lines := strings.Split(opts.Header, "\n")
-		for _, line := range lines {
-			if _, err := fmt.Fprintf(w, "# %s%s", line, opts.LineEnding); err != nil {
-				return err
-			}
-		}
-		if _, err := fmt.Fprint(w, opts.LineEnding); err != nil {
-			return err
-		}
+	if err := writeHeader(w, opts); err != nil {
+		return err
 	}
 
-	// Determine key order
-	keys := opts.KeyOrder
-	if len(keys) == 0 {
-		if len(result.Order) > 0 {
-			keys = result.Order
-		} else {
-			keys = make([]string, 0, len(result.Data))
-			for k := range result.Data {
-				keys = append(keys, k)
-			}
-			if opts.SortKeys {
-				sort.Strings(keys)
-			}
-		}
-	}
+	keys := resolveKeyOrder(result, opts)
 
-	// Write key-value pairs
 	for _, key := range keys {
-		// Apply filter if provided
 		if opts.KeyFilter != nil && !opts.KeyFilter(key) {
 			continue
 		}
-
 		value, ok := result.Data[key]
 		if !ok {
 			continue
 		}
-
-		// Write comment if exists
-		if comment, hasComment := result.Comments[key]; hasComment && opts.PreserveComments {
-			if _, err := fmt.Fprintf(w, "# %s%s", comment, opts.LineEnding); err != nil {
-				return err
-			}
-		}
-
-		// Write key-value
-		line := g.formatLine(key, value)
-		if _, err := fmt.Fprintf(w, "%s%s", line, opts.LineEnding); err != nil {
+		if err := g.writeEntry(w, key, value, result.Comments, opts); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+func writeHeader(w io.Writer, opts *formats.GenerateOptions) error {
+	if opts.Header == "" {
+		return nil
+	}
+	for _, line := range strings.Split(opts.Header, "\n") {
+		if _, err := fmt.Fprintf(w, "# %s%s", line, opts.LineEnding); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprint(w, opts.LineEnding)
+	return err
+}
+
+func resolveKeyOrder(result *formats.ParseResult, opts *formats.GenerateOptions) []string {
+	if len(opts.KeyOrder) > 0 {
+		return opts.KeyOrder
+	}
+	if len(result.Order) > 0 {
+		return result.Order
+	}
+	keys := make([]string, 0, len(result.Data))
+	for k := range result.Data {
+		keys = append(keys, k)
+	}
+	if opts.SortKeys {
+		sort.Strings(keys)
+	}
+	return keys
+}
+
+func (g *Generator) writeEntry(w io.Writer, key, value string, comments map[string]string, opts *formats.GenerateOptions) error {
+	if comment, hasComment := comments[key]; hasComment && opts.PreserveComments {
+		if _, err := fmt.Fprintf(w, "# %s%s", comment, opts.LineEnding); err != nil {
+			return err
+		}
+	}
+	line := g.formatLine(key, value)
+	_, err := fmt.Fprintf(w, "%s%s", line, opts.LineEnding)
+	return err
 }

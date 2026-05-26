@@ -48,6 +48,7 @@ Supports exact matching, fuzzy matching, and regular expression patterns.`,
 	RunE: runPath,
 }
 
+//nolint:gochecknoinits // cobra subcommand flag registration is idiomatic in init
 func init() {
 	pathCmd.Flags().BoolVar(&pathExact, "exact", false,
 		"match exact names only")
@@ -60,21 +61,17 @@ func init() {
 }
 
 func runPath(cmd *cobra.Command, args []string) error {
-	// Display account/org info
 	if viper.GetString("api_key") == "" && os.Getenv("DOTENV_API_KEY") == "" {
 		if err := displayAccountInfo(); err != nil {
-			ui.PrintWarning("Could not display account info: %v", err)
+			ui.PrintWarningf("Could not display account info: %v", err)
 		}
 	}
 
 	searchTerm := args[0]
-
-	// Validate flags
 	if pathExact && pathRegex {
 		return fmt.Errorf("cannot use both --exact and --regex")
 	}
 
-	// Compile regex if needed
 	var searchRegex *regexp.Regexp
 	if pathRegex {
 		var err error
@@ -84,51 +81,47 @@ func runPath(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Get API client
 	client, err := getAPIClient()
 	if err != nil {
 		return err
 	}
 
-	// Search for resources
 	matches, err := searchResources(cmd.Context(), client, searchTerm, searchRegex)
 	if err != nil {
 		return err
 	}
 
-	// Filter by type if requested
-	if pathType != "all" {
+	if pathType != resourceAll {
 		filtered := []resourceMatch{}
 		for _, match := range matches {
-			if strings.ToLower(match.Type) == strings.ToLower(pathType) {
+			if strings.EqualFold(match.Type, pathType) {
 				filtered = append(filtered, match)
 			}
 		}
 		matches = filtered
 	}
 
-	// Handle output format
+	return printPathMatches(matches, searchTerm)
+}
+
+func printPathMatches(matches []resourceMatch, searchTerm string) error {
 	switch pathOutput {
 	case "first":
 		if len(matches) == 0 {
 			return fmt.Errorf("no matches found")
 		}
 		fmt.Println(matches[0].Path)
-
 	case "count":
 		fmt.Println(len(matches))
-
 	default: // "list"
 		if len(matches) == 0 {
-			ui.PrintWarning("No matches found for '%s'", searchTerm)
+			ui.PrintWarningf("No matches found for '%s'", searchTerm)
 			return nil
 		}
-
 		for _, match := range matches {
 			fmt.Printf("%s\t# %s: %s\n", match.Path, match.Type, match.Name)
 		}
 	}
-
 	return nil
 }
 
@@ -139,17 +132,16 @@ type resourceMatch struct {
 }
 
 func searchResources(ctx context.Context, client *dotenv.Client, searchTerm string, searchRegex *regexp.Regexp) ([]resourceMatch, error) {
-	matches := []resourceMatch{}
-
-	// Fetch all projects
-	projects, _, err := client.Projects.List(ctx, nil)
+	projects, projResp, err := client.Projects.List(ctx, nil)
+	if projResp != nil {
+		defer projResp.Body.Close()
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to list projects: %w", err)
 	}
 
-	// Search projects and their children
+	matches := []resourceMatch{}
 	for _, project := range projects {
-		// Check if project matches
 		if matchesSearch(project.Name, project.Slug, searchTerm, searchRegex) {
 			matches = append(matches, resourceMatch{
 				Type: "Project",
@@ -157,45 +149,60 @@ func searchResources(ctx context.Context, client *dotenv.Client, searchTerm stri
 				Name: project.Name,
 			})
 		}
+		matches = append(matches, searchProjectTargets(ctx, client, project, searchTerm, searchRegex)...)
+	}
+	return matches, nil
+}
 
-		// Fetch targets
-		targets, _, err := client.Targets.List(ctx, project.Slug, nil)
-		if err != nil {
-			ui.PrintDebug("Failed to fetch targets for %s: %v", project.Slug, err)
-			continue
+func searchProjectTargets(
+	ctx context.Context, client *dotenv.Client, project *dotenv.Project,
+	searchTerm string, searchRegex *regexp.Regexp,
+) []resourceMatch {
+	targets, tgtResp, err := client.Targets.List(ctx, project.Slug, nil)
+	if tgtResp != nil {
+		defer tgtResp.Body.Close()
+	}
+	if err != nil {
+		ui.PrintDebugf("Failed to fetch targets for %s: %v", project.Slug, err)
+		return nil
+	}
+	var matches []resourceMatch
+	for _, target := range targets {
+		if matchesSearch(target.Name, target.Slug, searchTerm, searchRegex) {
+			matches = append(matches, resourceMatch{
+				Type: "Target",
+				Path: fmt.Sprintf("%s/%s", project.Slug, target.Slug),
+				Name: target.Name,
+			})
 		}
+		matches = append(matches, searchTargetEnvs(ctx, client, project.Slug, target.Slug, searchTerm, searchRegex)...)
+	}
+	return matches
+}
 
-		for _, target := range targets {
-			// Check if target matches
-			if matchesSearch(target.Name, target.Slug, searchTerm, searchRegex) {
-				matches = append(matches, resourceMatch{
-					Type: "Target",
-					Path: fmt.Sprintf("%s/%s", project.Slug, target.Slug),
-					Name: target.Name,
-				})
-			}
-
-			// Fetch environments
-			envs, _, err := client.Environments.List(ctx, project.Slug, target.Slug, nil)
-			if err != nil {
-				ui.PrintDebug("Failed to fetch environments for %s/%s: %v", project.Slug, target.Slug, err)
-				continue
-			}
-
-			for _, env := range envs {
-				// Check if environment matches
-				if matchesSearch(env.Name, env.Slug, searchTerm, searchRegex) {
-					matches = append(matches, resourceMatch{
-						Type: "Environment",
-						Path: fmt.Sprintf("%s/%s/%s", project.Slug, target.Slug, env.Slug),
-						Name: env.Name,
-					})
-				}
-			}
+func searchTargetEnvs(
+	ctx context.Context, client *dotenv.Client,
+	projectSlug, targetSlug, searchTerm string, searchRegex *regexp.Regexp,
+) []resourceMatch {
+	envs, envResp, err := client.Environments.List(ctx, projectSlug, targetSlug, nil)
+	if envResp != nil {
+		defer envResp.Body.Close()
+	}
+	if err != nil {
+		ui.PrintDebugf("Failed to fetch environments for %s/%s: %v", projectSlug, targetSlug, err)
+		return nil
+	}
+	var matches []resourceMatch
+	for _, env := range envs {
+		if matchesSearch(env.Name, env.Slug, searchTerm, searchRegex) {
+			matches = append(matches, resourceMatch{
+				Type: "Environment",
+				Path: fmt.Sprintf("%s/%s/%s", projectSlug, targetSlug, env.Slug),
+				Name: env.Name,
+			})
 		}
 	}
-
-	return matches, nil
+	return matches
 }
 
 func matchesSearch(name, slug, searchTerm string, searchRegex *regexp.Regexp) bool {
@@ -207,7 +214,7 @@ func matchesSearch(name, slug, searchTerm string, searchRegex *regexp.Regexp) bo
 	// Handle exact match
 	if pathExact {
 		searchLower := strings.ToLower(searchTerm)
-		return strings.ToLower(name) == searchLower || strings.ToLower(slug) == searchLower
+		return strings.EqualFold(name, searchLower) || strings.EqualFold(slug, searchLower)
 	}
 
 	// Handle fuzzy match (case-insensitive contains)

@@ -21,8 +21,8 @@ import (
 
 // TestVector represents a cross-platform test case
 type TestVector struct {
-	Key        string `json:"key"`        // Base64
-	IV         string `json:"iv"`         // Base64  
+	Key        string `json:"key"` // Base64
+	IV         string `json:"iv"`  // Base64
 	Plaintext  string `json:"plaintext"`
 	Ciphertext string `json:"ciphertext"` // Base64
 	Tag        string `json:"tag"`        // Base64

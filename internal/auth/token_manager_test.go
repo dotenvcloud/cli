@@ -15,7 +15,7 @@ import (
 )
 
 // setupTestConfig creates a test configuration directory with a default config file
-func setupTestConfig(t *testing.T) (string, *config.AccountManager) {
+func setupTestConfig(t *testing.T) *config.AccountManager {
 	configDir := t.TempDir()
 
 	// Create a default config file
@@ -30,11 +30,11 @@ func setupTestConfig(t *testing.T) (string, *config.AccountManager) {
 	am, err := config.NewAccountManager(configFile)
 	assert.NoError(t, err)
 
-	return configDir, am
+	return am
 }
 
 func TestTokenManager_NewTokenManager(t *testing.T) {
-	_, am := setupTestConfig(t)
+	am := setupTestConfig(t)
 
 	tm := NewTokenManager(am)
 	assert.NotNil(t, tm)
@@ -43,7 +43,7 @@ func TestTokenManager_NewTokenManager(t *testing.T) {
 
 func TestTokenManager_RefreshTokenIfNeeded_APIKey(t *testing.T) {
 	ctx := context.Background()
-	_, am := setupTestConfig(t)
+	am := setupTestConfig(t)
 
 	tm := NewTokenManager(am)
 
@@ -61,7 +61,7 @@ func TestTokenManager_RefreshTokenIfNeeded_APIKey(t *testing.T) {
 
 func TestTokenManager_RefreshTokenIfNeeded_ValidToken(t *testing.T) {
 	ctx := context.Background()
-	_, am := setupTestConfig(t)
+	am := setupTestConfig(t)
 
 	tm := NewTokenManager(am)
 
@@ -80,7 +80,7 @@ func TestTokenManager_RefreshTokenIfNeeded_ValidToken(t *testing.T) {
 
 func TestTokenManager_RefreshTokenIfNeeded_ExpiredRefreshToken(t *testing.T) {
 	ctx := context.Background()
-	_, am := setupTestConfig(t)
+	am := setupTestConfig(t)
 
 	tm := NewTokenManager(am)
 
@@ -102,7 +102,7 @@ func TestTokenManager_RefreshTokenIfNeeded_ExpiredRefreshToken(t *testing.T) {
 
 func TestTokenManager_RefreshOrganizationsIfNeeded_NoRefreshNeeded(t *testing.T) {
 	ctx := context.Background()
-	_, am := setupTestConfig(t)
+	am := setupTestConfig(t)
 
 	tm := NewTokenManager(am)
 

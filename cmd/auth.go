@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/dotenv/cli/internal/ui"
+	dotenv "github.com/lostlink/dotenv-sdk-go"
 )
 
 var authCmd = &cobra.Command{
@@ -30,6 +31,7 @@ var authInfoCmd *cobra.Command
 // Flags
 var authInfoVerbose bool
 
+//nolint:gochecknoinits // cobra subcommand registration is idiomatic in init
 func init() {
 	// Info command
 	authInfoCmd = &cobra.Command{
@@ -46,115 +48,103 @@ including their name, email, and organization memberships.`,
 	authCmd.AddCommand(authInfoCmd)
 }
 
-func runAuthInfo(cmd *cobra.Command, args []string) error {
-	// Get API client
+func runAuthInfo(cmd *cobra.Command, _ []string) error {
 	client, err := getAPIClient()
 	if err != nil {
 		return err
 	}
 
-	// Check if using API key
 	apiKey := viper.GetString("api_key")
 	if apiKey == "" {
 		apiKey = os.Getenv("DOTENV_API_KEY")
 	}
-
 	if apiKey != "" {
-		// For API key authentication, show limited info
-		ui.PrintInfo("Authentication: API Key")
-		fmt.Printf("Token Prefix: %s...\n", apiKey[:min(12, len(apiKey))])
-
-		// Get organization from config
-		org := viper.GetString("organization")
-		if org != "" {
-			fmt.Printf("Organization: %s\n", org)
-		}
-
-		ui.PrintInfo("\nAPI key authentication has limited user information.")
-		ui.PrintInfo("Use OAuth authentication for full user details.")
+		printAPIKeyAuthInfo(apiKey)
 		return nil
 	}
 
-	// Get authenticated user info
-	ui.PrintInfo("Fetching user information...")
-
-	user, organizations, _, err := client.User.GetAuthenticatedUser(cmd.Context())
+	ui.PrintInfof("Fetching user information...")
+	user, organizations, userResp, err := client.User.GetAuthenticatedUser(cmd.Context())
+	if userResp != nil {
+		defer userResp.Body.Close()
+	}
 	if err != nil {
 		return HandleAPIError(err, accountForErrorContext())
 	}
 
-	// Display user info
+	printUserInfo(user)
+	printOrganizations(organizations)
+	printAuthType()
+	return nil
+}
+
+func printAPIKeyAuthInfo(apiKey string) {
+	ui.PrintInfof("Authentication: API Key")
+	fmt.Printf("Token Prefix: %s...\n", apiKey[:min(12, len(apiKey))])
+	if org := viper.GetString("organization"); org != "" {
+		fmt.Printf("Organization: %s\n", org)
+	}
+	ui.PrintInfof("\nAPI key authentication has limited user information.")
+	ui.PrintInfof("Use OAuth authentication for full user details.")
+}
+
+func printUserInfo(user *dotenv.User) {
 	fmt.Println()
-	ui.PrintSuccess("Authenticated User")
+	ui.PrintSuccessf("Authenticated User")
 	fmt.Println(strings.Repeat("─", 40))
 	fmt.Printf("Name:     %s\n", user.Name)
 	fmt.Printf("Email:    %s\n", user.Email)
 	fmt.Printf("ID:       %s\n", user.ID)
 	fmt.Printf("Verified: %v\n", user.IsVerified)
 	fmt.Printf("Created:  %s\n", user.CreatedAt.Format("2006-01-02"))
-
-	// Display organizations
-	if len(organizations) > 0 {
-		fmt.Println()
-		ui.PrintSuccess("Organizations")
-		fmt.Println(strings.Repeat("─", 40))
-
-		if authInfoVerbose {
-			// Detailed table view
-			w := tabwriter.NewWriter(ui.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "NAME\tSLUG\tROLE\tID\tJOINED")
-			fmt.Fprintln(w, "────\t────\t────\t──\t──────")
-
-			for _, org := range organizations {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-					org.Name,
-					org.Slug,
-					org.Role,
-					org.ID,
-					org.JoinedAt.Format("2006-01-02"),
-				)
-			}
-			w.Flush()
-		} else {
-			// Simple list
-			for _, org := range organizations {
-				fmt.Printf("• %s (%s) - %s\n", org.Name, org.Slug, org.Role)
-			}
-		}
-
-		// Show current organization
-		account, err := getCurrentAccount()
-		if err == nil && account.IsOAuth() {
-			if currentOrg, err := account.GetCurrentOrganization(); err == nil {
-				fmt.Println()
-				ui.PrintInfo("Current organization: %s", currentOrg.Name)
-			}
-		}
-	} else {
-		fmt.Println()
-		ui.PrintWarning("No organization memberships found")
-	}
-
-	// Show authentication type
-	fmt.Println()
-	account, err := getCurrentAccount()
-	if err == nil {
-		if account.IsOAuth() {
-			ui.PrintInfo("Authentication type: OAuth")
-			if !account.IsTokenExpired() {
-				ui.PrintInfo("Token expires: %s", account.Auth.ExpiresAt.Format("2006-01-02 15:04:05"))
-			} else {
-				ui.PrintWarning("Token expired! Run 'dotenv refresh' to renew.")
-			}
-		}
-	}
-
-	return nil
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
+func printOrganizations(organizations []*dotenv.UserOrganization) {
+	if len(organizations) == 0 {
+		fmt.Println()
+		ui.PrintWarningf("No organization memberships found")
+		return
 	}
-	return b
+
+	fmt.Println()
+	ui.PrintSuccessf("Organizations")
+	fmt.Println(strings.Repeat("─", 40))
+
+	if authInfoVerbose {
+		w := tabwriter.NewWriter(ui.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(w, "NAME\tSLUG\tROLE\tID\tJOINED")
+		fmt.Fprintln(w, "────\t────\t────\t──\t──────")
+		for _, org := range organizations {
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+				org.Name, org.Slug, org.Role, org.ID,
+				org.JoinedAt.Format("2006-01-02"),
+			)
+		}
+		_ = w.Flush()
+	} else {
+		for _, org := range organizations {
+			fmt.Printf("• %s (%s) - %s\n", org.Name, org.Slug, org.Role)
+		}
+	}
+
+	if account, acctErr := getCurrentAccount(); acctErr == nil && account.IsOAuth() {
+		if currentOrg, orgErr := account.GetCurrentOrganization(); orgErr == nil {
+			fmt.Println()
+			ui.PrintInfof("Current organization: %s", currentOrg.Name)
+		}
+	}
+}
+
+func printAuthType() {
+	fmt.Println()
+	account, err := getCurrentAccount()
+	if err != nil || !account.IsOAuth() {
+		return
+	}
+	ui.PrintInfof("Authentication type: OAuth")
+	if !account.IsTokenExpired() {
+		ui.PrintInfof("Token expires: %s", account.Auth.ExpiresAt.Format("2006-01-02 15:04:05"))
+	} else {
+		ui.PrintWarningf("Token expired! Run 'dotenv refresh' to renew.")
+	}
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+//nolint:funlen // table-driven test covers many .env parse variants; splitting hurts readability
 func TestParser_Parse(t *testing.T) {
 	tests := []struct {
 		name    string

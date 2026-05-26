@@ -7,46 +7,40 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestModeEncryptor_ServerManaged(t *testing.T) {
+// assertSingleKeyMode exercises a mode that requires exactly one key
+// (server-managed or client-managed) and ensures the missing-key path returns
+// the expected error message.
+func assertSingleKeyMode(t *testing.T, mode EncryptionMode, key []byte, useServerSlot bool, missingErrMsg string) {
+	t.Helper()
 	encryptor := NewModeEncryptor()
-	serverKey := makeTestKey()
 	plaintext := []byte("test data")
 
-	// Encrypt
-	ciphertext, err := encryptor.EncryptWithMode(plaintext, ServerManaged, serverKey, nil)
+	var serverKey, clientKey []byte
+	if useServerSlot {
+		serverKey = key
+	} else {
+		clientKey = key
+	}
+
+	ciphertext, err := encryptor.EncryptWithMode(plaintext, mode, serverKey, clientKey)
 	require.NoError(t, err)
 	assert.NotEmpty(t, ciphertext)
 
-	// Decrypt
-	decrypted, err := encryptor.DecryptWithMode(ciphertext, ServerManaged, serverKey, nil)
+	decrypted, err := encryptor.DecryptWithMode(ciphertext, mode, serverKey, clientKey)
 	require.NoError(t, err)
 	assert.Equal(t, plaintext, decrypted)
 
-	// Should fail without server key
-	_, err = encryptor.EncryptWithMode(plaintext, ServerManaged, nil, nil)
+	_, err = encryptor.EncryptWithMode(plaintext, mode, nil, nil)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "server key required")
+	assert.Contains(t, err.Error(), missingErrMsg)
+}
+
+func TestModeEncryptor_ServerManaged(t *testing.T) {
+	assertSingleKeyMode(t, ServerManaged, makeTestKey(), true, "server key required")
 }
 
 func TestModeEncryptor_ClientManaged(t *testing.T) {
-	encryptor := NewModeEncryptor()
-	clientKey := makeTestKey()
-	plaintext := []byte("test data")
-
-	// Encrypt
-	ciphertext, err := encryptor.EncryptWithMode(plaintext, ClientManaged, nil, clientKey)
-	require.NoError(t, err)
-	assert.NotEmpty(t, ciphertext)
-
-	// Decrypt
-	decrypted, err := encryptor.DecryptWithMode(ciphertext, ClientManaged, nil, clientKey)
-	require.NoError(t, err)
-	assert.Equal(t, plaintext, decrypted)
-
-	// Should fail without client key
-	_, err = encryptor.EncryptWithMode(plaintext, ClientManaged, nil, nil)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "client key required")
+	assertSingleKeyMode(t, ClientManaged, makeTestKey(), false, "client key required")
 }
 
 func TestModeEncryptor_Hybrid(t *testing.T) {

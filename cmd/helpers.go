@@ -56,7 +56,7 @@ func buildAPIClient(withOrg bool) (*dotenv.Client, error) {
 
 	if withOrg {
 		if account.GetCurrentOrganizationULID() == "" {
-			return nil, fmt.Errorf("No organization selected. Run 'dotenv org list' to see available organizations.")
+			return nil, fmt.Errorf("no organization selected. Run 'dotenv org list' to see available organizations")
 		}
 	}
 
@@ -106,7 +106,7 @@ func RefreshOrganizationsIfNeeded(ctx context.Context) error {
 	}
 
 	if orgRemoved {
-		ui.PrintWarning("Current organization no longer exists. Please select a new one with 'dotenv org use'")
+		ui.PrintWarningf("Current organization no longer exists. Please select a new one with 'dotenv org use'")
 	}
 
 	return nil
@@ -118,7 +118,7 @@ func RefreshOrganizationsIfNeeded(ctx context.Context) error {
 func accountForErrorContext() *config.Account {
 	account, err := getCurrentAccount()
 	if err != nil {
-		ui.PrintWarning("account context unavailable: %v", err)
+		ui.PrintWarningf("account context unavailable: %v", err)
 	}
 	return account
 }
@@ -136,7 +136,7 @@ func getCurrentAccount() (*config.Account, error) {
 
 	account, err := am.GetCurrent()
 	if err != nil {
-		return nil, fmt.Errorf("No accounts configured. Run 'dotenv login' to add an account")
+		return nil, fmt.Errorf("no accounts configured. Run 'dotenv login' to add an account")
 	}
 
 	// TODO: Apply any environment overrides if needed
@@ -162,18 +162,12 @@ func displayAccountInfo() error {
 	}
 
 	if orgName != "" {
-		ui.PrintInfo("[Account: %s | Organization: %s]", account.Name, orgName)
+		ui.PrintInfof("[Account: %s | Organization: %s]", account.Name, orgName)
 	} else {
-		ui.PrintInfo("[Account: %s]", account.Name)
+		ui.PrintInfof("[Account: %s]", account.Name)
 	}
 
 	return nil
-}
-
-// ensureAuthenticated checks if we have valid credentials
-func ensureAuthenticated() error {
-	_, err := getCurrentAccount()
-	return err
 }
 
 // getUnauthenticatedSDKClient returns an SDK client without authentication

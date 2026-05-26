@@ -22,8 +22,8 @@ func NewAccountManager(configPath string) (*AccountManager, error) {
 		// If config doesn't exist, create default
 		if !loader.Exists() {
 			config = DefaultConfig()
-			if err := loader.Save(config); err != nil {
-				return nil, fmt.Errorf("failed to create default config: %w", err)
+			if saveErr := loader.Save(config); saveErr != nil {
+				return nil, fmt.Errorf("failed to create default config: %w", saveErr)
 			}
 		} else {
 			return nil, fmt.Errorf("failed to load config: %w", err)
@@ -42,7 +42,7 @@ func NewAccountManager(configPath string) (*AccountManager, error) {
 }
 
 // Create creates a new account
-func (am *AccountManager) Create(name string, apiURL string, authType string) error {
+func (am *AccountManager) Create(name, apiURL, authType string) error {
 	if name == "" {
 		return fmt.Errorf("account name cannot be empty")
 	}
@@ -57,11 +57,11 @@ func (am *AccountManager) Create(name string, apiURL string, authType string) er
 
 	// Check if account already exists
 	if _, exists := am.config.Accounts[name]; exists {
-		return fmt.Errorf("Account name already exists: %s", name)
+		return fmt.Errorf("account name already exists: %s", name)
 	}
 
 	// Create new account
-	account := Account{
+	account := &Account{
 		Name:      name,
 		AuthType:  authType,
 		APIURL:    apiURL,
@@ -80,7 +80,7 @@ func (am *AccountManager) Create(name string, apiURL string, authType string) er
 }
 
 // CreateWithAPIKey creates a new API key account
-func (am *AccountManager) CreateWithAPIKey(name string, apiURL string, apiKey string, orgInfo *OrgInfo) error {
+func (am *AccountManager) CreateWithAPIKey(name, apiURL, apiKey string, orgInfo *OrgInfo) error {
 	if err := am.Create(name, apiURL, constants.AuthTypeAPIKey); err != nil {
 		return err
 	}
@@ -98,7 +98,7 @@ func (am *AccountManager) CreateWithAPIKey(name string, apiURL string, apiKey st
 }
 
 // CreateWithOAuth creates a new OAuth account
-func (am *AccountManager) CreateWithOAuth(name string, apiURL string, tokens TokenResponse, orgs []OrgInfo, selectedOrgULID string) error {
+func (am *AccountManager) CreateWithOAuth(name, apiURL string, tokens TokenResponse, orgs []OrgInfo, selectedOrgULID string) error {
 	if err := am.Create(name, apiURL, constants.AuthTypeOAuth); err != nil {
 		return err
 	}
@@ -127,52 +127,78 @@ func (am *AccountManager) Update(name string, updates map[string]interface{}) er
 		return fmt.Errorf("account '%s' not found", name)
 	}
 
-	// Update fields
 	for key, value := range updates {
-		switch key {
-		case "auth_type":
-			if v, ok := value.(string); ok {
-				account.AuthType = v
-			}
-		case "api_url":
-			if v, ok := value.(string); ok {
-				account.APIURL = v
-			}
-		case "auth":
-			if v, ok := value.(AuthData); ok {
-				account.Auth = v
-			}
-		case "organizations":
-			if v, ok := value.([]OrgInfo); ok {
-				account.Organizations = v
-			}
-		case "current_organization":
-			if v, ok := value.(string); ok {
-				account.CurrentOrganization = v
-			}
-		case "organizations_fetched_at":
-			if v, ok := value.(time.Time); ok {
-				t := v
-				account.OrganizationsFetchedAt = &t
-			}
-		case "organization":
-			if v, ok := value.(*OrgInfo); ok {
-				account.Organization = v
-			}
-		case "organization_fetched_at":
-			if v, ok := value.(time.Time); ok {
-				t := v
-				account.OrganizationFetchedAt = &t
-			}
-		}
+		applyAccountUpdate(&account, key, value)
 	}
 
 	account.UpdatedAt = time.Now()
 	account.LastUsed = time.Now()
 
-	// Save updated account
 	am.config.Accounts[name] = account
 	return am.loader.Save(am.config)
+}
+
+func applyAccountUpdate(account *Account, key string, value interface{}) {
+	if applyStringField(account, key, value) {
+		return
+	}
+	if applyComplexField(account, key, value) {
+		return
+	}
+	applyTimeField(account, key, value)
+}
+
+func applyStringField(account *Account, key string, value interface{}) bool {
+	v, ok := value.(string)
+	if !ok {
+		return false
+	}
+	switch key {
+	case "auth_type":
+		account.AuthType = v
+	case "api_url":
+		account.APIURL = v
+	case "current_organization":
+		account.CurrentOrganization = v
+	default:
+		return false
+	}
+	return true
+}
+
+func applyComplexField(account *Account, key string, value interface{}) bool {
+	switch key {
+	case "auth":
+		if v, ok := value.(AuthData); ok {
+			account.Auth = v
+			return true
+		}
+	case "organizations":
+		if v, ok := value.([]OrgInfo); ok {
+			account.Organizations = v
+			return true
+		}
+	case "organization":
+		if v, ok := value.(*OrgInfo); ok {
+			account.Organization = v
+			return true
+		}
+	}
+	return false
+}
+
+func applyTimeField(account *Account, key string, value interface{}) {
+	v, ok := value.(time.Time)
+	if !ok {
+		return
+	}
+	t := v
+	switch key {
+	case "organizations_fetched_at":
+		account.OrganizationsFetchedAt = &t
+	case "organization_fetched_at":
+		account.OrganizationFetchedAt = &t
+	}
 }
 
 // Use sets an account as the current active account
@@ -241,7 +267,7 @@ func (am *AccountManager) RefreshToken(name string, tokens TokenResponse) error 
 }
 
 // SetOrganization sets the current organization for an OAuth account
-func (am *AccountManager) SetOrganization(accountName string, orgULID string) error {
+func (am *AccountManager) SetOrganization(accountName, orgULID string) error {
 	account, exists := am.config.Accounts[accountName]
 	if !exists {
 		return fmt.Errorf("account '%s' not found", accountName)
@@ -294,13 +320,11 @@ func (am *AccountManager) RefreshOrganizations(accountName string, orgs []OrgInf
 				account.CurrentOrganization = ""
 			}
 		}
-	} else {
+	} else if len(orgs) > 0 {
 		// For API key accounts, update single organization
-		if len(orgs) > 0 {
-			account.Organization = &orgs[0]
-			now := time.Now()
-			account.OrganizationFetchedAt = &now
-		}
+		account.Organization = &orgs[0]
+		now := time.Now()
+		account.OrganizationFetchedAt = &now
 	}
 
 	account.UpdatedAt = time.Now()

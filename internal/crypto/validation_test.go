@@ -232,7 +232,7 @@ func TestIsEncrypted_EdgeCases(t *testing.T) {
 		// Even if it's valid base64 of sufficient length,
 		// it should be rejected if it contains common patterns
 		data := make([]byte, 100)
-		copy(data, []byte(pattern))
+		copy(data, pattern)
 		encoded := base64.StdEncoding.EncodeToString(data)
 
 		// The encoded version won't contain the pattern directly,

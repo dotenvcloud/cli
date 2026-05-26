@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/dotenv/cli/internal/constants"
 	"github.com/dotenv/cli/internal/ui"
 	"github.com/dotenv/cli/internal/utils"
+	dotenv "github.com/lostlink/dotenv-sdk-go"
 )
 
 var accountCmd = &cobra.Command{
@@ -86,6 +88,7 @@ var accountRenameCmd = &cobra.Command{
 	RunE:  runAccountRename,
 }
 
+//nolint:gochecknoinits // cobra subcommand registration is idiomatic in init
 func init() {
 	accountCmd.AddCommand(accountListCmd)
 	accountCmd.AddCommand(accountUseCmd)
@@ -104,7 +107,7 @@ func getAPIURL() string {
 	}
 	return constants.LegacyAPIURL
 }
-func runAccountList(cmd *cobra.Command, args []string) error {
+func runAccountList(_ *cobra.Command, _ []string) error {
 	configPath, err := config.ConfigPath()
 	if err != nil {
 		return err
@@ -116,7 +119,7 @@ func runAccountList(cmd *cobra.Command, args []string) error {
 
 	accounts := am.List()
 	if len(accounts) == 0 {
-		ui.PrintWarning("No accounts configured. Run 'dotenv account add' to add an account.")
+		ui.PrintWarningf("No accounts configured. Run 'dotenv account add' to add an account.")
 		return nil
 	}
 
@@ -167,7 +170,7 @@ func runAccountList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runAccountUse(cmd *cobra.Command, args []string) error {
+func runAccountUse(_ *cobra.Command, args []string) error {
 	configPath, err := config.ConfigPath()
 	if err != nil {
 		return err
@@ -178,8 +181,8 @@ func runAccountUse(cmd *cobra.Command, args []string) error {
 	}
 
 	accountName := args[0]
-	if err := am.Use(accountName); err != nil {
-		return err
+	if useErr := am.Use(accountName); useErr != nil {
+		return useErr
 	}
 
 	account, err := am.Get(accountName)
@@ -187,22 +190,22 @@ func runAccountUse(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	ui.PrintSuccess("Switched to account: %s", accountName)
+	ui.PrintSuccessf("Switched to account: %s", accountName)
 
 	// Show organization info
 	if account.IsOAuth() {
 		org, err := account.GetCurrentOrganization()
 		if err == nil {
-			ui.PrintInfo("Current organization: %s", org.Name)
+			ui.PrintInfof("Current organization: %s", org.Name)
 		}
 	} else if account.Organization != nil {
-		ui.PrintInfo("Organization: %s", account.Organization.Name)
+		ui.PrintInfof("Organization: %s", account.Organization.Name)
 	}
 
 	return nil
 }
 
-func runAccountAdd(cmd *cobra.Command, args []string) error {
+func runAccountAdd(cmd *cobra.Command, _ []string) error {
 	configPath, err := config.ConfigPath()
 	if err != nil {
 		return err
@@ -212,14 +215,8 @@ func runAccountAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Get API URL (prefer existing account's URL if available)
-	apiURL := getAPIURL()
-	if currentAccount, err := am.GetCurrent(); err == nil && currentAccount.APIURL != "" {
-		apiURL = currentAccount.APIURL
-		ui.PrintInfo("Using API URL from current account: %s", apiURL)
-	}
+	apiURL := resolveAccountAPIURL(am)
 
-	// Ask for authentication method
 	authMethod, err := ui.Select("How would you like to authenticate?", []string{
 		"Login via browser (OAuth)",
 		"Enter API key manually",
@@ -229,82 +226,93 @@ func runAccountAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	if strings.Contains(authMethod, "OAuth") {
-		// OAuth flow
-		ui.PrintInfo("Starting OAuth login...")
-		opts := auth.BrowserLoginOptions{
-			APIUrl:        apiURL,
-			CallbackPort:  "",
-			NoBrowser:     false,
-			IsInteractive: true,
-		}
-
-		if err := auth.DoBrowserLogin(cmd.Context(), am, opts); err != nil {
-			return fmt.Errorf("OAuth login failed: %w", err)
-		}
-	} else {
-		// API key flow
-		apiKey, err := ui.Password("Enter your API key")
-		if err != nil {
-			return err
-		}
-
-		// Validate API key
-		validator := config.NewValidator()
-		if err := validator.ValidateAPIKey(apiKey); err != nil {
-			return fmt.Errorf("invalid API key: %w", err)
-		}
-
-		// Try to fetch organization info
-		factory := client.NewFactory(getAPIURL())
-		sdkClient := factory.NewClientFromAPIKey(apiKey, getAPIURL(), "")
-
-		orgs, _, err := sdkClient.Organizations.List(cmd.Context(), nil)
-		if err != nil {
-			return fmt.Errorf("failed to verify API key: %w", err)
-		}
-
-		if len(orgs) == 0 {
-			return fmt.Errorf("no organizations found for this API key")
-		}
-
-		// For API key, we expect single org
-		org := orgs[0]
-		// Use ID if ULID is empty (API returns ULID in ID field)
-		ulid := org.ULID
-		if ulid == "" && org.ID != "" {
-			ulid = org.ID
-		}
-		orgInfo := config.OrgInfo{
-			ULID: ulid,
-			Name: org.Name,
-		}
-
-		// Default account name is org name
-		defaultName := utils.Slugify(org.Name)
-		accountName, err := ui.Input("Account name", defaultName, nil)
-		if err != nil {
-			return err
-		}
-
-		// Create API key account
-		if err := am.CreateWithAPIKey(accountName, apiURL, apiKey, &orgInfo); err != nil {
-			return fmt.Errorf("failed to create account: %w", err)
-		}
-
-		// Set as current
-		if err := am.Use(accountName); err != nil {
-			return fmt.Errorf("failed to set current account: %w", err)
-		}
-
-		ui.PrintSuccess("Account created successfully!")
-		ui.PrintInfo("Current account: %s", accountName)
-		ui.PrintInfo("Organization: %s", org.Name)
+		return runAccountAddOAuth(cmd, am, apiURL)
 	}
+	return runAccountAddAPIKey(cmd, am, apiURL)
+}
 
+func resolveAccountAPIURL(am *config.AccountManager) string {
+	apiURL := getAPIURL()
+	if currentAccount, getErr := am.GetCurrent(); getErr == nil && currentAccount.APIURL != "" {
+		apiURL = currentAccount.APIURL
+		ui.PrintInfof("Using API URL from current account: %s", apiURL)
+	}
+	return apiURL
+}
+
+func runAccountAddOAuth(cmd *cobra.Command, am *config.AccountManager, apiURL string) error {
+	ui.PrintInfof("Starting OAuth login...")
+	opts := auth.BrowserLoginOptions{
+		APIUrl:        apiURL,
+		CallbackPort:  "",
+		NoBrowser:     false,
+		IsInteractive: true,
+	}
+	if err := auth.DoBrowserLogin(cmd.Context(), am, opts); err != nil {
+		return fmt.Errorf("OAuth login failed: %w", err)
+	}
 	return nil
 }
 
-func runAccountRemove(cmd *cobra.Command, args []string) error {
+func runAccountAddAPIKey(cmd *cobra.Command, am *config.AccountManager, apiURL string) error {
+	apiKey, err := ui.Password("Enter your API key")
+	if err != nil {
+		return err
+	}
+
+	validator := config.NewValidator()
+	if validateErr := validator.ValidateAPIKey(apiKey); validateErr != nil {
+		return fmt.Errorf("invalid API key: %w", validateErr)
+	}
+
+	org, err := verifyAPIKeyOrg(cmd.Context(), apiKey)
+	if err != nil {
+		return err
+	}
+
+	ulid := org.ULID
+	if ulid == "" && org.ID != "" {
+		ulid = org.ID
+	}
+	orgInfo := config.OrgInfo{ULID: ulid, Name: org.Name}
+
+	defaultName := utils.Slugify(org.Name)
+	accountName, err := ui.Input("Account name", defaultName, nil)
+	if err != nil {
+		return err
+	}
+
+	if err := am.CreateWithAPIKey(accountName, apiURL, apiKey, &orgInfo); err != nil {
+		return fmt.Errorf("failed to create account: %w", err)
+	}
+	if err := am.Use(accountName); err != nil {
+		return fmt.Errorf("failed to set current account: %w", err)
+	}
+
+	ui.PrintSuccessf("Account created successfully!")
+	ui.PrintInfof("Current account: %s", accountName)
+	ui.PrintInfof("Organization: %s", org.Name)
+	return nil
+}
+
+func verifyAPIKeyOrg(ctx context.Context, apiKey string) (*dotenv.Organization, error) {
+	factory := client.NewFactory(getAPIURL())
+	sdkClient := factory.NewClientFromAPIKey(apiKey, getAPIURL(), "")
+
+	orgs, resp, err := sdkClient.Organizations.List(ctx, nil)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify API key: %w", err)
+	}
+	if len(orgs) == 0 {
+		return nil, fmt.Errorf("no organizations found for this API key")
+	}
+	return orgs[0], nil
+}
+
+func runAccountRemove(_ *cobra.Command, args []string) error {
 	configPath, err := config.ConfigPath()
 	if err != nil {
 		return err
@@ -335,7 +343,7 @@ func runAccountRemove(cmd *cobra.Command, args []string) error {
 	}
 
 	if !confirm {
-		ui.PrintInfo("Account removal cancelled")
+		ui.PrintInfof("Account removal canceled")
 		return nil
 	}
 
@@ -343,20 +351,20 @@ func runAccountRemove(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	ui.PrintSuccess("Account removed: %s", accountName)
+	ui.PrintSuccessf("Account removed: %s", accountName)
 
 	// Show new current account if any
 	if current, err := am.GetCurrent(); err == nil {
-		ui.PrintInfo("Current account: %s", current.Name)
+		ui.PrintInfof("Current account: %s", current.Name)
 	}
 
 	return nil
 }
 
-func runAccountRefresh(cmd *cobra.Command, args []string) error {
+func runAccountRefresh(cmd *cobra.Command, _ []string) error {
 	// Display account/org info
 	if err := displayAccountInfo(); err != nil {
-		ui.PrintWarning("Could not display account info: %v", err)
+		ui.PrintWarningf("Could not display account info: %v", err)
 	}
 
 	configPath, err := config.ConfigPath()
@@ -378,18 +386,21 @@ func runAccountRefresh(cmd *cobra.Command, args []string) error {
 	}
 
 	if !account.IsTokenExpired() {
-		ui.PrintInfo("Token is still valid (expires %s)", account.Auth.ExpiresAt.Format(time.RFC3339))
+		ui.PrintInfof("Token is still valid (expires %s)", account.Auth.ExpiresAt.Format(time.RFC3339))
 		return nil
 	}
 
-	ui.PrintInfo("Refreshing OAuth token...")
+	ui.PrintInfof("Refreshing OAuth token...")
 
 	// Create SDK client without authentication (OAuth token endpoint doesn't require auth)
 	factory := client.NewFactory(account.APIURL)
 	sdkClient := factory.NewUnauthenticatedClient(account.APIURL, config.ShouldSkipTLSVerify())
 
 	// Refresh token using SDK
-	sdkTokenResp, _, err := sdkClient.OAuth.RefreshToken(cmd.Context(), account.Auth.RefreshToken, constants.OAuthClientID)
+	sdkTokenResp, refreshResp, err := sdkClient.OAuth.RefreshToken(cmd.Context(), account.Auth.RefreshToken, constants.OAuthClientID)
+	if refreshResp != nil {
+		defer refreshResp.Body.Close()
+	}
 	if err != nil {
 		return fmt.Errorf("failed to refresh token: %w", err)
 	}
@@ -406,13 +417,13 @@ func runAccountRefresh(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to update tokens: %w", err)
 	}
 
-	ui.PrintSuccess("Token refreshed successfully!")
-	ui.PrintInfo("New token expires: %s", time.Now().Add(time.Duration(tokenResp.ExpiresIn)*time.Second).Format(time.RFC3339))
+	ui.PrintSuccessf("Token refreshed successfully!")
+	ui.PrintInfof("New token expires: %s", time.Now().Add(time.Duration(tokenResp.ExpiresIn)*time.Second).Format(time.RFC3339))
 
 	return nil
 }
 
-func runAccountRename(cmd *cobra.Command, args []string) error {
+func runAccountRename(_ *cobra.Command, args []string) error {
 	configPath, err := config.ConfigPath()
 	if err != nil {
 		return err
@@ -435,11 +446,11 @@ func runAccountRename(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	ui.PrintSuccess("Account renamed from '%s' to '%s'", oldName, newName)
+	ui.PrintSuccessf("Account renamed from '%s' to '%s'", oldName, newName)
 
 	// Show if it's the current account
 	if current, err := am.GetCurrent(); err == nil && current.Name == newName {
-		ui.PrintInfo("This is the current account")
+		ui.PrintInfof("This is the current account")
 	}
 
 	return nil

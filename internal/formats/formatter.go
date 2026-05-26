@@ -109,6 +109,8 @@ func (f *Formatter) Format(w io.Writer, data map[string]string) error {
 		return f.formatDockerfile(w, keys, data)
 	case OutputCompact:
 		return f.formatCompact(w, keys, data)
+	case OutputDefault:
+		return f.formatDefault(w, keys, data)
 	default:
 		return f.formatDefault(w, keys, data)
 	}
@@ -139,13 +141,15 @@ func (f *Formatter) sortKeys(data map[string]string) []string {
 			}
 			return cat1 < cat2
 		})
+	case SortNone:
+		// Preserve insertion order; no sort.
 	}
 
 	return keys
 }
 
 // groupByPrefix groups keys by their prefix
-func (f *Formatter) groupByPrefix(keys []string, data map[string]string) map[string][]string {
+func (f *Formatter) groupByPrefix(keys []string, _ map[string]string) map[string][]string {
 	groups := make(map[string][]string)
 
 	for _, key := range keys {

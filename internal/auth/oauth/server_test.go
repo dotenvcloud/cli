@@ -1,6 +1,7 @@
 package oauth
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -15,7 +16,7 @@ import (
 func TestHandleCallback_StateMismatch(t *testing.T) {
 	s := NewCallbackServer("expected-state-abc")
 
-	req := httptest.NewRequest("GET", "/callback?code=ok&state=attacker-state", nil)
+	req := httptest.NewRequest("GET", "/callback?code=ok&state=attacker-state", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	s.handleCallback(rec, req)
@@ -35,7 +36,7 @@ func TestHandleCallback_StateMismatch(t *testing.T) {
 func TestHandleCallback_MissingCode(t *testing.T) {
 	s := NewCallbackServer("matching-state")
 
-	req := httptest.NewRequest("GET", "/callback?state=matching-state", nil)
+	req := httptest.NewRequest("GET", "/callback?state=matching-state", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	s.handleCallback(rec, req)
@@ -48,14 +49,14 @@ func TestHandleCallback_MissingCode(t *testing.T) {
 	}
 }
 
-// F-12: error parameter (e.g. user-cancelled) routes to error path with the
+// F-12: error parameter (e.g. user-canceled) routes to error path with the
 // provider's error code surfaced.
 func TestHandleCallback_ProviderError(t *testing.T) {
 	s := NewCallbackServer("any")
 	values := url.Values{}
 	values.Set("error", "access_denied")
 	values.Set("error_description", "User refused")
-	req := httptest.NewRequest("GET", "/callback?"+values.Encode(), nil)
+	req := httptest.NewRequest("GET", "/callback?"+values.Encode(), http.NoBody)
 	rec := httptest.NewRecorder()
 
 	s.handleCallback(rec, req)
@@ -73,7 +74,7 @@ func TestHandleCallback_ProviderError(t *testing.T) {
 // channel and AuthState is recorded.
 func TestHandleCallback_HappyPath(t *testing.T) {
 	s := NewCallbackServer("ok-state")
-	req := httptest.NewRequest("GET", "/callback?code=auth-code-xyz&state=ok-state", nil)
+	req := httptest.NewRequest("GET", "/callback?code=auth-code-xyz&state=ok-state", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	s.handleCallback(rec, req)

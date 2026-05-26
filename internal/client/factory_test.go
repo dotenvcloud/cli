@@ -155,6 +155,7 @@ func TestNewClientFromAPIKey(t *testing.T) {
 	}
 }
 
+//nolint:funlen // table-driven test covers many account-shape variants; splitting hurts readability
 func TestNewClientFromAccount(t *testing.T) {
 	factory := NewFactory("https://api.test.com")
 

@@ -1,12 +1,10 @@
 package cmd
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
-	"os"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 
 	"github.com/dotenv/cli/internal/client"
@@ -41,10 +39,10 @@ For API key accounts, only the single organization is available.`,
 var orgListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List organizations for the current account",
-	PreRunE: func(cmd *cobra.Command, args []string) error {
+	PreRunE: func(cmd *cobra.Command, _ []string) error {
 		if !orgNoRefresh {
 			if err := RefreshOrganizationsIfNeeded(cmd.Context()); err != nil {
-				ui.PrintWarning("Could not refresh organizations: %v", err)
+				ui.PrintWarningf("Could not refresh organizations: %v", err)
 				// Continue anyway with cached data
 			}
 		}
@@ -61,10 +59,10 @@ var orgUseCmd = &cobra.Command{
 You can specify the organization by its slug or ULID.
 If no organization is specified, an interactive selection will be shown.`,
 	Args: cobra.MaximumNArgs(1),
-	PreRunE: func(cmd *cobra.Command, args []string) error {
+	PreRunE: func(cmd *cobra.Command, _ []string) error {
 		if !orgNoRefresh {
 			if err := RefreshOrganizationsIfNeeded(cmd.Context()); err != nil {
-				ui.PrintWarning("Could not refresh organizations: %v", err)
+				ui.PrintWarningf("Could not refresh organizations: %v", err)
 				// Continue anyway with cached data
 			}
 		}
@@ -88,6 +86,7 @@ var orgShowCmd = &cobra.Command{
 	RunE:  runOrgShow,
 }
 
+//nolint:gochecknoinits // cobra subcommand registration is idiomatic in init
 func init() {
 	orgCmd.AddCommand(orgListCmd)
 	orgCmd.AddCommand(orgUseCmd)
@@ -103,10 +102,10 @@ func init() {
 		"Skip automatic organization refresh")
 }
 
-func runOrgList(cmd *cobra.Command, args []string) error {
+func runOrgList(cmd *cobra.Command, _ []string) error {
 	// Display account/org info
 	if err := displayAccountInfo(); err != nil {
-		ui.PrintWarning("Could not display account info: %v", err)
+		ui.PrintWarningf("Could not display account info: %v", err)
 	}
 
 	// Use client without org context since we're listing organizations
@@ -115,11 +114,13 @@ func runOrgList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	ui.PrintInfo("Fetching organizations...")
+	ui.PrintInfof("Fetching organizations...")
 
 	orgs, resp, err := client.Organizations.List(cmd.Context(), nil)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	if err != nil {
-		// Check if using API key authentication
 		if resp != nil && resp.StatusCode == 403 {
 			return fmt.Errorf("API key authentication only shows the organization tied to the key. Use OAuth for listing all organizations")
 		}
@@ -127,93 +128,17 @@ func runOrgList(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(orgs) == 0 {
-		ui.PrintWarning("No organizations found")
+		ui.PrintWarningf("No organizations found")
 		return nil
 	}
 
-	switch orgListFormat {
-	case "json":
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(orgs)
-
-	case "yaml":
-		// Simple YAML output
-		// Get current organization for comparison
-		account := accountForErrorContext()
-		currentOrgID := ""
-		if account != nil {
-			if account.IsOAuth() && account.CurrentOrganization != "" {
-				currentOrgID = account.CurrentOrganization
-			} else if account.Organization != nil {
-				currentOrgID = account.Organization.ULID
-			}
-		}
-
-		for _, org := range orgs {
-			// Use ID if ULID is empty (API might return ULID in ID field)
-			ulid := org.ULID
-			if ulid == "" && org.ID != "" {
-				ulid = org.ID
-			}
-
-			fmt.Printf("- name: %s\n", org.Name)
-			fmt.Printf("  ulid: %s\n", ulid)
-			fmt.Printf("  plan: %s\n", org.PlanName)
-			fmt.Printf("  status: %s\n", org.Status)
-			if org.ID == currentOrgID || org.ULID == currentOrgID {
-				fmt.Printf("  current: true\n")
-			}
-			fmt.Println()
-		}
-		return nil
-
-	default:
-		// Table format
-		table := tablewriter.NewWriter(os.Stdout)
-		table.Header("NAME", "ULID", "PLAN", "STATUS", "CURRENT")
-
-		// Get current organization for comparison
-		account := accountForErrorContext()
-		currentOrgID := ""
-		if account != nil {
-			if account.IsOAuth() && account.CurrentOrganization != "" {
-				currentOrgID = account.CurrentOrganization
-			} else if account.Organization != nil {
-				currentOrgID = account.Organization.ULID
-			}
-		}
-
-		for _, org := range orgs {
-			current := ""
-			if org.ID == currentOrgID || org.ULID == currentOrgID {
-				current = "*"
-			}
-
-			// Use ID if ULID is empty (API might return ULID in ID field)
-			ulid := org.ULID
-			if ulid == "" && org.ID != "" {
-				ulid = org.ID
-			}
-
-			table.Append([]string{
-				org.Name,
-				ulid,
-				org.PlanName,
-				org.Status,
-				current,
-			})
-		}
-
-		table.Render()
-		return nil
-	}
+	return renderOrgList(orgs, orgListFormat)
 }
 
-func runOrgUse(cmd *cobra.Command, args []string) error {
+func runOrgUse(_ *cobra.Command, args []string) error {
 	// Display account/org info
 	if err := displayAccountInfo(); err != nil {
-		ui.PrintWarning("Could not display account info: %v", err)
+		ui.PrintWarningf("Could not display account info: %v", err)
 	}
 
 	configPath, err := config.ConfigPath()
@@ -236,7 +161,7 @@ func runOrgUse(cmd *cobra.Command, args []string) error {
 
 	// Check if we need to refresh organizations
 	if len(account.Organizations) == 0 {
-		ui.PrintWarning("No organizations found. Run 'dotenv org refresh' to fetch.")
+		ui.PrintWarningf("No organizations found. Run 'dotenv org refresh' to fetch.")
 		return nil
 	}
 
@@ -281,7 +206,7 @@ func runOrgUse(cmd *cobra.Command, args []string) error {
 		}
 
 		if err := survey.AskOne(prompt, &selected); err != nil {
-			return fmt.Errorf("selection cancelled")
+			return fmt.Errorf("selection canceled")
 		}
 
 		selectedOrg = orgMap[selected]
@@ -292,107 +217,113 @@ func runOrgUse(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	ui.PrintSuccess("Switched to organization: %s", selectedOrg.Name)
-	ui.PrintInfo("ULID: %s", selectedOrg.ULID)
+	ui.PrintSuccessf("Switched to organization: %s", selectedOrg.Name)
+	ui.PrintInfof("ULID: %s", selectedOrg.ULID)
 
 	return nil
 }
 
-func runOrgRefresh(cmd *cobra.Command, args []string) error {
-	// Display account/org info
+func runOrgRefresh(cmd *cobra.Command, _ []string) error {
 	if err := displayAccountInfo(); err != nil {
-		ui.PrintWarning("Could not display account info: %v", err)
+		ui.PrintWarningf("Could not display account info: %v", err)
 	}
 
-	configPath, err := config.ConfigPath()
-	if err != nil {
-		return err
-	}
-	am, err := config.NewAccountManager(configPath)
+	am, account, err := loadCurrentAccount()
 	if err != nil {
 		return err
 	}
 
-	account, err := am.GetCurrent()
+	ui.PrintInfof("Refreshing organizations...")
+
+	sdkClient, err := buildRefreshClient(cmd.Context(), account, am)
 	if err != nil {
-		return fmt.Errorf("no current account: %w", err)
+		return err
 	}
 
-	ui.PrintInfo("Refreshing organizations...")
-
-	// Use factory to create API client
-	factory := client.NewFactory(config.GetAPIURL(""))
-
-	// Handle OAuth token refresh if needed
-	var sdkClient *dotenv.Client
-	if account.IsOAuth() {
-		// Use factory to handle refresh
-		sdkClient, err = factory.RefreshTokenAndCreateClient(cmd.Context(), account, am, false)
-		if err != nil {
-			return fmt.Errorf("failed to create API client: %w", err)
-		}
-	} else {
-		// Create client from account (without organization context)
-		sdkClient, err = factory.NewClientFromAccount(account, false)
-		if err != nil {
-			return fmt.Errorf("failed to create API client: %w", err)
-		}
+	orgs, orgResp, err := sdkClient.Organizations.List(cmd.Context(), nil)
+	if orgResp != nil {
+		defer orgResp.Body.Close()
 	}
-
-	// Fetch organizations
-	orgs, _, err := sdkClient.Organizations.List(cmd.Context(), nil)
 	if err != nil {
 		return fmt.Errorf("failed to fetch organizations: %w", err)
 	}
-
 	if len(orgs) == 0 {
 		return fmt.Errorf("no organizations found")
 	}
 
-	// Convert to OrgInfo format
-	var orgInfos []config.OrgInfo
-	for _, org := range orgs {
-		// Use ID if ULID is empty (API returns ULID in ID field)
-		ulid := org.ULID
-		if ulid == "" && org.ID != "" {
-			ulid = org.ID
-		}
-		orgInfos = append(orgInfos, config.OrgInfo{
-			ULID: ulid,
-			Name: org.Name,
-		})
-	}
-
-	// Update account with new organizations
+	orgInfos := toOrgInfos(orgs)
 	orgRemoved, err := am.RefreshOrganizations(account.Name, orgInfos)
 	if err != nil {
 		return err
 	}
-
 	if orgRemoved {
-		ui.PrintWarning("Current organization no longer exists. Please select a new one with 'dotenv org use'")
+		ui.PrintWarningf("Current organization no longer exists. Please select a new one with 'dotenv org use'")
 	}
 
-	ui.PrintSuccess("Organizations refreshed successfully!")
-
-	if account.IsOAuth() {
-		ui.PrintInfo("Found %d organization(s)", len(orgInfos))
-
-		// Show current organization
-		if currentOrg, err := account.GetCurrentOrganization(); err == nil {
-			ui.PrintInfo("Current organization: %s", currentOrg.Name)
-		}
-	} else {
-		ui.PrintInfo("Organization: %s", orgInfos[0].Name)
-	}
-
+	ui.PrintSuccessf("Organizations refreshed successfully!")
+	printRefreshSummary(account, orgInfos)
 	return nil
 }
 
-func runOrgShow(cmd *cobra.Command, args []string) error {
+func loadCurrentAccount() (*config.AccountManager, *config.Account, error) {
+	configPath, err := config.ConfigPath()
+	if err != nil {
+		return nil, nil, err
+	}
+	am, err := config.NewAccountManager(configPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	account, err := am.GetCurrent()
+	if err != nil {
+		return nil, nil, fmt.Errorf("no current account: %w", err)
+	}
+	return am, account, nil
+}
+
+func buildRefreshClient(ctx context.Context, account *config.Account, am *config.AccountManager) (*dotenv.Client, error) {
+	factory := client.NewFactory(config.GetAPIURL(""))
+	if account.IsOAuth() {
+		c, err := factory.RefreshTokenAndCreateClient(ctx, account, am, false)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create API client: %w", err)
+		}
+		return c, nil
+	}
+	c, err := factory.NewClientFromAccount(account, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create API client: %w", err)
+	}
+	return c, nil
+}
+
+func toOrgInfos(orgs []*dotenv.Organization) []config.OrgInfo {
+	orgInfos := make([]config.OrgInfo, 0, len(orgs))
+	for _, org := range orgs {
+		ulid := org.ULID
+		if ulid == "" && org.ID != "" {
+			ulid = org.ID
+		}
+		orgInfos = append(orgInfos, config.OrgInfo{ULID: ulid, Name: org.Name})
+	}
+	return orgInfos
+}
+
+func printRefreshSummary(account *config.Account, orgInfos []config.OrgInfo) {
+	if account.IsOAuth() {
+		ui.PrintInfof("Found %d organization(s)", len(orgInfos))
+		if currentOrg, err := account.GetCurrentOrganization(); err == nil {
+			ui.PrintInfof("Current organization: %s", currentOrg.Name)
+		}
+		return
+	}
+	ui.PrintInfof("Organization: %s", orgInfos[0].Name)
+}
+
+func runOrgShow(_ *cobra.Command, _ []string) error {
 	// Display account/org info
 	if err := displayAccountInfo(); err != nil {
-		ui.PrintWarning("Could not display account info: %v", err)
+		ui.PrintWarningf("Could not display account info: %v", err)
 	}
 
 	configPath, err := config.ConfigPath()
@@ -414,7 +345,7 @@ func runOrgShow(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no organization selected: %w", err)
 	}
 
-	ui.PrintInfo("Current organization details:")
+	ui.PrintInfof("Current organization details:")
 	fmt.Printf("  Name: %s\n", currentOrg.Name)
 	fmt.Printf("  ULID: %s\n", currentOrg.ULID)
 

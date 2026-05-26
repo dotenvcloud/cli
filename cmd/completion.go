@@ -55,8 +55,8 @@ PowerShell:
 `,
 	DisableFlagsInUseLine: true,
 	ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
-	Args:                  cobra.ExactValidArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
+	RunE: func(_ *cobra.Command, args []string) error {
 		switch args[0] {
 		case "bash":
 			return rootCmd.GenBashCompletion(os.Stdout)
@@ -73,8 +73,20 @@ PowerShell:
 
 // registerResourcePathCompletions sets up dynamic completions for resource paths
 func registerResourcePathCompletions() {
+	// registerCompletion attempts to register a completion func; missing flags
+	// are tolerated because some commands omit the corresponding flag (the
+	// completion is only useful when the flag exists).
+	registerCompletion := func(c *cobra.Command, flag string, fn func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective)) {
+		if c.Flags().Lookup(flag) == nil {
+			return
+		}
+		if err := c.RegisterFlagCompletionFunc(flag, fn); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to register completion for %q on %q: %v\n", flag, c.Name(), err)
+		}
+	}
+
 	// For pull command - completes project/target/environment paths
-	pullCmd.RegisterFlagCompletionFunc("project", projectCompletion)
+	registerCompletion(pullCmd, "project", projectCompletion)
 	pullCmd.ValidArgsFunction = resourcePathCompletion
 
 	// For push command - completes project/target/environment paths
@@ -105,9 +117,9 @@ func registerResourcePathCompletions() {
 		// For targets and environments, provide path completion
 		if len(args) == 1 {
 			switch args[0] {
-			case "targets":
+			case resourceTargets:
 				return projectCompletion(cmd, args[1:], toComplete)
-			case "environments":
+			case resourceEnvironments:
 				return targetPathCompletion(cmd, args[1:], toComplete)
 			}
 		}
@@ -117,8 +129,8 @@ func registerResourcePathCompletions() {
 
 	// For tree command
 	treeCmd.ValidArgsFunction = projectCompletion
-	treeCmd.RegisterFlagCompletionFunc("project", projectCompletion)
-	treeCmd.RegisterFlagCompletionFunc("target", targetCompletion)
+	registerCompletion(treeCmd, "project", projectCompletion)
+	registerCompletion(treeCmd, "target", targetCompletion)
 
 	// For explore command
 	exploreCmd.ValidArgsFunction = resourcePathCompletion
@@ -152,7 +164,7 @@ func resourcePathCompletion(cmd *cobra.Command, args []string, toComplete string
 }
 
 // projectCompletion provides completion for project names
-func projectCompletion(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+func projectCompletion(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	// Get cached or fresh project list
 	projects := getCachedProjects()
 	if projects == nil {
@@ -167,7 +179,10 @@ func projectCompletion(cmd *cobra.Command, args []string, toComplete string) ([]
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 
-		projectList, _, err := client.Projects.List(ctx, nil)
+		projectList, listResp, err := client.Projects.List(ctx, nil)
+		if listResp != nil {
+			defer listResp.Body.Close()
+		}
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
@@ -198,7 +213,7 @@ func projectCompletion(cmd *cobra.Command, args []string, toComplete string) ([]
 }
 
 // targetCompletion provides completion for target names (requires --project flag)
-func targetCompletion(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+func targetCompletion(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	projectFlag, _ := cmd.Flags().GetString("project")
 	if projectFlag == "" {
 		return nil, cobra.ShellCompDirectiveNoFileComp
@@ -208,7 +223,7 @@ func targetCompletion(cmd *cobra.Command, args []string, toComplete string) ([]s
 }
 
 // targetCompletionForProject provides completion for targets in a specific project
-func targetCompletionForProject(cmd *cobra.Command, project, toComplete string) ([]string, cobra.ShellCompDirective) {
+func targetCompletionForProject(_ *cobra.Command, project, toComplete string) ([]string, cobra.ShellCompDirective) {
 	client, err := getAPIClient()
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
@@ -217,7 +232,10 @@ func targetCompletionForProject(cmd *cobra.Command, project, toComplete string) 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	targets, _, err := client.Targets.List(ctx, project, nil)
+	targets, listResp, err := client.Targets.List(ctx, project, nil)
+	if listResp != nil {
+		defer listResp.Body.Close()
+	}
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -271,7 +289,7 @@ func targetPathCompletion(cmd *cobra.Command, args []string, toComplete string) 
 }
 
 // environmentCompletionForTarget provides completion for environments in a project/target
-func environmentCompletionForTarget(cmd *cobra.Command, project, target, toComplete string) ([]string, cobra.ShellCompDirective) {
+func environmentCompletionForTarget(_ *cobra.Command, project, target, toComplete string) ([]string, cobra.ShellCompDirective) {
 	client, err := getAPIClient()
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
@@ -280,7 +298,10 @@ func environmentCompletionForTarget(cmd *cobra.Command, project, target, toCompl
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	envs, _, err := client.Environments.List(ctx, project, target, nil)
+	envs, envResp, err := client.Environments.List(ctx, project, target, nil)
+	if envResp != nil {
+		defer envResp.Body.Close()
+	}
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}

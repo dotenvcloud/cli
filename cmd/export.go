@@ -42,6 +42,7 @@ Supported formats:
 	RunE: runExport,
 }
 
+//nolint:gochecknoinits // cobra subcommand registration is idiomatic in init
 func init() {
 	exportCmd.Flags().StringVarP(&exportFormat, "format", "f", "env",
 		"export format")
@@ -63,7 +64,7 @@ func runExport(cmd *cobra.Command, args []string) error {
 	pullQuiet = exportQuiet
 
 	if !exportQuiet {
-		ui.PrintInfo("Exporting secrets in %s format...", exportFormat)
+		ui.PrintInfof("Exporting secrets in %s format...", exportFormat)
 	}
 
 	return runPull(cmd, args)

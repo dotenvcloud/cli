@@ -46,7 +46,7 @@ across projects, targets, and environments with client-side encryption support.
 
 For more information, visit: https://dotenv.cloud/docs/cli`,
 
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
 			// Disable color if requested
 			if noColor {
 				color.NoColor = true
@@ -91,9 +91,15 @@ For more information, visit: https://dotenv.cloud/docs/cli`,
 		"API key for authentication (overrides account system)")
 
 	// Bind flags to viper
-	viper.BindPFlag("debug", cmd.PersistentFlags().Lookup("debug"))
-	viper.BindPFlag("quiet", cmd.PersistentFlags().Lookup("quiet"))
-	viper.BindPFlag("api_key", cmd.PersistentFlags().Lookup("api-key"))
+	for binding, flagName := range map[string]string{
+		"debug":   "debug",
+		"quiet":   "quiet",
+		"api_key": "api-key",
+	} {
+		if err := viper.BindPFlag(binding, cmd.PersistentFlags().Lookup(flagName)); err != nil {
+			panic(fmt.Sprintf("failed to bind flag %q: %v", flagName, err))
+		}
+	}
 
 	// Add all commands
 	cmd.AddCommand(
@@ -140,6 +146,7 @@ func Execute() error {
 	return err
 }
 
+//nolint:gochecknoinits // cobra root command registration is idiomatic in init
 func init() {
 	cobra.OnInitialize(initConfig)
 
@@ -226,7 +233,7 @@ func initTelemetry() {
 		// be surfaced so a misconfigured config dir doesn't silently disable
 		// analytics ID persistence across runs.
 		if err := loader.Save(cfg); err != nil {
-			ui.PrintWarning("failed to persist analytics ID: %v", err)
+			ui.PrintWarningf("failed to persist analytics ID: %v", err)
 		}
 	}
 

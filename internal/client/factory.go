@@ -124,7 +124,12 @@ func (f *Factory) NewClientFromAPIKey(apiKey, baseURL, organization string) *dot
 }
 
 // RefreshTokenAndCreateClient refreshes the token if needed and creates a client
-func (f *Factory) RefreshTokenAndCreateClient(ctx context.Context, account *config.Account, am *config.AccountManager, includeOrg bool) (*dotenv.Client, error) {
+func (f *Factory) RefreshTokenAndCreateClient(
+	ctx context.Context,
+	account *config.Account,
+	am *config.AccountManager,
+	includeOrg bool,
+) (*dotenv.Client, error) {
 	// Only refresh for OAuth accounts
 	if account.IsOAuth() && account.IsTokenExpired() {
 		// Create unauthenticated client for token refresh
@@ -144,8 +149,8 @@ func (f *Factory) RefreshTokenAndCreateClient(ctx context.Context, account *conf
 			ExpiresIn:    tokenResp.ExpiresIn,
 		}
 
-		if err := am.RefreshToken(account.Name, configTokenResp); err != nil {
-			return nil, fmt.Errorf("failed to update tokens: %w", err)
+		if updateErr := am.RefreshToken(account.Name, configTokenResp); updateErr != nil {
+			return nil, fmt.Errorf("failed to update tokens: %w", updateErr)
 		}
 
 		// Reload account to get updated tokens

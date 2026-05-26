@@ -24,127 +24,129 @@ func NewParser(opts *formats.Options) *Parser {
 	return &Parser{options: opts}
 }
 
+// parseState tracks multiline parsing state.
+type parseState struct {
+	currentKey   string
+	currentValue strings.Builder
+	inMultiline  bool
+	quote        string
+}
+
 // Parse parses ENV content from a reader
 func (p *Parser) Parse(r io.Reader) (map[string]string, error) {
 	result := make(map[string]string)
 	scanner := bufio.NewScanner(r)
 	lineNum := 0
-
-	// Track multiline values
-	var currentKey string
-	var currentValue strings.Builder
-	inMultiline := false
-	multilineQuote := ""
+	st := &parseState{}
 
 	for scanner.Scan() {
 		lineNum++
 		line := scanner.Text()
 
-		// Handle multiline continuation
-		if inMultiline {
-			if multilineQuote != "" {
-				// Look for closing quote
-				if idx := strings.Index(line, multilineQuote); idx >= 0 {
-					currentValue.WriteString(line[:idx])
-					result[currentKey] = p.processValue(currentValue.String())
-					closingQuote := multilineQuote
-					inMultiline = false
-					multilineQuote = ""
-
-					// Process rest of line if any
-					rest := strings.TrimSpace(line[idx+len(closingQuote):])
-					if rest != "" && !strings.HasPrefix(rest, "#") {
-						return nil, fmt.Errorf("line %d: unexpected content after closing quote", lineNum)
-					}
-				} else {
-					currentValue.WriteString(line)
-					currentValue.WriteString("\n")
-				}
-				continue
+		if st.inMultiline {
+			if err := p.handleMultilineContinuation(line, lineNum, result, st); err != nil {
+				return nil, err
 			}
+			continue
 		}
 
-		// Skip empty lines and comments
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
 
-		// Parse KEY=VALUE
-		equals := strings.Index(line, "=")
-		if equals < 0 {
-			if p.options.StrictMode {
-				return nil, fmt.Errorf("line %d: missing '=' in assignment", lineNum)
-			}
-			continue
+		if err := p.parseAssignment(line, lineNum, result, st); err != nil {
+			return nil, err
 		}
-
-		key := strings.TrimSpace(line[:equals])
-		// Strip shell `export ` prefix so `export KEY=value` parses as KEY.
-		key = strings.TrimPrefix(key, "export ")
-		key = strings.TrimSpace(key)
-		value := line[equals+1:]
-
-		// Validate key
-		if !isValidKey(key) {
-			return nil, fmt.Errorf("line %d: invalid key '%s'", lineNum, key)
-		}
-
-		// Check for duplicate keys in strict mode
-		if p.options.StrictMode {
-			if _, exists := result[key]; exists {
-				return nil, fmt.Errorf("line %d: duplicate key '%s'", lineNum, key)
-			}
-		}
-
-		// Handle quoted values
-		value = strings.TrimLeft(value, " \t")
-		if len(value) > 0 && (value[0] == '"' || value[0] == '\'') {
-			quote := string(value[0])
-			value = value[1:]
-
-			// Look for closing quote on same line
-			if idx := strings.LastIndex(value, quote); idx >= 0 {
-				// Check if it's escaped
-				if idx == 0 || value[idx-1] != '\\' {
-					actualValue := value[:idx]
-					result[key] = p.processValue(actualValue)
-					continue
-				}
-			}
-
-			// Start multiline value
-			currentKey = key
-			currentValue.Reset()
-			currentValue.WriteString(value)
-			currentValue.WriteString("\n")
-			inMultiline = true
-			multilineQuote = quote
-			continue
-		}
-
-		// Handle inline comments for unquoted values
-		if idx := strings.Index(value, " #"); idx >= 0 {
-			value = value[:idx]
-		}
-
-		// Trim trailing whitespace
-		if p.options.TrimSpace {
-			value = strings.TrimRight(value, " \t")
-		}
-
-		result[key] = p.processValue(value)
 	}
 
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("error reading input: %w", err)
 	}
 
-	if inMultiline {
-		return nil, fmt.Errorf("unclosed quote for key '%s'", currentKey)
+	if st.inMultiline {
+		return nil, fmt.Errorf("unclosed quote for key '%s'", st.currentKey)
 	}
 
 	return result, nil
+}
+
+func (p *Parser) handleMultilineContinuation(line string, lineNum int, result map[string]string, st *parseState) error {
+	if st.quote == "" {
+		return nil
+	}
+	idx := strings.Index(line, st.quote)
+	if idx < 0 {
+		st.currentValue.WriteString(line)
+		st.currentValue.WriteString("\n")
+		return nil
+	}
+	st.currentValue.WriteString(line[:idx])
+	result[st.currentKey] = p.processValue(st.currentValue.String())
+	closingQuote := st.quote
+	st.inMultiline = false
+	st.quote = ""
+	rest := strings.TrimSpace(line[idx+len(closingQuote):])
+	if rest != "" && !strings.HasPrefix(rest, "#") {
+		return fmt.Errorf("line %d: unexpected content after closing quote", lineNum)
+	}
+	return nil
+}
+
+func (p *Parser) parseAssignment(line string, lineNum int, result map[string]string, st *parseState) error {
+	equals := strings.Index(line, "=")
+	if equals < 0 {
+		if p.options.StrictMode {
+			return fmt.Errorf("line %d: missing '=' in assignment", lineNum)
+		}
+		return nil
+	}
+
+	key := strings.TrimSpace(line[:equals])
+	key = strings.TrimPrefix(key, "export ")
+	key = strings.TrimSpace(key)
+	value := line[equals+1:]
+
+	if !isValidKey(key) {
+		return fmt.Errorf("line %d: invalid key '%s'", lineNum, key)
+	}
+	if p.options.StrictMode {
+		if _, exists := result[key]; exists {
+			return fmt.Errorf("line %d: duplicate key '%s'", lineNum, key)
+		}
+	}
+
+	value = strings.TrimLeft(value, " \t")
+	if value != "" && (value[0] == '"' || value[0] == '\'') {
+		p.handleQuotedValue(key, value, result, st)
+		return nil
+	}
+
+	if idx := strings.Index(value, " #"); idx >= 0 {
+		value = value[:idx]
+	}
+	if p.options.TrimSpace {
+		value = strings.TrimRight(value, " \t")
+	}
+	result[key] = p.processValue(value)
+	return nil
+}
+
+func (p *Parser) handleQuotedValue(key, value string, result map[string]string, st *parseState) {
+	quote := string(value[0])
+	value = value[1:]
+	if idx := strings.LastIndex(value, quote); idx >= 0 {
+		if idx == 0 || value[idx-1] != '\\' {
+			result[key] = p.processValue(value[:idx])
+			return
+		}
+	}
+	st.currentKey = key
+	st.currentValue.Reset()
+	st.currentValue.WriteString(value)
+	st.currentValue.WriteString("\n")
+	st.inMultiline = true
+	st.quote = quote
 }
 
 // ParseString parses ENV content from a string

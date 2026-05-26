@@ -43,7 +43,7 @@ func NewGCMEncryptor() *GCMEncryptor {
 // Delegates to dotenv.Encrypt so the SDK is the single source of truth for
 // the wire format. Key validation is kept here because the SDK is
 // intentionally permissive about weak keys.
-func (e *GCMEncryptor) Encrypt(plaintext []byte, key []byte) (string, error) {
+func (e *GCMEncryptor) Encrypt(plaintext, key []byte) (string, error) {
 	if err := ValidateKey(key); err != nil {
 		return "", err
 	}
@@ -65,7 +65,7 @@ func (e *GCMEncryptor) Decrypt(ciphertext string, key []byte) ([]byte, error) {
 }
 
 // EncryptWithIV encrypts with a specific IV (for testing compatibility)
-func (e *GCMEncryptor) EncryptWithIV(plaintext []byte, key []byte, iv []byte) (string, error) {
+func (e *GCMEncryptor) EncryptWithIV(plaintext, key, iv []byte) (string, error) {
 	// Validate inputs
 	if err := ValidateKey(key); err != nil {
 		return "", err
@@ -167,16 +167,16 @@ func KeyFromString(s string) ([]byte, error) {
 	}
 
 	// Otherwise use the raw string as bytes
-	if len(s) > 0 {
+	if s != "" {
 		return []byte(s), nil
 	}
 
 	return nil, fmt.Errorf("invalid key: empty string")
 }
 
-// DeriveKeyFromPassword derives a key from a password using PBKDF2
-func DeriveKeyFromPassword(password string, salt []byte) ([]byte, error) {
-	// This is now a wrapper around the key package implementation
-	// to maintain backward compatibility
+// DeriveKeyFromPassword derives a key from a password using PBKDF2.
+//
+// Deprecated: use github.com/dotenv/cli/internal/crypto/key.DeriveKey instead.
+func DeriveKeyFromPassword(_ string, _ []byte) ([]byte, error) {
 	return nil, fmt.Errorf("deprecated: use github.com/dotenv/cli/internal/crypto/key.DeriveKey instead")
 }

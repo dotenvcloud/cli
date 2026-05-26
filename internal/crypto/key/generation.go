@@ -64,7 +64,7 @@ func ParseKey(keyStr string) ([]byte, error) {
 	}
 
 	// Otherwise use the raw string as bytes
-	if len(keyStr) > 0 {
+	if keyStr != "" {
 		return padKey([]byte(keyStr)), nil
 	}
 
