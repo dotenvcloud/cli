@@ -93,8 +93,9 @@ func TestEncryption_PHPCompatibility(t *testing.T) {
 		ciphertext, err := crypto.EncryptString(plaintext, key)
 		require.NoError(t, err)
 
-		// Create PHP script that decrypts
-		phpScript := fmt.Sprintf(`<?php
+		// Create PHP script that decrypts. `php -r` expects raw code
+		// with no opening/closing tags.
+		phpScript := fmt.Sprintf(`
 $key = base64_decode('%s');
 $data = base64_decode('%s');
 
@@ -118,7 +119,7 @@ if ($decrypted === false) {
 } else {
     echo $decrypted;
 }
-?>`, base64.StdEncoding.EncodeToString(key), ciphertext)
+`, base64.StdEncoding.EncodeToString(key), ciphertext)
 
 		// Run PHP
 		cmd := exec.Command("php", "-r", phpScript)
@@ -135,8 +136,9 @@ if ($decrypted === false) {
 
 		plaintext := "Test message from PHP"
 
-		// PHP script that encrypts
-		phpScript := fmt.Sprintf(`<?php
+		// PHP script that encrypts. `php -r` expects raw code with
+		// no opening/closing tags.
+		phpScript := fmt.Sprintf(`
 $key = base64_decode('%s');
 $plaintext = '%s';
 $iv = random_bytes(12);
@@ -153,7 +155,7 @@ $ciphertext = openssl_encrypt(
 // Combine and encode
 $result = base64_encode($iv . $ciphertext . $tag);
 echo $result;
-?>`, base64.StdEncoding.EncodeToString(key), plaintext)
+`, base64.StdEncoding.EncodeToString(key), plaintext)
 
 		cmd := exec.Command("php", "-r", phpScript)
 		output, err := cmd.CombinedOutput()
