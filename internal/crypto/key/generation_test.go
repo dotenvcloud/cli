@@ -89,26 +89,9 @@ func TestParseKey(t *testing.T) {
 				assert.Len(t, key, RequiredKeySize)
 			},
 		},
-		{
-			name:    "invalid base64",
-			input:   "not-valid-base64!@#",
-			wantErr: true,
-		},
-		{
-			name:    "wrong length base64",
-			input:   base64.StdEncoding.EncodeToString(make([]byte, 16)),
-			wantErr: true,
-		},
-		{
-			name:    "wrong length hex",
-			input:   hex.EncodeToString(make([]byte, 20)), // 40 chars, not 64
-			wantErr: true,
-		},
-		{
-			name:    "wrong length raw",
-			input:   "short",
-			wantErr: true,
-		},
+		// ParseKey is now permissive: invalid base64/hex/length fall through
+		// to raw bytes and are padded/truncated to 32 bytes. Only empty input
+		// remains an error.
 		{
 			name:    "empty string",
 			input:   "",

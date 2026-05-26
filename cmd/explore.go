@@ -14,7 +14,7 @@ import (
 	"github.com/dotenv/cli/internal/hierarchy"
 	"github.com/dotenv/cli/internal/interactive"
 	"github.com/dotenv/cli/internal/ui"
-	dotenv "github.com/dotenv/sdk-go"
+	dotenv "github.com/lostlink/dotenv-sdk-go"
 )
 
 var (
@@ -43,192 +43,182 @@ execute commands on selected resources.`,
 	RunE: runExplore,
 }
 
+//nolint:gochecknoinits // cobra subcommand registration is idiomatic in init
 func init() {
 	exploreCmd.Flags().StringVar(&exploreAction, "action", "select",
 		"default action when selecting a resource (select, copy, pull)")
 }
 
 func runExplore(cmd *cobra.Command, args []string) error {
-	// Display account/org info
 	if viper.GetString("api_key") == "" && os.Getenv("DOTENV_API_KEY") == "" {
 		if err := displayAccountInfo(); err != nil {
-			ui.PrintWarning("Could not display account info: %v", err)
+			ui.PrintWarningf("Could not display account info: %v", err)
 		}
 	}
 
-	// Get starting path from args
 	if len(args) > 0 {
 		exploreStartPath = args[0]
 	}
 
-	// Get API client
 	client, err := getAPIClient()
 	if err != nil {
 		return err
 	}
 
-	// Build initial hierarchy
 	builder := hierarchy.NewBuilder(client)
 	ctx := cmd.Context()
 
-	// Determine starting point
-	var startNode *hierarchy.Node
-	if exploreStartPath != "" {
-		// Parse path and build from that point
-		parts := strings.Split(exploreStartPath, "/")
-		switch len(parts) {
-		case 1:
-			// Project level
-			startNode, err = builder.BuildProject(ctx, parts[0])
-			if err != nil {
-				return fmt.Errorf("failed to load project %s: %w", parts[0], err)
-			}
-		case 2:
-			// Target level
-			startNode, err = builder.BuildTarget(ctx, parts[0], parts[1])
-			if err != nil {
-				return fmt.Errorf("failed to load target %s/%s: %w", parts[0], parts[1], err)
-			}
-		default:
-			return fmt.Errorf("invalid starting path: %s (expected project or project/target)", exploreStartPath)
-		}
-	} else {
-		// Start from organization root
-		account, err := getCurrentAccount()
-		if err != nil {
-			return err
-		}
-
-		orgIdentifier, err := account.GetOrganizationIdentifier()
-		if err != nil {
-			return fmt.Errorf("failed to get organization: %w", err)
-		}
-
-		ui.PrintInfo("Loading organization resources...")
-		startNode, err = builder.Build(ctx, orgIdentifier)
-		if err != nil {
-			return fmt.Errorf("failed to load organization: %w", err)
-		}
+	startNode, err := buildStartNode(ctx, builder)
+	if err != nil {
+		return err
 	}
 
-	// Create and run explorer
 	explorer := interactive.NewExplorer(startNode, builder, client)
+	return runExplorerLoop(ctx, cmd, explorer, client)
+}
 
+func buildStartNode(ctx context.Context, builder *hierarchy.Builder) (*hierarchy.Node, error) {
+	if exploreStartPath != "" {
+		return buildStartNodeFromPath(ctx, builder, exploreStartPath)
+	}
+	account, err := getCurrentAccount()
+	if err != nil {
+		return nil, err
+	}
+	orgIdentifier, err := account.GetOrganizationIdentifier()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get organization: %w", err)
+	}
+	ui.PrintInfof("Loading organization resources...")
+	startNode, err := builder.Build(ctx, orgIdentifier)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load organization: %w", err)
+	}
+	return startNode, nil
+}
+
+func buildStartNodeFromPath(ctx context.Context, builder *hierarchy.Builder, path string) (*hierarchy.Node, error) {
+	parts := strings.Split(path, "/")
+	switch len(parts) {
+	case 1:
+		n, err := builder.BuildProject(ctx, parts[0])
+		if err != nil {
+			return nil, fmt.Errorf("failed to load project %s: %w", parts[0], err)
+		}
+		return n, nil
+	case 2:
+		n, err := builder.BuildTarget(ctx, parts[0], parts[1])
+		if err != nil {
+			return nil, fmt.Errorf("failed to load target %s/%s: %w", parts[0], parts[1], err)
+		}
+		return n, nil
+	default:
+		return nil, fmt.Errorf("invalid starting path: %s (expected project or project/target)", path)
+	}
+}
+
+func runExplorerLoop(ctx context.Context, cmd *cobra.Command, explorer *interactive.Explorer, client *dotenv.Client) error {
 	for {
 		selectedPath, action, err := explorer.Run()
 		if err != nil {
 			if err == interactive.ErrExit {
-				ui.PrintInfo("Exiting explorer")
+				ui.PrintInfof("Exiting explorer")
 				return nil
 			}
 			return err
 		}
 
-		// Handle action
-		switch action {
-		case interactive.ActionCopy:
-			if err := copyToClipboard(selectedPath); err != nil {
-				ui.PrintWarning("Failed to copy to clipboard: %v", err)
-				ui.PrintInfo("Path: %s", selectedPath)
-			} else {
-				ui.PrintSuccess("Copied to clipboard: %s", selectedPath)
-			}
-			// Continue exploring
-
-		case interactive.ActionPull:
-			// Prompt for output file
-			outputFile, err := ui.InputWithHelp(
-				"Enter output file path (or press Enter for terminal output)",
-				"",
-				"Specify a file path to save secrets (e.g., .env, secrets.env), or press Enter to display in terminal",
-				nil,
-			)
-			if err != nil {
-				ui.PrintError("Failed to get output file: %v", err)
-				continue
-			}
-
-			// Set the output file
-			pullOutput = outputFile
-
-			if outputFile != "" {
-				ui.PrintInfo("Running: dotenv pull %s --output=%s", selectedPath, outputFile)
-			} else {
-				ui.PrintInfo("Running: dotenv pull %s", selectedPath)
-			}
-
-			// Run pull command
-			err = runPull(cmd, []string{selectedPath})
-			pullOutput = "" // Reset for next use
-
-			if err != nil {
-				// Show error with helpful context
-				ShowErrorWithHelp(err)
-				continue
-			}
-			return nil
-
-		case interactive.ActionPullLevelOnly:
-			// Prompt for output file
-			outputFile, err := ui.InputWithHelp(
-				"Enter output file path (or press Enter for terminal output)",
-				"",
-				"Specify a file path to save secrets (e.g., .env, secrets.env), or press Enter to display in terminal",
-				nil,
-			)
-			if err != nil {
-				ui.PrintError("Failed to get output file: %v", err)
-				continue
-			}
-
-			// Set the output file and flag
-			pullOutput = outputFile
-			pullLevelOnly = true
-
-			if outputFile != "" {
-				ui.PrintInfo("Running: dotenv pull %s --level-only --output=%s", selectedPath, outputFile)
-			} else {
-				ui.PrintInfo("Running: dotenv pull %s --level-only", selectedPath)
-			}
-
-			// Run pull command
-			err = runPull(cmd, []string{selectedPath})
-			pullOutput = ""       // Reset for next use
-			pullLevelOnly = false // Reset flag
-
-			if err != nil {
-				// Show error with helpful context
-				ShowErrorWithHelp(err)
-				continue
-			}
-			return nil
-
-		case interactive.ActionPush:
-			ui.PrintInfo("Running: dotenv push for %s", selectedPath)
-			// Prompt for file
-			file, err := ui.Input("Enter file to push", ".env", nil)
-			if err != nil {
-				ui.PrintError("Failed to get file input: %v", err)
-				continue
-			}
-			// Exit explorer and run push command
-			return runPush(cmd, []string{file, selectedPath})
-
-		case interactive.ActionView:
-			// Show details about the selected resource
-			if err := showResourceDetails(ctx, client, selectedPath); err != nil {
-				ui.PrintError("Failed to get details: %v", err)
-			}
-			// Continue exploring
-
-		case interactive.ActionSelect:
-			ui.PrintSuccess("Selected: %s", selectedPath)
-			return nil
-
-		case interactive.ActionExit:
-			return nil
+		done, err := handleExplorerAction(ctx, cmd, client, action, selectedPath)
+		if done {
+			return err
 		}
 	}
+}
+
+func handleExplorerAction(
+	ctx context.Context, cmd *cobra.Command, client *dotenv.Client,
+	action interactive.Action, selectedPath string,
+) (bool, error) {
+	switch action {
+	case interactive.ActionCopy:
+		handleExploreCopy(selectedPath)
+		return false, nil
+	case interactive.ActionPull:
+		return handleExplorePull(cmd, selectedPath, false)
+	case interactive.ActionPullLevelOnly:
+		return handleExplorePull(cmd, selectedPath, true)
+	case interactive.ActionPush:
+		return handleExplorePush(cmd, selectedPath)
+	case interactive.ActionView:
+		if err := showResourceDetails(ctx, client, selectedPath); err != nil {
+			ui.PrintErrorf("Failed to get details: %v", err)
+		}
+		return false, nil
+	case interactive.ActionSelect:
+		ui.PrintSuccessf("Selected: %s", selectedPath)
+		return true, nil
+	case interactive.ActionExit:
+		return true, nil
+	case interactive.ActionBack:
+		return false, nil
+	default:
+		return false, nil
+	}
+}
+
+func handleExploreCopy(selectedPath string) {
+	if err := copyToClipboard(selectedPath); err != nil {
+		ui.PrintWarningf("Failed to copy to clipboard: %v", err)
+		ui.PrintInfof("Path: %s", selectedPath)
+		return
+	}
+	ui.PrintSuccessf("Copied to clipboard: %s", selectedPath)
+}
+
+func handleExplorePull(cmd *cobra.Command, selectedPath string, levelOnly bool) (bool, error) {
+	outputFile, err := ui.InputWithHelp(
+		"Enter output file path (or press Enter for terminal output)",
+		"",
+		"Specify a file path to save secrets (e.g., .env, secrets.env), or press Enter to display in terminal",
+		nil,
+	)
+	if err != nil {
+		ui.PrintErrorf("Failed to get output file: %v", err)
+		return false, nil
+	}
+
+	pullOutput = outputFile
+	pullLevelOnly = levelOnly
+
+	flagSuffix := ""
+	if levelOnly {
+		flagSuffix = " --level-only"
+	}
+	if outputFile != "" {
+		ui.PrintInfof("Running: dotenv pull %s%s --output=%s", selectedPath, flagSuffix, outputFile)
+	} else {
+		ui.PrintInfof("Running: dotenv pull %s%s", selectedPath, flagSuffix)
+	}
+
+	err = runPull(cmd, []string{selectedPath})
+	pullOutput = ""
+	pullLevelOnly = false
+
+	if err != nil {
+		ShowErrorWithHelp(err)
+		return false, nil
+	}
+	return true, nil
+}
+
+func handleExplorePush(cmd *cobra.Command, selectedPath string) (bool, error) {
+	ui.PrintInfof("Running: dotenv push for %s", selectedPath)
+	file, err := ui.Input("Enter file to push", ".env", nil)
+	if err != nil {
+		ui.PrintErrorf("Failed to get file input: %v", err)
+		return false, nil
+	}
+	return true, runPush(cmd, []string{file, selectedPath})
 }
 
 // copyToClipboard copies text to the system clipboard
@@ -249,7 +239,7 @@ func copyToClipboard(text string) error {
 		} else {
 			return fmt.Errorf("no clipboard command found (install xclip, xsel, or wl-clipboard)")
 		}
-	case "windows":
+	case platformWindows:
 		cmd = exec.Command("cmd", "/c", "clip")
 	default:
 		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
@@ -283,78 +273,98 @@ func showResourceDetails(ctx context.Context, client *dotenv.Client, path string
 	ui.PrintHeader("Resource Details")
 	ui.PrintKeyValue("Path", path)
 
+	var err error
 	switch len(parts) {
 	case 1:
-		// Project details
-		project, _, err := client.Projects.Get(ctx, parts[0])
-		if err != nil {
-			return err
-		}
-
-		ui.PrintKeyValue("Type", "Project")
-		ui.PrintKeyValue("Name", project.Name)
-		ui.PrintKeyValue("Slug", project.Slug)
-		if project.Description != "" {
-			ui.PrintKeyValue("Description", project.Description)
-		}
-		ui.PrintKeyValue("Secrets", fmt.Sprintf("%d", project.SecretCount))
-		ui.PrintKeyValue("Targets", fmt.Sprintf("%d", project.TargetCount))
-		ui.PrintKeyValue("Environments", fmt.Sprintf("%d", project.EnvironmentCount))
-		ui.PrintKeyValue("Created", project.CreatedAt.Format("2006-01-02 15:04:05"))
-		ui.PrintKeyValue("Updated", project.UpdatedAt.Format("2006-01-02 15:04:05"))
-
+		err = showProjectDetails(ctx, client, parts[0])
 	case 2:
-		// Target details
-		target, _, err := client.Targets.Get(ctx, parts[0], parts[1])
-		if err != nil {
-			return err
-		}
-
-		ui.PrintKeyValue("Type", "Target")
-		ui.PrintKeyValue("Name", target.Name)
-		ui.PrintKeyValue("Slug", target.Slug)
-		if target.Description != "" {
-			ui.PrintKeyValue("Description", target.Description)
-		}
-		ui.PrintKeyValue("Project", parts[0])
-		ui.PrintKeyValue("Created", target.CreatedAt.Format("2006-01-02 15:04:05"))
-		ui.PrintKeyValue("Updated", target.UpdatedAt.Format("2006-01-02 15:04:05"))
-
-		// List environments in this target
-		envs, _, err := client.Environments.List(ctx, parts[0], parts[1], nil)
-		if err == nil && len(envs) > 0 {
-			ui.PrintSubheader("Environments:")
-			for _, env := range envs {
-				fmt.Printf("  • %s (%s)\n", env.Name, env.Status)
-			}
-		}
-
+		err = showTargetDetails(ctx, client, parts[0], parts[1])
 	case 3:
-		// Environment details
-		env, _, err := client.Environments.Get(ctx, parts[0], parts[1], parts[2])
-		if err != nil {
-			return err
-		}
-
-		ui.PrintKeyValue("Type", "Environment")
-		ui.PrintKeyValue("Name", env.Name)
-		ui.PrintKeyValue("Slug", env.Slug)
-		if env.Description != "" {
-			ui.PrintKeyValue("Description", env.Description)
-		}
-		ui.PrintKeyValue("Status", env.Status)
-		ui.PrintKeyValue("Project", parts[0])
-		ui.PrintKeyValue("Target", parts[1])
-		ui.PrintKeyValue("Created", env.CreatedAt.Format("2006-01-02 15:04:05"))
-		ui.PrintKeyValue("Updated", env.UpdatedAt.Format("2006-01-02 15:04:05"))
-
-		// Could show secret count if available
-		ui.PrintInfo("\nUse 'dotenv pull %s' to retrieve secrets from this environment", path)
+		err = showEnvironmentDetails(ctx, client, parts[0], parts[1], parts[2], path)
+	}
+	if err != nil {
+		return err
 	}
 
 	fmt.Println() // Empty line after details
-	ui.PrintInfo("Press Enter to continue...")
-	fmt.Scanln() // Wait for user input
+	ui.PrintInfof("Press Enter to continue...")
+	_, _ = fmt.Scanln() // Wait for user input; ignore EOF/empty input errors
 
+	return nil
+}
+
+func showProjectDetails(ctx context.Context, client *dotenv.Client, projectSlug string) error {
+	project, getResp, err := client.Projects.Get(ctx, projectSlug)
+	if getResp != nil {
+		defer getResp.Body.Close()
+	}
+	if err != nil {
+		return err
+	}
+	ui.PrintKeyValue("Type", "Project")
+	ui.PrintKeyValue("Name", project.Name)
+	ui.PrintKeyValue("Slug", project.Slug)
+	if project.Description != "" {
+		ui.PrintKeyValue("Description", project.Description)
+	}
+	ui.PrintKeyValue("Secrets", fmt.Sprintf("%d", project.SecretCount))
+	ui.PrintKeyValue("Targets", fmt.Sprintf("%d", project.TargetCount))
+	ui.PrintKeyValue("Environments", fmt.Sprintf("%d", project.EnvironmentCount))
+	ui.PrintKeyValue("Created", project.CreatedAt.Format("2006-01-02 15:04:05"))
+	ui.PrintKeyValue("Updated", project.UpdatedAt.Format("2006-01-02 15:04:05"))
+	return nil
+}
+
+func showTargetDetails(ctx context.Context, client *dotenv.Client, projectSlug, targetSlug string) error {
+	target, getResp, err := client.Targets.Get(ctx, projectSlug, targetSlug)
+	if getResp != nil {
+		defer getResp.Body.Close()
+	}
+	if err != nil {
+		return err
+	}
+	ui.PrintKeyValue("Type", "Target")
+	ui.PrintKeyValue("Name", target.Name)
+	ui.PrintKeyValue("Slug", target.Slug)
+	if target.Description != "" {
+		ui.PrintKeyValue("Description", target.Description)
+	}
+	ui.PrintKeyValue("Project", projectSlug)
+	ui.PrintKeyValue("Created", target.CreatedAt.Format("2006-01-02 15:04:05"))
+	ui.PrintKeyValue("Updated", target.UpdatedAt.Format("2006-01-02 15:04:05"))
+
+	envs, envResp, err := client.Environments.List(ctx, projectSlug, targetSlug, nil)
+	if envResp != nil {
+		defer envResp.Body.Close()
+	}
+	if err == nil && len(envs) > 0 {
+		ui.PrintSubheader("Environments:")
+		for _, env := range envs {
+			fmt.Printf("  • %s (%s)\n", env.Name, env.Status)
+		}
+	}
+	return nil
+}
+
+func showEnvironmentDetails(ctx context.Context, client *dotenv.Client, projectSlug, targetSlug, envSlug, path string) error {
+	env, envResp, err := client.Environments.Get(ctx, projectSlug, targetSlug, envSlug)
+	if envResp != nil {
+		defer envResp.Body.Close()
+	}
+	if err != nil {
+		return err
+	}
+	ui.PrintKeyValue("Type", "Environment")
+	ui.PrintKeyValue("Name", env.Name)
+	ui.PrintKeyValue("Slug", env.Slug)
+	if env.Description != "" {
+		ui.PrintKeyValue("Description", env.Description)
+	}
+	ui.PrintKeyValue("Status", env.Status)
+	ui.PrintKeyValue("Project", projectSlug)
+	ui.PrintKeyValue("Target", targetSlug)
+	ui.PrintKeyValue("Created", env.CreatedAt.Format("2006-01-02 15:04:05"))
+	ui.PrintKeyValue("Updated", env.UpdatedAt.Format("2006-01-02 15:04:05"))
+	ui.PrintInfof("\nUse 'dotenv pull %s' to retrieve secrets from this environment", path)
 	return nil
 }

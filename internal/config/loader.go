@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/dotenv/cli/internal/config/crypto"
 	"github.com/dotenv/cli/internal/constants"
@@ -60,7 +61,8 @@ func (l *Loader) Load() (*Config, error) {
 	}
 
 	// Decrypt API keys in accounts
-	for name, account := range config.Accounts {
+	for name := range config.Accounts {
+		account := config.Accounts[name]
 		if account.Auth.APIKey != "" {
 			decrypted, err := l.crypto.Decrypt(account.Auth.APIKey)
 			if err != nil {
@@ -79,7 +81,9 @@ func (l *Loader) Load() (*Config, error) {
 	return &config, nil
 }
 
-// Save encrypts and writes the configuration
+// Save encrypts and writes the configuration. Writes are guarded by an
+// advisory file lock so concurrent CLI invocations don't race the atomic
+// rename and silently drop one writer's edits.
 func (l *Loader) Save(config *Config) error {
 	// Create config directory if it doesn't exist
 	dir := filepath.Dir(l.path)
@@ -87,17 +91,24 @@ func (l *Loader) Save(config *Config) error {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
+	lock, err := acquireFileLock(l.path+".lock", 5*time.Second, 30*time.Second)
+	if err != nil {
+		return err
+	}
+	defer lock.release()
+
 	// Create a copy to avoid modifying the original
 	configCopy := *config
 	configCopy.Accounts = make(map[string]Account)
 
 	// Encrypt API keys in accounts
-	for name, account := range config.Accounts {
+	for name := range config.Accounts {
+		account := config.Accounts[name]
 		accountCopy := account
 		if account.Auth.APIKey != "" {
-			encrypted, err := l.crypto.Encrypt(account.Auth.APIKey)
-			if err != nil {
-				return fmt.Errorf("failed to encrypt API key for account %s: %w", name, err)
+			encrypted, encErr := l.crypto.Encrypt(account.Auth.APIKey)
+			if encErr != nil {
+				return fmt.Errorf("failed to encrypt API key for account %s: %w", name, encErr)
 			}
 			accountCopy.Auth.APIKey = encrypted
 		}
@@ -137,57 +148,60 @@ func (l *Loader) validate(config *Config) error {
 		return fmt.Errorf("missing version")
 	}
 
-	// Validate accounts
-	for name, account := range config.Accounts {
-		// Validate auth type
-		if account.AuthType != constants.AuthTypeOAuth && account.AuthType != constants.AuthTypeAPIKey {
-			return fmt.Errorf("account %s: invalid auth type '%s'", name, account.AuthType)
+	for name := range config.Accounts {
+		account := config.Accounts[name]
+		if err := l.validateAccount(name, &account); err != nil {
+			return err
 		}
-
-		// Set default API URL if not specified
-		if account.APIURL == "" {
-			account.APIURL = constants.LegacyAPIURL
-			config.Accounts[name] = account
-		}
-
-		// Validate OAuth accounts
-		if account.AuthType == constants.AuthTypeOAuth {
-			if len(account.Organizations) == 0 {
-				return fmt.Errorf("account %s: OAuth account has no organizations", name)
-			}
-			if account.CurrentOrganization != "" {
-				// Verify current org exists
-				found := false
-				for _, org := range account.Organizations {
-					if org.ULID == account.CurrentOrganization {
-						found = true
-						break
-					}
-				}
-				if !found {
-					return fmt.Errorf("account %s: current organization '%s' not found", name, account.CurrentOrganization)
-				}
-			}
-		}
-
-		// Validate API key accounts
-		if account.AuthType == constants.AuthTypeAPIKey {
-			if account.Organization == nil {
-				return fmt.Errorf("account %s: API key account missing organization info", name)
-			}
-			if account.Auth.APIKey == "" {
-				return fmt.Errorf("account %s: API key account missing API key", name)
-			}
-		}
+		config.Accounts[name] = account
 	}
 
-	// Validate current account
 	if config.CurrentAccount != "" {
 		if _, exists := config.Accounts[config.CurrentAccount]; !exists {
 			return fmt.Errorf("current account '%s' not found", config.CurrentAccount)
 		}
 	}
 
+	return nil
+}
+
+func (l *Loader) validateAccount(name string, account *Account) error {
+	if account.AuthType != constants.AuthTypeOAuth && account.AuthType != constants.AuthTypeAPIKey {
+		return fmt.Errorf("account %s: invalid auth type '%s'", name, account.AuthType)
+	}
+
+	if account.APIURL == "" {
+		account.APIURL = constants.LegacyAPIURL
+	}
+
+	if account.AuthType == constants.AuthTypeOAuth {
+		return validateOAuthAccount(name, account)
+	}
+	return validateAPIKeyAccount(name, account)
+}
+
+func validateOAuthAccount(name string, account *Account) error {
+	if len(account.Organizations) == 0 {
+		return fmt.Errorf("account %s: OAuth account has no organizations", name)
+	}
+	if account.CurrentOrganization == "" {
+		return nil
+	}
+	for _, org := range account.Organizations {
+		if org.ULID == account.CurrentOrganization {
+			return nil
+		}
+	}
+	return fmt.Errorf("account %s: current organization '%s' not found", name, account.CurrentOrganization)
+}
+
+func validateAPIKeyAccount(name string, account *Account) error {
+	if account.Organization == nil {
+		return fmt.Errorf("account %s: API key account missing organization info", name)
+	}
+	if account.Auth.APIKey == "" {
+		return fmt.Errorf("account %s: API key account missing API key", name)
+	}
 	return nil
 }
 

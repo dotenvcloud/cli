@@ -3,43 +3,68 @@ name: Security Scan
 on:
   schedule:
     - cron: '0 6 * * *'  # Daily at 6 AM UTC
-  push:
-    branches: [ main ]
   workflow_dispatch:
+
+# Per-push gosec + govulncheck run in ci.yml. This workflow exists to
+# catch newly-disclosed CVEs (govulncheck), filesystem-level issues
+# (Trivy fs), and third-party dependency advisories (Snyk) in already-
+# merged code on a daily cadence.
+env:
+  GOPRIVATE: github.com/lostlink/*
 
 jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
+      - name: Mint GitHub App token (SDK access)
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.SDK_ACCESS_APP_ID }}
+          private-key: ${{ secrets.SDK_ACCESS_APP_PRIVATE_KEY }}
+          owner: lostlink
+          repositories: dotenv-sdk-go
+
       - uses: actions/checkout@v4
-      
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.26'
           cache: true
-      
+
+      - name: Configure git for private SDK module
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Download modules
+        run: go mod download
+
       - name: Run govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
-      
+
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'
           scan-ref: '.'
           severity: 'CRITICAL,HIGH'
-      
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
       - name: Run Snyk
         uses: snyk/actions/golang@master
+        continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           args: --severity-threshold=high
-      
+
       - name: Upload SARIF results
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         if: always()
+        continue-on-error: true
         with:
-          sarif_file: results.sarif
+          sarif_file: trivy-results.sarif

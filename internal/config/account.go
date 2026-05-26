@@ -180,13 +180,13 @@ func ResolveOrganization(identifier string, orgs []OrgInfo) (*OrgInfo, error) {
 				return &org, nil
 			}
 		}
-		return nil, fmt.Errorf("Organization not found: %s", identifier)
+		return nil, fmt.Errorf("organization not found: %s", identifier)
 	}
 
 	// Try exact name match first (case insensitive)
 	lowerIdent := strings.ToLower(identifier)
 	for _, org := range orgs {
-		if strings.ToLower(org.Name) == lowerIdent {
+		if strings.EqualFold(org.Name, lowerIdent) {
 			return &org, nil
 		}
 	}
@@ -200,11 +200,11 @@ func ResolveOrganization(identifier string, orgs []OrgInfo) (*OrgInfo, error) {
 	}
 
 	if len(suggestions) > 0 {
-		return nil, fmt.Errorf("Organization not found: %s. Did you mean one of: %s",
+		return nil, fmt.Errorf("organization not found: %s. Did you mean one of: %s",
 			identifier, strings.Join(suggestions, ", "))
 	}
 
-	return nil, fmt.Errorf("Organization not found: %s", identifier)
+	return nil, fmt.Errorf("organization not found: %s", identifier)
 }
 
 // isValidULID checks if a string looks like a ULID

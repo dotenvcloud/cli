@@ -1,3 +1,5 @@
+//go:build integration
+
 package integration
 
 import (
@@ -37,7 +39,7 @@ func TestCLIHelp(t *testing.T) {
 func TestCLICommands(t *testing.T) {
 	commands := []string{
 		"init", "login", "pull", "push", "list",
-		"export", "refresh", "update", "use-context",
+		"export", "refresh", "update",
 	}
 
 	for _, command := range commands {

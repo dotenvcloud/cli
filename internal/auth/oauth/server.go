@@ -27,13 +27,15 @@ func NewCallbackServer(expectedState string) *CallbackServer {
 	}
 }
 
-// FindAvailablePort finds an available port for the callback server
+// FindAvailablePort finds an available port for the callback server. The
+// listener is bound to 127.0.0.1 so the OAuth callback is reachable only from
+// the local machine; no LAN exposure.
 func (s *CallbackServer) FindAvailablePort() (string, error) {
 	// Try ports 43893-43895 as configured in the OAuth client
 	ports := []string{"43893", "43894", "43895"}
 
 	for _, port := range ports {
-		listener, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
+		listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%s", port))
 		if err == nil {
 			listener.Close()
 			s.Port = port
@@ -42,7 +44,7 @@ func (s *CallbackServer) FindAvailablePort() (string, error) {
 	}
 
 	// If configured ports are not available, find a random port
-	listener, err := net.Listen("tcp", ":0")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", fmt.Errorf("failed to find available port: %w", err)
 	}
@@ -59,8 +61,9 @@ func (s *CallbackServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/callback", s.handleCallback)
 
 	server := &http.Server{
-		Addr:    fmt.Sprintf(":%s", s.Port),
-		Handler: mux,
+		Addr:              fmt.Sprintf("127.0.0.1:%s", s.Port),
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	// Start server in background
@@ -70,12 +73,12 @@ func (s *CallbackServer) Start(ctx context.Context) error {
 		}
 	}()
 
-	// Shutdown server when context is cancelled
+	// Shutdown server when context is canceled
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		server.Shutdown(shutdownCtx)
+		_ = server.Shutdown(shutdownCtx)
 	}()
 
 	return nil
@@ -87,13 +90,13 @@ func (s *CallbackServer) handleCallback(w http.ResponseWriter, r *http.Request) 
 	query := r.URL.Query()
 	code := query.Get("code")
 	state := query.Get("state")
-	error := query.Get("error")
+	errCode := query.Get("error")
 	errorDesc := query.Get("error_description")
 
 	// Check for errors
-	if error != "" {
-		s.AuthError <- fmt.Errorf("authorization failed: %s - %s", error, errorDesc)
-		s.showErrorPage(w, error, errorDesc)
+	if errCode != "" {
+		s.AuthError <- fmt.Errorf("authorization failed: %s - %s", errCode, errorDesc)
+		s.showErrorPage(w, errCode, errorDesc)
 		return
 	}
 
@@ -177,7 +180,7 @@ func (s *CallbackServer) showSuccessPage(w http.ResponseWriter) {
 }
 
 // showErrorPage displays an error page to the user
-func (s *CallbackServer) showErrorPage(w http.ResponseWriter, error, description string) {
+func (s *CallbackServer) showErrorPage(w http.ResponseWriter, errCode, description string) {
 	w.Header().Set("Content-Type", "text/html")
 	fmt.Fprintf(w, `<!DOCTYPE html>
 <html>
@@ -229,5 +232,5 @@ func (s *CallbackServer) showErrorPage(w http.ResponseWriter, error, description
         <p>Please close this window and try again.</p>
     </div>
 </body>
-</html>`, url.QueryEscape(error), url.QueryEscape(description))
+</html>`, url.QueryEscape(errCode), url.QueryEscape(description))
 }

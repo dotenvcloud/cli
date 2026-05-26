@@ -21,8 +21,8 @@ import (
 
 // TestVector represents a cross-platform test case
 type TestVector struct {
-	Key        string `json:"key"`        // Base64
-	IV         string `json:"iv"`         // Base64  
+	Key        string `json:"key"` // Base64
+	IV         string `json:"iv"`  // Base64
 	Plaintext  string `json:"plaintext"`
 	Ciphertext string `json:"ciphertext"` // Base64
 	Tag        string `json:"tag"`        // Base64
@@ -93,8 +93,9 @@ func TestEncryption_PHPCompatibility(t *testing.T) {
 		ciphertext, err := crypto.EncryptString(plaintext, key)
 		require.NoError(t, err)
 
-		// Create PHP script that decrypts
-		phpScript := fmt.Sprintf(`<?php
+		// Create PHP script that decrypts. `php -r` expects raw code
+		// with no opening/closing tags.
+		phpScript := fmt.Sprintf(`
 $key = base64_decode('%s');
 $data = base64_decode('%s');
 
@@ -118,7 +119,7 @@ if ($decrypted === false) {
 } else {
     echo $decrypted;
 }
-?>`, base64.StdEncoding.EncodeToString(key), ciphertext)
+`, base64.StdEncoding.EncodeToString(key), ciphertext)
 
 		// Run PHP
 		cmd := exec.Command("php", "-r", phpScript)
@@ -135,8 +136,9 @@ if ($decrypted === false) {
 
 		plaintext := "Test message from PHP"
 
-		// PHP script that encrypts
-		phpScript := fmt.Sprintf(`<?php
+		// PHP script that encrypts. `php -r` expects raw code with
+		// no opening/closing tags.
+		phpScript := fmt.Sprintf(`
 $key = base64_decode('%s');
 $plaintext = '%s';
 $iv = random_bytes(12);
@@ -153,7 +155,7 @@ $ciphertext = openssl_encrypt(
 // Combine and encode
 $result = base64_encode($iv . $ciphertext . $tag);
 echo $result;
-?>`, base64.StdEncoding.EncodeToString(key), plaintext)
+`, base64.StdEncoding.EncodeToString(key), plaintext)
 
 		cmd := exec.Command("php", "-r", phpScript)
 		output, err := cmd.CombinedOutput()
@@ -333,15 +335,18 @@ func TestKeyDerivation_Compatibility(t *testing.T) {
 	salt := []byte("test-salt")
 
 	// Derive key using our implementation
-	derivedKey := key.DeriveKey(password, salt, 32)
-	assert.Len(t, derivedKey, 32)
+	derivedKey, err := key.DeriveKey(password, salt, key.DefaultIterations)
+	require.NoError(t, err)
+	assert.Len(t, derivedKey, key.RequiredKeySize)
 
 	// The derived key should be deterministic
-	derivedKey2 := key.DeriveKey(password, salt, 32)
+	derivedKey2, err := key.DeriveKey(password, salt, key.DefaultIterations)
+	require.NoError(t, err)
 	assert.Equal(t, derivedKey, derivedKey2)
 
 	// Different password should give different key
-	differentKey := key.DeriveKey("different-password", salt, 32)
+	differentKey, err := key.DeriveKey("different-password", salt, key.DefaultIterations)
+	require.NoError(t, err)
 	assert.NotEqual(t, derivedKey, differentKey)
 }
 

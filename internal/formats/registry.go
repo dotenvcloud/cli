@@ -79,8 +79,3 @@ func (r *Registry) Generate(format Format, data map[string]string) (string, erro
 
 	return handler.GenerateString(data)
 }
-
-// init registers default handlers
-func init() {
-	// Register will be called from individual packages
-}

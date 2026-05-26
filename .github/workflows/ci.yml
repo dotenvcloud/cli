@@ -3,78 +3,211 @@ name: CI
 on:
   push:
     branches: [ main, develop ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
 
+# CLI depends on the private module github.com/lostlink/dotenv-sdk-go.
+# Each job mints a short-lived (~1h) GitHub App installation token to fetch
+# it. Repo secrets required:
+#   SDK_ACCESS_APP_ID           — GitHub App ID
+#   SDK_ACCESS_APP_PRIVATE_KEY  — App private key (PEM, including header)
+# The App must be installed on lostlink/dotenv-sdk-go with Contents: Read.
+permissions:
+  contents: read
+  security-events: write  # SARIF upload from gosec
+env:
+  GOPRIVATE: github.com/lostlink/*
+
 jobs:
   test:
+    name: Test
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        go: ['1.21', '1.22', '1.23']
+        go: ['1.24', '1.25', '1.26']
     steps:
+      - name: Mint GitHub App token (SDK access)
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.SDK_ACCESS_APP_ID }}
+          private-key: ${{ secrets.SDK_ACCESS_APP_PRIVATE_KEY }}
+          owner: lostlink
+          repositories: dotenv-sdk-go
+
       - uses: actions/checkout@v4
-      
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go }}
           cache: true
-      
-      - name: Install dependencies
+
+      - name: Configure git for private SDK module
+        shell: bash
         run: |
-          go mod download
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-      
-      - name: Run vulnerability check
-        run: govulncheck ./...
-      
-      - name: Run linters
-        run: golangci-lint run ./...
-      
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Download modules
+        shell: bash
+        run: go mod download
+
       - name: Run tests
-        run: |
-          go test -v -race -coverprofile=coverage.out ./...
-          go tool cover -html=coverage.out -o coverage.html
-      
+        # bash on all OSes so `-coverprofile=coverage.out ./...` token
+        # parsing is consistent — PowerShell splits the `=` form and go
+        # test ends up trying to load a package named `.out`.
+        shell: bash
+        run: go test -v -race -coverprofile=coverage.out ./...
+
       - name: Upload coverage
-        uses: actions/upload-artifact@v3
+        uses: codecov/codecov-action@v6
         with:
-          name: coverage-${{ matrix.os }}-${{ matrix.go }}
-          path: coverage.html
-      
+          files: ./coverage.out
+          flags: cli
+          name: cli-${{ matrix.os }}-${{ matrix.go }}
+
+      - name: Build binary
+        # Integration tests fork `./bin/dotenv`, so build it first.
+        shell: bash
+        run: go build -v -o bin/dotenv .
+
       - name: Run integration tests
         if: matrix.os == 'ubuntu-latest'
-        run: |
-          make test-integration
-      
-      - name: Run compatibility tests
-        if: matrix.os == 'ubuntu-latest' && matrix.go == '1.23'
-        run: |
-          make test-compatibility
+        shell: bash
+        run: go test -v -tags=integration ./test/integration/...
 
-  build:
+      - name: Run compatibility tests
+        if: matrix.os == 'ubuntu-latest' && matrix.go == '1.26'
+        shell: bash
+        run: make test-compatibility
+
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
-    needs: test
     steps:
+      - name: Mint GitHub App token (SDK access)
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.SDK_ACCESS_APP_ID }}
+          private-key: ${{ secrets.SDK_ACCESS_APP_PRIVATE_KEY }}
+          owner: lostlink
+          repositories: dotenv-sdk-go
+
       - uses: actions/checkout@v4
-      
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.26'
           cache: true
-      
-      - name: Test build
+
+      - name: Configure git for private SDK module
         run: |
-          make build-all
-      
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Download modules
+        # golangci-lint typecheck needs modules present.
+        run: go mod download
+
+      - name: Install golangci-lint
+        # Built with the same Go that runs the lint, so the config's
+        # targeted Go version is never higher than the linter's own.
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+
+      - name: Run golangci-lint
+        run: golangci-lint run --timeout=5m
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint GitHub App token (SDK access)
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.SDK_ACCESS_APP_ID }}
+          private-key: ${{ secrets.SDK_ACCESS_APP_PRIVATE_KEY }}
+          owner: lostlink
+          repositories: dotenv-sdk-go
+
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Configure git for private SDK module
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Run Gosec
+        uses: securego/gosec@master
+        with:
+          args: '-no-fail -fmt sarif -out results.sarif ./...'
+
+      - name: Upload SARIF
+        # Requires GitHub Advanced Security on the repo. Non-fatal so
+        # govulncheck still runs where SARIF upload isn't available.
+        uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true
+        with:
+          sarif_file: results.sarif
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        run: govulncheck ./...
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [test, lint, security]
+    steps:
+      - name: Mint GitHub App token (SDK access)
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.SDK_ACCESS_APP_ID }}
+          private-key: ${{ secrets.SDK_ACCESS_APP_PRIVATE_KEY }}
+          owner: lostlink
+          repositories: dotenv-sdk-go
+
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Configure git for private SDK module
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Cross-compile all platforms
+        run: make build-all
+
       - name: Test installation script
-        run: |
-          ./scripts/install.sh --dry-run
-      
+        run: ./scripts/install.sh --dry-run
+
       - name: Verify version injection
-        run: |
-          ./bin/dotenv-linux-amd64 version
+        run: ./bin/dotenv-linux-amd64 version

@@ -13,6 +13,7 @@ import (
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/constants"
 	"github.com/dotenv/cli/internal/telemetry"
+	"github.com/dotenv/cli/internal/ui"
 )
 
 var (
@@ -31,6 +32,12 @@ var rootCmd *cobra.Command
 // NewRootCommand creates a new root command instance.
 // This is useful for testing as it returns a fresh command tree.
 func NewRootCommand() *cobra.Command {
+	// Reset flag-bound module vars to their defaults so back-to-back tests
+	// don't inherit state from a previous invocation. cobra's flag defaults
+	// are set in each subcommand's init(), which only runs once for the
+	// process, so we restore the documented zero/default state here.
+	resetCommandState()
+
 	cmd := &cobra.Command{
 		Use:   "dotenv",
 		Short: "DotEnv CLI - Secure environment variable management",
@@ -39,7 +46,7 @@ across projects, targets, and environments with client-side encryption support.
 
 For more information, visit: https://dotenv.cloud/docs/cli`,
 
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
 			// Disable color if requested
 			if noColor {
 				color.NoColor = true
@@ -55,28 +62,20 @@ For more information, visit: https://dotenv.cloud/docs/cli`,
 				viper.Set("quiet", true)
 			}
 
+			// Mirror cobra's bound writers into the ui package so tests that
+			// call rootCmd.SetOut / SetErr capture Print* output too.
+			ui.Stdout = cmd.OutOrStdout()
+			ui.Stderr = cmd.ErrOrStderr()
+
 			// Record command start time
 			commandStart = time.Now()
 
 			// Initialize telemetry if enabled
 			initTelemetry()
 		},
-		PersistentPostRun: func(cmd *cobra.Command, args []string) {
-			// Track command execution
-			if telemetryClient != nil && telemetryClient.IsEnabled() {
-				// Get command name for telemetry
-				commandName := cmd.CommandPath()
-
-				// Calculate duration
-				duration := time.Since(commandStart)
-
-				// Command considered successful if no error occurred
-				success := cmd.Context().Err() == nil
-
-				// Track the command
-				telemetryClient.TrackCommand(commandName, duration, success)
-			}
-		},
+		// Telemetry tracking happens in Execute() so the actual RunE error
+		// (which PersistentPostRun cannot see — cobra hands us only the cmd
+		// + args, not the returned error) drives the success flag.
 	}
 
 	// Setup persistent flags
@@ -92,9 +91,15 @@ For more information, visit: https://dotenv.cloud/docs/cli`,
 		"API key for authentication (overrides account system)")
 
 	// Bind flags to viper
-	viper.BindPFlag("debug", cmd.PersistentFlags().Lookup("debug"))
-	viper.BindPFlag("quiet", cmd.PersistentFlags().Lookup("quiet"))
-	viper.BindPFlag("api_key", cmd.PersistentFlags().Lookup("api-key"))
+	for binding, flagName := range map[string]string{
+		"debug":   "debug",
+		"quiet":   "quiet",
+		"api_key": "api-key",
+	} {
+		if err := viper.BindPFlag(binding, cmd.PersistentFlags().Lookup(flagName)); err != nil {
+			panic(fmt.Sprintf("failed to bind flag %q: %v", flagName, err))
+		}
+	}
 
 	// Add all commands
 	cmd.AddCommand(
@@ -126,16 +131,22 @@ For more information, visit: https://dotenv.cloud/docs/cli`,
 
 // Execute runs the root command
 func Execute() error {
-	err := rootCmd.Execute()
+	executedCmd, err := rootCmd.ExecuteC()
 
-	// Close telemetry client if initialized
 	if telemetryClient != nil {
+		// executedCmd can be nil if cobra fails at root flag parsing before
+		// dispatching to a subcommand. commandStart can be zero if
+		// PersistentPreRun never fired (same path).
+		if telemetryClient.IsEnabled() && executedCmd != nil && !commandStart.IsZero() {
+			telemetryClient.TrackCommand(executedCmd.CommandPath(), time.Since(commandStart), err == nil)
+		}
 		telemetryClient.Close()
 	}
 
 	return err
 }
 
+//nolint:gochecknoinits // cobra root command registration is idiomatic in init
 func init() {
 	cobra.OnInitialize(initConfig)
 
@@ -218,8 +229,12 @@ func initTelemetry() {
 		// Generate new analytics ID if not present
 		analyticsID = generateAnalyticsID()
 		cfg.Preferences.AnalyticsID = analyticsID
-		// Save config with new analytics ID
-		loader.Save(cfg)
+		// Save config with new analytics ID; failures are non-fatal but should
+		// be surfaced so a misconfigured config dir doesn't silently disable
+		// analytics ID persistence across runs.
+		if err := loader.Save(cfg); err != nil {
+			ui.PrintWarningf("failed to persist analytics ID: %v", err)
+		}
 	}
 
 	// Create unauthenticated SDK client for telemetry
@@ -229,6 +244,30 @@ func initTelemetry() {
 	// Note: We're not using an API key for telemetry as it's anonymous
 	telemetryClient = telemetry.NewClient(sdkClient, analyticsID)
 	telemetryClient.SetEnabled(true)
+}
+
+// resetCommandState restores module-level flag-bound vars to their declared
+// defaults. Called at the top of NewRootCommand so tests that build a fresh
+// root start from the canonical state, not whatever the previous test left.
+func resetCommandState() {
+	// Restore ui sinks in case a prior test swapped them.
+	ui.Stdout = os.Stdout
+	ui.Stderr = os.Stderr
+
+	cfgFile = ""
+	debug = false
+	quiet = false
+	noColor = false
+	globalAPIKey = ""
+
+	pullOutput = ""
+	pullResolve = false
+	pullFormat = "env"
+	pullClientKey = ""
+	pullDecrypt = true
+	pullQuiet = false
+	pullMerge = true
+	pullLevelOnly = false
 }
 
 // generateAnalyticsID generates a new anonymous analytics ID

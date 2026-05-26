@@ -59,6 +59,7 @@ const (
 	// ErrTokenExpired is returned when the OAuth token is expired
 	ErrTokenExpired = "authentication token expired"
 
-	// ErrInvalidAPIKey is returned when the API key format is invalid
+	// ErrInvalidAPIKey is returned when the API key format is invalid.
+	// #nosec G101 — error message string, not a credential.
 	ErrInvalidAPIKey = "invalid API key format"
 )

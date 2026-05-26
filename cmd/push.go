@@ -13,7 +13,7 @@ import (
 	"github.com/dotenv/cli/internal/crypto/key"
 	"github.com/dotenv/cli/internal/formats"
 	"github.com/dotenv/cli/internal/ui"
-	dotenv "github.com/dotenv/sdk-go"
+	dotenv "github.com/lostlink/dotenv-sdk-go"
 )
 
 var (
@@ -52,11 +52,11 @@ You can push to any level of the hierarchy.`,
   dotenv push myproject/staging .env --force`,
 
 	Args: cobra.RangeArgs(1, 2),
-	PreRunE: func(cmd *cobra.Command, args []string) error {
+	PreRunE: func(cmd *cobra.Command, _ []string) error {
 		// Try to refresh organizations if needed
 		if err := RefreshOrganizationsIfNeeded(cmd.Context()); err != nil {
 			// Don't fail the command, just warn
-			ui.PrintWarning("Could not refresh organizations: %v", err)
+			ui.PrintWarningf("Could not refresh organizations: %v", err)
 		}
 		return nil
 	},
@@ -79,6 +79,7 @@ func encryptSecretsMap(secrets map[string]string, key []byte) (map[string]string
 	return encrypted, nil
 }
 
+//nolint:gochecknoinits // cobra subcommand flag registration is idiomatic in init
 func init() {
 	pushCmd.Flags().StringVar(&pushProject, "project", "",
 		"file containing project-level secrets")
@@ -95,59 +96,26 @@ func init() {
 }
 
 func runPush(cmd *cobra.Command, args []string) error {
-	// Display account/org info unless using API key override
 	if viper.GetString("api_key") == "" && os.Getenv("DOTENV_API_KEY") == "" {
 		if err := displayAccountInfo(); err != nil {
-			// Don't fail if we can't display account info
-			ui.PrintWarning("Could not display account info: %v", err)
+			ui.PrintWarningf("Could not display account info: %v", err)
 		}
 	}
 
-	// Parse arguments
-	path := args[0]
-	parts := strings.Split(path, "/")
-
-	var projectSlug, targetSlug, environmentSlug string
-	var singleFile string
-
-	// Determine mode: single file or multi-file
-	if len(args) == 2 {
-		// Single file mode
-		singleFile = args[1]
-
-		switch len(parts) {
-		case 1:
-			projectSlug = parts[0]
-		case 2:
-			projectSlug = parts[0]
-			targetSlug = parts[1]
-		case 3:
-			projectSlug = parts[0]
-			targetSlug = parts[1]
-			environmentSlug = parts[2]
-		default:
-			return fmt.Errorf("invalid path format: use project[/target[/environment]]")
-		}
-	} else {
-		// Multi-file mode
-		if len(parts) != 1 {
-			return fmt.Errorf("in multi-file mode, specify only the project name (got: %s)", path)
-		}
-		projectSlug = parts[0]
-
-		if pushProject == "" && pushTarget == "" && pushEnvironment == "" {
-			return fmt.Errorf("no files specified: use --project, --target, or --env flags to specify .env files")
-		}
+	projectSlug, targetSlug, environmentSlug, singleFile, err := parsePushArgs(args)
+	if err != nil {
+		return err
 	}
 
-	// Get API client
 	client, err := getAPIClient()
 	if err != nil {
 		return err
 	}
 
-	// Verify project exists
-	project, resp, err := client.Projects.Get(context.Background(), projectSlug)
+	project, resp, err := client.Projects.Get(cmd.Context(), projectSlug)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	if err != nil {
 		if resp != nil && resp.StatusCode == 404 {
 			return fmt.Errorf("project '%s' not found in organization", projectSlug)
@@ -155,50 +123,92 @@ func runPush(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to verify project '%s' exists: %w", projectSlug, err)
 	}
 
-	// Get encryption key if encrypting
-	var encKey []byte
-	if pushEncrypt {
-		if pushClientKey != "" {
-			// Use client-provided key
-			keyData, err := os.ReadFile(pushClientKey)
-			if err != nil {
-				return fmt.Errorf("failed to read client key: %w", err)
-			}
+	encKey, err := resolvePushEncryptionKey(cmd.Context(), client, projectSlug)
+	if err != nil {
+		return err
+	}
 
-			encKey, err = key.ParseKey(string(keyData))
-			if err != nil {
-				return fmt.Errorf("failed to parse client key: %w", err)
-			}
-		} else {
-			// Get key from server
-			encKeyResp, _, err := client.Encryption.GetEncryptionKey(context.Background(), projectSlug)
-			if err != nil {
-				return fmt.Errorf("failed to get encryption key: %w", err)
-			}
+	if singleFile != "" {
+		return pushSingleFile(cmd.Context(), client, project, targetSlug, environmentSlug,
+			singleFile, encKey, pushForce)
+	}
+	return pushMultipleFiles(cmd.Context(), client, project, pushProject, pushTarget,
+		pushEnvironment, encKey, pushForce)
+}
 
-			encKey, err = key.ParseKey(encKeyResp.Key)
-			if err != nil {
-				return fmt.Errorf("failed to parse encryption key: %w", err)
-			}
+func parsePushArgs(args []string) (projectSlug, targetSlug, environmentSlug, singleFile string, err error) {
+	path := args[0]
+	parts := strings.Split(path, "/")
+
+	if len(args) == 2 {
+		singleFile = args[1]
+		switch len(parts) {
+		case 1:
+			projectSlug = parts[0]
+		case 2:
+			projectSlug, targetSlug = parts[0], parts[1]
+		case 3:
+			projectSlug, targetSlug, environmentSlug = parts[0], parts[1], parts[2]
+		default:
+			err = fmt.Errorf("invalid path format: use project[/target[/environment]]")
+		}
+		return
+	}
+
+	if len(parts) != 1 {
+		err = fmt.Errorf("in multi-file mode, specify only the project name (got: %s)", path)
+		return
+	}
+	projectSlug = parts[0]
+	if pushProject == "" && pushTarget == "" && pushEnvironment == "" {
+		err = fmt.Errorf("no files specified: use --project, --target, or --env flags to specify .env files")
+	}
+	return
+}
+
+func resolvePushEncryptionKey(ctx context.Context, client *dotenv.Client, projectSlug string) ([]byte, error) {
+	if !pushEncrypt {
+		return nil, nil
+	}
+	if pushClientKey != "" {
+		keyData, err := os.ReadFile(pushClientKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read client key: %w", err)
+		}
+		encKey, err := key.ParseKey(string(keyData))
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse client key: %w", err)
+		}
+		return encKey, nil
+	}
+	encKeyResp, encResp, err := client.Encryption.GetEncryptionKey(ctx, projectSlug)
+	if encResp != nil {
+		defer encResp.Body.Close()
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get encryption key: %w", err)
+	}
+	encKey, err := key.ParseKey(encKeyResp.Key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse encryption key: %w", err)
+	}
+	return encKey, nil
+}
+
+// slugForLabel looks up the slug for the label the user picked. Exact-match
+// avoids the substring bug where one slug was a prefix of another.
+func slugForLabel(selected string, labels []string, slugAt func(int) string) (string, error) {
+	for i, label := range labels {
+		if label == selected {
+			return slugAt(i), nil
 		}
 	}
-
-	// Process files
-	if singleFile != "" {
-		// Single file mode
-		return pushSingleFile(context.Background(), client, project, targetSlug, environmentSlug,
-			singleFile, encKey, pushForce)
-	} else {
-		// Multi-file mode
-		return pushMultipleFiles(context.Background(), client, project, pushProject, pushTarget,
-			pushEnvironment, encKey, pushForce)
-	}
+	return "", fmt.Errorf("internal: selected label %q not found in options", selected)
 }
 
 func pushSingleFile(ctx context.Context, client *dotenv.Client, project *dotenv.Project,
 	targetSlug, environmentSlug, filename string, encKey []byte, force bool) error {
-
-	ui.PrintInfo("Reading secrets from %s...", filename)
+	ui.PrintInfof("Reading secrets from %s...", filename)
 
 	// Detect format and parse
 	secrets, err := parseSecretsFile(filename)
@@ -206,13 +216,13 @@ func pushSingleFile(ctx context.Context, client *dotenv.Client, project *dotenv.
 		return fmt.Errorf("failed to parse file: %w", err)
 	}
 
-	ui.PrintInfo("Found %d secrets", len(secrets))
+	ui.PrintInfof("Found %d secrets", len(secrets))
 
 	// Encrypt if requested
 	if encKey != nil {
-		encrypted, err := encryptSecretsMap(secrets, encKey)
-		if err != nil {
-			return fmt.Errorf("failed to encrypt secrets: %w", err)
+		encrypted, encErr := encryptSecretsMap(secrets, encKey)
+		if encErr != nil {
+			return fmt.Errorf("failed to encrypt secrets: %w", encErr)
 		}
 		secrets = encrypted
 	}
@@ -241,215 +251,200 @@ func pushSingleFile(ctx context.Context, client *dotenv.Client, project *dotenv.
 
 	// Check existing secrets if not forcing
 	if !force {
-		existing, _, err := client.Secrets.List(ctx, project.Slug, nil)
-		if err == nil && len(existing) > 0 {
-			ui.PrintWarning("Project already has %d secrets", len(existing))
+		existing, existResp, listErr := client.Secrets.List(ctx, project.Slug, nil)
+		if existResp != nil {
+			defer existResp.Body.Close()
+		}
+		if listErr == nil && len(existing) > 0 {
+			ui.PrintWarningf("Project already has %d secrets", len(existing))
 
-			overwrite, err := ui.Confirm("Overwrite existing secrets?", false)
-			if err != nil {
-				return err
+			overwrite, confirmErr := ui.Confirm("Overwrite existing secrets?", false)
+			if confirmErr != nil {
+				return confirmErr
 			}
 
 			if !overwrite {
-				ui.PrintInfo("Push cancelled")
+				ui.PrintInfof("Push canceled")
 				return nil
 			}
 		}
 	}
 
 	// Push secrets
-	ui.PrintInfo("Pushing secrets...")
+	ui.PrintInfof("Pushing secrets...")
 
-	created, _, err := client.Secrets.BulkCreate(ctx, req)
+	created, bulkResp, err := client.Secrets.BulkCreate(ctx, req)
+	if bulkResp != nil {
+		defer bulkResp.Body.Close()
+	}
 	if err != nil {
 		return fmt.Errorf("failed to push secrets: %w", err)
 	}
 
-	ui.PrintSuccess("Successfully pushed %d secrets", len(created))
+	ui.PrintSuccessf("Successfully pushed %d secrets", len(created))
 
 	return nil
 }
 
+type secretSet struct {
+	level  string
+	file   string
+	slug   string
+	target string
+	env    string
+}
+
 func pushMultipleFiles(ctx context.Context, client *dotenv.Client, project *dotenv.Project,
-	projectFile, targetFile, envFile string, encKey []byte, force bool) error {
-
-	type secretSet struct {
-		level  string
-		file   string
-		slug   string
-		target string
-		env    string
+	projectFile, targetFile, envFile string, encKey []byte, _ bool) error {
+	sets, err := buildSecretSets(ctx, client, project, projectFile, targetFile, envFile)
+	if err != nil {
+		return err
 	}
 
-	sets := []secretSet{}
-
-	if projectFile != "" {
-		sets = append(sets, secretSet{
-			level: "project",
-			file:  projectFile,
-			slug:  project.Slug,
-		})
-	}
-
-	if targetFile != "" {
-		// Need to specify target
-		targets, _, err := client.Targets.List(ctx, project.Slug, nil)
-		if err != nil {
-			return fmt.Errorf("failed to list targets: %w", err)
-		}
-
-		if len(targets) == 0 {
-			return fmt.Errorf("no targets found in project")
-		}
-
-		targetNames := make([]string, len(targets))
-		for i, t := range targets {
-			targetNames[i] = fmt.Sprintf("%s - %s", t.Name, t.Slug)
-		}
-
-		selected, err := ui.Select("Select target for "+targetFile, targetNames)
+	totalSecrets := 0
+	for i := range sets {
+		count, err := processSecretSet(ctx, client, &sets[i], encKey)
 		if err != nil {
 			return err
 		}
+		totalSecrets += count
+	}
 
-		var targetSlug string
-		for _, t := range targets {
-			if strings.Contains(selected, t.Slug) {
-				targetSlug = t.Slug
-				break
-			}
+	ui.PrintSuccessf("Successfully pushed %d total secrets", totalSecrets)
+	return nil
+}
+
+func buildSecretSets(ctx context.Context, client *dotenv.Client, project *dotenv.Project,
+	projectFile, targetFile, envFile string) ([]secretSet, error) {
+	var sets []secretSet
+
+	if projectFile != "" {
+		sets = append(sets, secretSet{level: "project", file: projectFile, slug: project.Slug})
+	}
+
+	if targetFile != "" {
+		targetSlug, err := promptForTarget(ctx, client, project.Slug, "Select target for "+targetFile)
+		if err != nil {
+			return nil, err
 		}
-
 		sets = append(sets, secretSet{
-			level:  "target",
-			file:   targetFile,
-			slug:   project.Slug,
-			target: targetSlug,
+			level: "target", file: targetFile, slug: project.Slug, target: targetSlug,
 		})
 	}
 
 	if envFile != "" {
-		// Need to specify target and environment
-		targets, _, err := client.Targets.List(ctx, project.Slug, nil)
+		targetSlug, err := promptForTarget(ctx, client, project.Slug, "Select target for "+envFile)
 		if err != nil {
-			return fmt.Errorf("failed to list targets: %w", err)
+			return nil, err
 		}
-
-		if len(targets) == 0 {
-			return fmt.Errorf("no targets found in project")
-		}
-
-		targetNames := make([]string, len(targets))
-		for i, t := range targets {
-			targetNames[i] = fmt.Sprintf("%s - %s", t.Name, t.Slug)
-		}
-
-		selectedTarget, err := ui.Select("Select target for "+envFile, targetNames)
+		envSlug, err := promptForEnvironment(ctx, client, project.Slug, targetSlug, "Select environment for "+envFile)
 		if err != nil {
-			return err
+			return nil, err
 		}
-
-		var targetSlug string
-		for _, t := range targets {
-			if strings.Contains(selectedTarget, t.Slug) {
-				targetSlug = t.Slug
-				break
-			}
-		}
-
-		// Now get environments for this target
-		envs, _, err := client.Environments.List(ctx, project.Slug, targetSlug, nil)
-		if err != nil {
-			return fmt.Errorf("failed to list environments: %w", err)
-		}
-
-		if len(envs) == 0 {
-			return fmt.Errorf("no environments found in target")
-		}
-
-		envNames := make([]string, len(envs))
-		for i, e := range envs {
-			envNames[i] = fmt.Sprintf("%s - %s", e.Name, e.Slug)
-		}
-
-		selectedEnv, err := ui.Select("Select environment for "+envFile, envNames)
-		if err != nil {
-			return err
-		}
-
-		var envSlug string
-		for _, e := range envs {
-			if strings.Contains(selectedEnv, e.Slug) {
-				envSlug = e.Slug
-				break
-			}
-		}
-
 		sets = append(sets, secretSet{
-			level:  "environment",
-			file:   envFile,
-			slug:   project.Slug,
-			target: targetSlug,
-			env:    envSlug,
+			level: "environment", file: envFile, slug: project.Slug,
+			target: targetSlug, env: envSlug,
 		})
 	}
 
-	// Process each file
-	totalSecrets := 0
+	return sets, nil
+}
 
-	for _, set := range sets {
-		ui.PrintInfo("Processing %s-level secrets from %s...", set.level, set.file)
-
-		secrets, err := parseSecretsFile(set.file)
-		if err != nil {
-			return fmt.Errorf("failed to parse %s: %w", set.file, err)
-		}
-
-		ui.PrintInfo("Found %d secrets", len(secrets))
-
-		// Encrypt if requested
-		if encKey != nil {
-			encrypted, err := encryptSecretsMap(secrets, encKey)
-			if err != nil {
-				return fmt.Errorf("failed to encrypt secrets: %w", err)
-			}
-			secrets = encrypted
-		}
-
-		// Build request - convert map to slice of BulkSecretItem
-		bulkSecrets := make([]dotenv.BulkSecretItem, 0, len(secrets))
-		for key, value := range secrets {
-			item := dotenv.BulkSecretItem{
-				Key:         key,
-				Value:       value,
-				IsEncrypted: encKey != nil,
-			}
-			if set.target != "" {
-				item.TargetSlug = &set.target
-			}
-			if set.env != "" {
-				item.EnvironmentSlug = &set.env
-			}
-			bulkSecrets = append(bulkSecrets, item)
-		}
-
-		req := &dotenv.BulkSecretsRequest{
-			ProjectSlug: set.slug,
-			Secrets:     bulkSecrets,
-		}
-
-		// Push
-		created, _, err := client.Secrets.BulkCreate(ctx, req)
-		if err != nil {
-			return fmt.Errorf("failed to push %s-level secrets: %w", set.level, err)
-		}
-
-		totalSecrets += len(created)
+func promptForTarget(ctx context.Context, client *dotenv.Client, projectSlug, prompt string) (string, error) {
+	targets, resp, err := client.Targets.List(ctx, projectSlug, nil)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to list targets: %w", err)
+	}
+	if len(targets) == 0 {
+		return "", fmt.Errorf("no targets found in project")
 	}
 
-	ui.PrintSuccess("Successfully pushed %d total secrets", totalSecrets)
+	names := make([]string, len(targets))
+	for i, t := range targets {
+		names[i] = fmt.Sprintf("%s - %s", t.Name, t.Slug)
+	}
+	selected, err := ui.Select(prompt, names)
+	if err != nil {
+		return "", err
+	}
+	return slugForLabel(selected, names, func(i int) string { return targets[i].Slug })
+}
 
-	return nil
+func promptForEnvironment(ctx context.Context, client *dotenv.Client, projectSlug, targetSlug, prompt string) (string, error) {
+	envs, resp, err := client.Environments.List(ctx, projectSlug, targetSlug, nil)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to list environments: %w", err)
+	}
+	if len(envs) == 0 {
+		return "", fmt.Errorf("no environments found in target")
+	}
+
+	names := make([]string, len(envs))
+	for i, e := range envs {
+		names[i] = fmt.Sprintf("%s - %s", e.Name, e.Slug)
+	}
+	selected, err := ui.Select(prompt, names)
+	if err != nil {
+		return "", err
+	}
+	return slugForLabel(selected, names, func(i int) string { return envs[i].Slug })
+}
+
+func processSecretSet(ctx context.Context, client *dotenv.Client, set *secretSet, encKey []byte) (int, error) {
+	ui.PrintInfof("Processing %s-level secrets from %s...", set.level, set.file)
+
+	secrets, err := parseSecretsFile(set.file)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse %s: %w", set.file, err)
+	}
+	ui.PrintInfof("Found %d secrets", len(secrets))
+
+	if encKey != nil {
+		encrypted, encErr := encryptSecretsMap(secrets, encKey)
+		if encErr != nil {
+			return 0, fmt.Errorf("failed to encrypt secrets: %w", encErr)
+		}
+		secrets = encrypted
+	}
+
+	bulkSecrets := buildBulkSecrets(secrets, set, encKey != nil)
+	req := &dotenv.BulkSecretsRequest{ProjectSlug: set.slug, Secrets: bulkSecrets}
+
+	created, bulkResp, err := client.Secrets.BulkCreate(ctx, req)
+	if bulkResp != nil {
+		defer bulkResp.Body.Close()
+	}
+	if err != nil {
+		return 0, fmt.Errorf("failed to push %s-level secrets: %w", set.level, err)
+	}
+	return len(created), nil
+}
+
+func buildBulkSecrets(secrets map[string]string, set *secretSet, encrypted bool) []dotenv.BulkSecretItem {
+	bulkSecrets := make([]dotenv.BulkSecretItem, 0, len(secrets))
+	for k, value := range secrets {
+		item := dotenv.BulkSecretItem{
+			Key:         k,
+			Value:       value,
+			IsEncrypted: encrypted,
+		}
+		if set.target != "" {
+			tgt := set.target
+			item.TargetSlug = &tgt
+		}
+		if set.env != "" {
+			env := set.env
+			item.EnvironmentSlug = &env
+		}
+		bulkSecrets = append(bulkSecrets, item)
+	}
+	return bulkSecrets
 }
 
 func parseSecretsFile(filename string) (map[string]string, error) {
@@ -463,15 +458,15 @@ func parseSecretsFile(filename string) (map[string]string, error) {
 	format, err := detector.DetectFormatFromFile(filename)
 	if err != nil {
 		// Try content detection
-		content, err := os.ReadFile(filename)
-		if err != nil {
-			return nil, err
+		content, readErr := os.ReadFile(filename)
+		if readErr != nil {
+			return nil, readErr
 		}
 
 		format, err = detector.DetectFormat(content)
 		if err != nil {
 			// Default to env format
-			format = "env"
+			format = formatENV
 		}
 	}
 

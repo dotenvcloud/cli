@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -12,7 +13,7 @@ import (
 
 	"github.com/dotenv/cli/internal/hierarchy"
 	"github.com/dotenv/cli/internal/ui"
-	dotenv "github.com/dotenv/sdk-go"
+	dotenv "github.com/lostlink/dotenv-sdk-go"
 )
 
 var (
@@ -50,6 +51,7 @@ making it easy to understand the structure and navigate the hierarchy.`,
 	RunE: runTree,
 }
 
+//nolint:gochecknoinits // cobra subcommand flag registration is idiomatic in init
 func init() {
 	treeCmd.Flags().StringVarP(&treeProject, "project", "p", "",
 		"show tree for specific project")
@@ -69,7 +71,7 @@ func runTree(cmd *cobra.Command, args []string) error {
 	// Display account/org info
 	if viper.GetString("api_key") == "" && os.Getenv("DOTENV_API_KEY") == "" {
 		if err := displayAccountInfo(); err != nil {
-			ui.PrintWarning("Could not display account info: %v", err)
+			ui.PrintWarningf("Could not display account info: %v", err)
 		}
 	}
 
@@ -105,14 +107,14 @@ func runTree(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		// Build tree for entire organization
-		account, err := getCurrentAccount()
-		if err != nil {
-			return err
+		account, acctErr := getCurrentAccount()
+		if acctErr != nil {
+			return acctErr
 		}
 
-		orgIdentifier, err := account.GetOrganizationIdentifier()
-		if err != nil {
-			return fmt.Errorf("failed to get organization: %w", err)
+		orgIdentifier, orgErr := account.GetOrganizationIdentifier()
+		if orgErr != nil {
+			return fmt.Errorf("failed to get organization: %w", orgErr)
 		}
 
 		root, err = builder.Build(ctx, orgIdentifier)
@@ -140,106 +142,93 @@ func renderTree(node *hierarchy.Node, w io.Writer, depth, maxDepth int, showFull
 	if node == nil {
 		return nil
 	}
-
 	if maxDepth > 0 && depth > maxDepth {
 		return nil
 	}
-
-	// Skip environments unless --full is specified
 	if node.Type == hierarchy.NodeTypeEnvironment && !showFull {
 		return nil
 	}
 
-	// Skip organization node in display (start from projects)
 	if node.Type != hierarchy.NodeTypeOrganization {
-		// Print node with tree formatting
-		prefix := ""
-		if depth > 0 {
-			// Create tree branch characters
-			for i := 0; i < depth-1; i++ {
-				prefix += "│   "
-			}
-			prefix += "├── "
-		}
-
-		// Format node display
-		display := node.Name
-		if node.Slug != node.Name {
-			display = fmt.Sprintf("%s (%s)", node.Name, node.Slug)
-		}
-
-		// Add type indicator
-		typeIndicator := ""
-		switch node.Type {
-		case hierarchy.NodeTypeProject:
-			typeIndicator = "📁 "
-		case hierarchy.NodeTypeTarget:
-			typeIndicator = "🎯 "
-		case hierarchy.NodeTypeEnvironment:
-			typeIndicator = "🌿 "
-		}
-
-		// Add counts if requested
-		if showCounts {
-			count := 0
-			switch node.Type {
-			case hierarchy.NodeTypeProject:
-				if proj, ok := node.Metadata.(*dotenv.Project); ok {
-					if showFull {
-						count = proj.TargetCount + proj.EnvironmentCount
-					} else {
-						count = proj.TargetCount
-					}
-				}
-			case hierarchy.NodeTypeTarget:
-				// Count actual children
-				count = len(node.Children)
-			}
-
-			if count > 0 {
-				display += fmt.Sprintf(" [%d]", count)
-			}
-		}
-
-		// Add status for environments
-		if node.Type == hierarchy.NodeTypeEnvironment {
-			if env, ok := node.Metadata.(*dotenv.Environment); ok && env.Status != "" {
-				display += fmt.Sprintf(" (%s)", env.Status)
-			}
-		}
-
-		fmt.Fprintf(w, "%s%s%s\n", prefix, typeIndicator, display)
+		fmt.Fprintln(w, formatTreeNode(node, depth, showFull, showCounts))
 	}
 
-	// Render children
-	visibleChildren := make([]*hierarchy.Node, 0)
+	childDepth := depth
+	if node.Type != hierarchy.NodeTypeOrganization {
+		childDepth = depth + 1
+	}
 	for _, child := range node.Children {
-		// Skip environments unless --full
 		if child.Type == hierarchy.NodeTypeEnvironment && !showFull {
 			continue
 		}
-		visibleChildren = append(visibleChildren, child)
-	}
-
-	for i, child := range visibleChildren {
-		// Determine if this is the last child for proper tree formatting
-		isLast := i == len(visibleChildren)-1
-
-		// Adjust depth for organization node
-		childDepth := depth
-		if node.Type != hierarchy.NodeTypeOrganization {
-			childDepth = depth + 1
+		if err := renderTree(child, w, childDepth, maxDepth, showFull, showCounts); err != nil {
+			return err
 		}
-
-		// For last child, we need to update the prefix
-		if isLast && childDepth > 1 {
-			// This is complex to handle properly, for now we'll use simple formatting
-		}
-
-		renderTree(child, w, childDepth, maxDepth, showFull, showCounts)
 	}
-
 	return nil
+}
+
+func formatTreeNode(node *hierarchy.Node, depth int, showFull, showCounts bool) string {
+	display := node.Name
+	if node.Slug != node.Name {
+		display = fmt.Sprintf("%s (%s)", node.Name, node.Slug)
+	}
+	if showCounts {
+		if count := childCountFor(node, showFull); count > 0 {
+			display += fmt.Sprintf(" [%d]", count)
+		}
+	}
+	if node.Type == hierarchy.NodeTypeEnvironment {
+		if env, ok := node.Metadata.(*dotenv.Environment); ok && env.Status != "" {
+			display += fmt.Sprintf(" (%s)", env.Status)
+		}
+	}
+	return treePrefix(depth) + typeIndicator(node.Type) + display
+}
+
+func treePrefix(depth int) string {
+	if depth == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i := 0; i < depth-1; i++ {
+		b.WriteString("│   ")
+	}
+	b.WriteString("├── ")
+	return b.String()
+}
+
+func typeIndicator(t hierarchy.NodeType) string {
+	switch t {
+	case hierarchy.NodeTypeProject:
+		return "📁 "
+	case hierarchy.NodeTypeTarget:
+		return "🎯 "
+	case hierarchy.NodeTypeEnvironment:
+		return "🌿 "
+	case hierarchy.NodeTypeOrganization:
+		return ""
+	}
+	return ""
+}
+
+func childCountFor(node *hierarchy.Node, showFull bool) int {
+	switch node.Type {
+	case hierarchy.NodeTypeProject:
+		proj, ok := node.Metadata.(*dotenv.Project)
+		if !ok {
+			return 0
+		}
+		if showFull {
+			return proj.TargetCount + proj.EnvironmentCount
+		}
+		return proj.TargetCount
+	case hierarchy.NodeTypeTarget:
+		return len(node.Children)
+	case hierarchy.NodeTypeOrganization, hierarchy.NodeTypeEnvironment:
+		return 0
+	}
+	return 0
 }
 
 func renderTreeJSON(node *hierarchy.Node, w io.Writer) error {
@@ -291,6 +280,8 @@ func nodeToMap(node *hierarchy.Node) map[string]interface{} {
 				result["description"] = env.Description
 			}
 		}
+	case hierarchy.NodeTypeOrganization:
+		// No extra metadata for organization nodes.
 	}
 
 	// Add children

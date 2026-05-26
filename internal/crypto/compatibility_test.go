@@ -9,43 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestVector represents a test case for cross-platform compatibility
-type TestVector struct {
-	Name       string
-	Key        string // Base64 encoded
-	IV         string // Base64 encoded
-	Plaintext  string
-	Ciphertext string // Expected base64 output
-}
-
-// getTestVectors returns test vectors that should match PHP/JS implementations
-func getTestVectors() []TestVector {
-	return []TestVector{
-		{
-			Name:      "Simple ASCII",
-			Key:       "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", // 32 zeros
-			IV:        "AAAAAAAAAAAAAAAA",                             // 12 zeros
-			Plaintext: "Hello, World!",
-			// Note: These are placeholder values - actual values should come from PHP/JS
-			Ciphertext: "", // Will be filled with actual PHP/JS output
-		},
-		{
-			Name:       "Empty String",
-			Key:        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-			IV:         "AAAAAAAAAAAAAAAA",
-			Plaintext:  "",
-			Ciphertext: "",
-		},
-		{
-			Name:       "Unicode",
-			Key:        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-			IV:         "AAAAAAAAAAAAAAAA",
-			Plaintext:  "Hello 世界 🌍",
-			Ciphertext: "",
-		},
-	}
-}
-
 func TestCompatibility_EncryptWithKnownIV(t *testing.T) {
 	encryptor := NewGCMEncryptor()
 

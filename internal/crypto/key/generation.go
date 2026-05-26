@@ -40,20 +40,31 @@ func GenerateKeyHex() (string, error) {
 	return hex.EncodeToString(key), nil
 }
 
-// ParseKey parses a key from various formats and applies padding
+// ParseKey parses a key from various formats and applies padding.
+//
+// Ordering note: a 64-char hex string is also valid base64 (decodes to 48
+// bytes), so hex of the canonical key length is attempted first to avoid
+// silently producing the wrong key from a hex-formatted input.
 func ParseKey(keyStr string) ([]byte, error) {
-	// Try base64 first
+	// Try hex first when length matches a canonical hex-encoded 32-byte key.
+	if len(keyStr) == RequiredKeySize*2 {
+		if key, err := hex.DecodeString(keyStr); err == nil && len(key) == RequiredKeySize {
+			return key, nil
+		}
+	}
+
+	// Try base64
 	if key, err := base64.StdEncoding.DecodeString(keyStr); err == nil && len(key) > 0 {
 		return padKey(key), nil
 	}
 
-	// Try hex
+	// Try hex for any other valid hex length
 	if key, err := hex.DecodeString(keyStr); err == nil && len(key) > 0 {
 		return padKey(key), nil
 	}
 
 	// Otherwise use the raw string as bytes
-	if len(keyStr) > 0 {
+	if keyStr != "" {
 		return padKey([]byte(keyStr)), nil
 	}
 

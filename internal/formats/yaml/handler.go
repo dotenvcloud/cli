@@ -140,15 +140,17 @@ func (h *Handler) convertValue(value string) interface{} {
 		// Integer
 		if n, err := fmt.Sscanf(value, "%d", new(int64)); err == nil && n == 1 {
 			var i int64
-			fmt.Sscanf(value, "%d", &i)
-			return i
+			if _, err := fmt.Sscanf(value, "%d", &i); err == nil {
+				return i
+			}
 		}
 
 		// Float
 		if n, err := fmt.Sscanf(value, "%g", new(float64)); err == nil && n == 1 {
 			var f float64
-			fmt.Sscanf(value, "%g", &f)
-			return f
+			if _, err := fmt.Sscanf(value, "%g", &f); err == nil {
+				return f
+			}
 		}
 
 		// Boolean
@@ -171,18 +173,21 @@ func (h *Handler) Validate(content []byte) error {
 }
 
 // ValidateKey validates a YAML key
-func (h *Handler) ValidateKey(key string) error {
+func (h *Handler) ValidateKey(_ string) error {
 	// YAML allows any string as key
 	return nil
 }
 
 // ValidateValue validates a YAML value
-func (h *Handler) ValidateValue(value string) error {
+func (h *Handler) ValidateValue(_ string) error {
 	// Any string is valid
 	return nil
 }
 
+//nolint:gochecknoinits // format registry self-registration is idiomatic for plugin-style handlers
 func init() {
 	// Register the handler with the default registry
-	formats.DefaultRegistry.Register(formats.FormatYAML, NewHandler(nil))
+	if err := formats.DefaultRegistry.Register(formats.FormatYAML, NewHandler(nil)); err != nil {
+		panic(fmt.Sprintf("yaml handler: failed to register: %v", err))
+	}
 }

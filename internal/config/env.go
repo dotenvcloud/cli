@@ -8,7 +8,8 @@ import (
 
 // Environment variable names
 const (
-	EnvAPIKey        = "DOTENV_API_KEY"
+	// EnvAPIKey is the env var name (not a credential itself).
+	EnvAPIKey        = "DOTENV_API_KEY" //nolint:gosec // env var name, not a credential
 	EnvAPIURL        = "DOTENV_API_URL"
 	EnvOrganization  = "DOTENV_ORGANIZATION"
 	EnvContext       = "DOTENV_CONTEXT"
@@ -121,11 +122,15 @@ func parseBool(s string) bool {
 
 // isDevelopment checks if we're in development mode
 func isDevelopment() bool {
+	const (
+		devEnvName  = "development"
+		devEnvShort = "dev"
+	)
 	// Check common development indicators
-	if env := os.Getenv("DOTENV_ENV"); env == "development" || env == "dev" {
+	if env := os.Getenv("DOTENV_ENV"); env == devEnvName || env == devEnvShort {
 		return true
 	}
-	if env := os.Getenv("ENV"); env == "development" || env == "dev" {
+	if env := os.Getenv("ENV"); env == devEnvName || env == devEnvShort {
 		return true
 	}
 	if env := os.Getenv("NODE_ENV"); env == "development" {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	dotenv "github.com/dotenv/sdk-go"
+	dotenv "github.com/lostlink/dotenv-sdk-go"
 )
 
 // NodeType represents the type of node in the hierarchy
@@ -172,8 +172,11 @@ func (b *Builder) LoadChildren(ctx context.Context, node *Node) error {
 		}
 		return b.loadEnvironmentsForTarget(ctx, node, parts[0], parts[1])
 
-	default:
+	case NodeTypeOrganization, NodeTypeEnvironment:
 		// Organizations and environments don't have children to load dynamically
+		return nil
+
+	default:
 		return nil
 	}
 }

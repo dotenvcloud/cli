@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	dotenv "github.com/lostlink/dotenv-sdk-go"
 )
 
 const (
@@ -36,98 +38,34 @@ func NewGCMEncryptor() *GCMEncryptor {
 	return &GCMEncryptor{}
 }
 
-// Encrypt encrypts plaintext using AES-256-GCM
-// Returns base64 encoded string in format: base64(IV || ciphertext || tag)
-func (e *GCMEncryptor) Encrypt(plaintext []byte, key []byte) (string, error) {
-	// Validate key
+// Encrypt encrypts plaintext using AES-256-GCM.
+//
+// Delegates to dotenv.Encrypt so the SDK is the single source of truth for
+// the wire format. Key validation is kept here because the SDK is
+// intentionally permissive about weak keys.
+func (e *GCMEncryptor) Encrypt(plaintext, key []byte) (string, error) {
 	if err := ValidateKey(key); err != nil {
 		return "", err
 	}
-
-	// Apply key padding to ensure key is exactly 32 bytes
-	paddedKey := padKey(key)
-
-	// Create cipher block
-	block, err := aes.NewCipher(paddedKey)
-	if err != nil {
-		return "", fmt.Errorf("failed to create cipher: %w", err)
-	}
-
-	// Create GCM mode
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", fmt.Errorf("failed to create GCM: %w", err)
-	}
-
-	// Create nonce (IV)
-	nonce := make([]byte, NonceSize)
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", fmt.Errorf("failed to generate nonce: %w", err)
-	}
-
-	// Encrypt and authenticate
-	// GCM Seal appends the authentication tag to the ciphertext
-	ciphertext := gcm.Seal(nil, nonce, plaintext, nil)
-
-	// Format: IV || ciphertext || tag
-	// Since Seal appends the tag, we have: ciphertext = encrypted_data || tag
-	result := make([]byte, len(nonce)+len(ciphertext))
-	copy(result, nonce)
-	copy(result[len(nonce):], ciphertext)
-
-	// Encode to base64
-	return base64.StdEncoding.EncodeToString(result), nil
+	return dotenv.Encrypt(string(plaintext), key)
 }
 
-// Decrypt decrypts ciphertext using AES-256-GCM
-// Expects base64 encoded string in format: base64(IV || ciphertext || tag)
+// Decrypt decrypts ciphertext using AES-256-GCM.
+//
+// Delegates to dotenv.Decrypt; see Encrypt for rationale.
 func (e *GCMEncryptor) Decrypt(ciphertext string, key []byte) ([]byte, error) {
-	// Validate key
 	if err := ValidateKey(key); err != nil {
 		return nil, err
 	}
-
-	// Apply key padding to ensure key is exactly 32 bytes
-	paddedKey := padKey(key)
-
-	// Decode from base64
-	data, err := base64.StdEncoding.DecodeString(ciphertext)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode base64: %w", err)
-	}
-
-	// Check minimum length (nonce + tag at least)
-	if len(data) < NonceSize+TagSize {
-		return nil, fmt.Errorf("ciphertext too short: minimum %d bytes required", NonceSize+TagSize)
-	}
-
-	// Extract components
-	nonce := data[:NonceSize]
-	ciphertextWithTag := data[NonceSize:]
-
-	// Create cipher block
-	block, err := aes.NewCipher(paddedKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create cipher: %w", err)
-	}
-
-	// Create GCM mode
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GCM: %w", err)
-	}
-
-	// Decrypt and verify
-	plaintext, err := gcm.Open(nil, nonce, ciphertextWithTag, nil)
+	plaintext, err := dotenv.Decrypt(ciphertext, key)
 	if err != nil {
 		return nil, fmt.Errorf("decryption failed: %w", err)
 	}
-
-	return plaintext, nil
+	return []byte(plaintext), nil
 }
 
 // EncryptWithIV encrypts with a specific IV (for testing compatibility)
-func (e *GCMEncryptor) EncryptWithIV(plaintext []byte, key []byte, iv []byte) (string, error) {
+func (e *GCMEncryptor) EncryptWithIV(plaintext, key, iv []byte) (string, error) {
 	// Validate inputs
 	if err := ValidateKey(key); err != nil {
 		return "", err
@@ -229,16 +167,16 @@ func KeyFromString(s string) ([]byte, error) {
 	}
 
 	// Otherwise use the raw string as bytes
-	if len(s) > 0 {
+	if s != "" {
 		return []byte(s), nil
 	}
 
 	return nil, fmt.Errorf("invalid key: empty string")
 }
 
-// DeriveKeyFromPassword derives a key from a password using PBKDF2
-func DeriveKeyFromPassword(password string, salt []byte) ([]byte, error) {
-	// This is now a wrapper around the key package implementation
-	// to maintain backward compatibility
+// DeriveKeyFromPassword derives a key from a password using PBKDF2.
+//
+// Deprecated: use github.com/dotenv/cli/internal/crypto/key.DeriveKey instead.
+func DeriveKeyFromPassword(_ string, _ []byte) ([]byte, error) {
 	return nil, fmt.Errorf("deprecated: use github.com/dotenv/cli/internal/crypto/key.DeriveKey instead")
 }

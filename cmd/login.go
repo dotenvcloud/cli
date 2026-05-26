@@ -51,6 +51,7 @@ Organization API Key (for CI/CD):
 	RunE: runLogin,
 }
 
+//nolint:gochecknoinits // cobra subcommand flag registration is idiomatic in init
 func init() {
 	// Add flags specific to login command
 	loginCmd.Flags().BoolVar(&loginNoBrowser, "no-browser", false,
@@ -85,7 +86,7 @@ func runLogin(cmd *cobra.Command, args []string) error {
 		// Check if there's a current account and use its API URL
 		if currentAccount, err := am.GetCurrent(); err == nil && currentAccount.APIURL != "" {
 			apiURL = currentAccount.APIURL
-			ui.PrintInfo("Using API URL from current account: %s", apiURL)
+			ui.PrintInfof("Using API URL from current account: %s", apiURL)
 		} else {
 			// Fall back to default
 			apiURL = getAPIURL()
@@ -110,8 +111,8 @@ func runLogin(cmd *cobra.Command, args []string) error {
 }
 
 func runAPIKeyLogin(am *config.AccountManager, apiURL string) error {
-	ui.PrintInfo("Organization API Key Authentication")
-	ui.PrintInfo("Use this method for CI/CD and automated workflows")
+	ui.PrintInfof("Organization API Key Authentication")
+	ui.PrintInfof("Use this method for CI/CD and automated workflows")
 
 	// Get API key
 	apiKey, err := ui.Password("Enter your organization API key")
@@ -121,8 +122,8 @@ func runAPIKeyLogin(am *config.AccountManager, apiURL string) error {
 
 	// Validate API key format
 	validator := config.NewValidator()
-	if err := validator.ValidateAPIKey(apiKey); err != nil {
-		return fmt.Errorf("invalid API key: %w", err)
+	if validateErr := validator.ValidateAPIKey(apiKey); validateErr != nil {
+		return fmt.Errorf("invalid API key: %w", validateErr)
 	}
 
 	// Get organization
@@ -154,9 +155,9 @@ func runAPIKeyLogin(am *config.AccountManager, apiURL string) error {
 		return fmt.Errorf("failed to set current account: %w", err)
 	}
 
-	ui.PrintSuccess("API key authentication successful!")
-	ui.PrintInfo("Current account: %s", accountName)
-	ui.PrintInfo("Organization: %s", organization)
+	ui.PrintSuccessf("API key authentication successful!")
+	ui.PrintInfof("Current account: %s", accountName)
+	ui.PrintInfof("Organization: %s", organization)
 
 	return nil
 }

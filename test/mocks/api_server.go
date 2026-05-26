@@ -10,8 +10,20 @@ import (
 	"strings"
 	"sync"
 
-	dotenv "github.com/dotenv/sdk-go"
+	dotenv "github.com/lostlink/dotenv-sdk-go"
 )
+
+const (
+	mockPathSegmentAPI = "api"
+	httpMethodGET      = "GET"
+)
+
+// writeJSON encodes v as JSON to w; intended for test-only mock handlers.
+func writeJSON(w http.ResponseWriter, v interface{}) {
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
 
 // MockAPIServer simulates the DotEnv API
 type MockAPIServer struct {
@@ -50,24 +62,7 @@ func (m *MockAPIServer) handler(w http.ResponseWriter, r *http.Request) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Record the call
-	call := APICall{
-		Method:  r.Method,
-		Path:    r.URL.Path,
-		Headers: make(map[string]string),
-	}
-
-	for k, v := range r.Header {
-		call.Headers[k] = strings.Join(v, ", ")
-	}
-
-	if r.Body != nil {
-		body, _ := io.ReadAll(r.Body)
-		call.Body = body
-		r.Body = io.NopCloser(bytes.NewReader(body))
-	}
-
-	m.calls = append(m.calls, call)
+	m.recordCall(r)
 
 	// Check authentication
 	if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
@@ -75,38 +70,50 @@ func (m *MockAPIServer) handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Route the request
+	m.route(w, r)
+}
+
+func (m *MockAPIServer) recordCall(r *http.Request) {
+	call := APICall{
+		Method:  r.Method,
+		Path:    r.URL.Path,
+		Headers: make(map[string]string),
+	}
+	for k, v := range r.Header {
+		call.Headers[k] = strings.Join(v, ", ")
+	}
+	if r.Body != nil {
+		body, _ := io.ReadAll(r.Body)
+		call.Body = body
+		r.Body = io.NopCloser(bytes.NewReader(body))
+	}
+	m.calls = append(m.calls, call)
+}
+
+func (m *MockAPIServer) route(w http.ResponseWriter, r *http.Request) {
 	switch {
-	case r.URL.Path == "/api/v1/organizations" && r.Method == "GET":
-		m.handleListOrganizations(w, r)
-
-	case strings.HasPrefix(r.URL.Path, "/api/v1/organizations/") && r.Method == "GET":
+	case r.URL.Path == "/api/v1/organizations" && r.Method == httpMethodGET:
+		m.handleListOrganizations(w)
+	case strings.HasPrefix(r.URL.Path, "/api/v1/organizations/") && r.Method == httpMethodGET:
 		m.handleGetOrganization(w, r)
-
-	case strings.Contains(r.URL.Path, "/projects") && r.Method == "GET":
+	case strings.Contains(r.URL.Path, "/projects") && r.Method == httpMethodGET:
 		m.handleListProjects(w, r)
-
-	case strings.Contains(r.URL.Path, "/secrets") && r.Method == "GET":
+	case strings.Contains(r.URL.Path, "/secrets") && r.Method == httpMethodGET:
 		m.handleGetSecrets(w, r)
-
 	case r.URL.Path == "/api/v1/secrets/retrieve" && r.Method == "POST":
 		m.handleRetrieveSecrets(w, r)
-
-	case strings.Contains(r.URL.Path, "/encryption-key") && r.Method == "GET":
+	case strings.Contains(r.URL.Path, "/encryption-key") && r.Method == httpMethodGET:
 		m.handleGetEncryptionKey(w, r)
-
 	default:
 		http.NotFound(w, r)
 	}
 }
 
-func (m *MockAPIServer) handleListOrganizations(w http.ResponseWriter, r *http.Request) {
-	resp := dotenv.JSONAPIResponse{
-		Data: []interface{}{},
-	}
-
-	for _, org := range m.organizations {
-		resp.Data = append(resp.Data, map[string]interface{}{
+func (m *MockAPIServer) handleListOrganizations(w http.ResponseWriter) {
+	data := make([]interface{}, 0, len(m.organizations))
+	for i := range m.organizations {
+		org := &m.organizations[i]
+		data = append(data, map[string]interface{}{
 			"type": "organizations",
 			"id":   org.ID,
 			"attributes": map[string]interface{}{
@@ -122,17 +129,18 @@ func (m *MockAPIServer) handleListOrganizations(w http.ResponseWriter, r *http.R
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, dotenv.JSONAPIResponse{Data: data})
 }
 
 func (m *MockAPIServer) handleGetOrganization(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(r.URL.Path, "/")
 	slug := parts[len(parts)-1]
 
-	for _, org := range m.organizations {
+	for i := range m.organizations {
+		org := &m.organizations[i]
 		if org.Slug == slug {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(org)
+			writeJSON(w, org)
 			return
 		}
 	}
@@ -157,12 +165,10 @@ func (m *MockAPIServer) handleListProjects(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	resp := dotenv.JSONAPIResponse{
-		Data: []interface{}{},
-	}
-
-	for _, proj := range projects {
-		resp.Data = append(resp.Data, map[string]interface{}{
+	data := make([]interface{}, 0, len(projects))
+	for i := range projects {
+		proj := &projects[i]
+		data = append(data, map[string]interface{}{
 			"type": "projects",
 			"id":   proj.ID,
 			"attributes": map[string]interface{}{
@@ -182,7 +188,7 @@ func (m *MockAPIServer) handleListProjects(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, dotenv.JSONAPIResponse{Data: data})
 }
 
 func (m *MockAPIServer) handleGetSecrets(w http.ResponseWriter, r *http.Request) {
@@ -191,7 +197,7 @@ func (m *MockAPIServer) handleGetSecrets(w http.ResponseWriter, r *http.Request)
 	projectSlug := ""
 
 	for i, p := range parts {
-		if p == "api" && i+2 < len(parts) {
+		if p == mockPathSegmentAPI && i+2 < len(parts) {
 			projectSlug = parts[i+2]
 			break
 		}
@@ -203,12 +209,9 @@ func (m *MockAPIServer) handleGetSecrets(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	resp := dotenv.JSONAPIResponse{
-		Data: []interface{}{},
-	}
-
+	data := make([]interface{}, 0, len(secrets))
 	for k, v := range secrets {
-		resp.Data = append(resp.Data, map[string]interface{}{
+		data = append(data, map[string]interface{}{
 			"type": "secrets",
 			"id":   fmt.Sprintf("secret-%s", k),
 			"attributes": map[string]interface{}{
@@ -217,9 +220,10 @@ func (m *MockAPIServer) handleGetSecrets(w http.ResponseWriter, r *http.Request)
 			},
 		})
 	}
+	resp := dotenv.JSONAPIResponse{Data: data}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp)
 }
 
 func (m *MockAPIServer) handleRetrieveSecrets(w http.ResponseWriter, r *http.Request) {
@@ -236,7 +240,7 @@ func (m *MockAPIServer) handleRetrieveSecrets(w http.ResponseWriter, r *http.Req
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(secrets)
+	writeJSON(w, secrets)
 }
 
 func (m *MockAPIServer) handleGetEncryptionKey(w http.ResponseWriter, r *http.Request) {
@@ -244,7 +248,7 @@ func (m *MockAPIServer) handleGetEncryptionKey(w http.ResponseWriter, r *http.Re
 	projectSlug := ""
 
 	for i, p := range parts {
-		if p == "api" && i+2 < len(parts) {
+		if p == mockPathSegmentAPI && i+2 < len(parts) {
 			projectSlug = parts[i+2]
 			break
 		}
@@ -269,7 +273,7 @@ func (m *MockAPIServer) handleGetEncryptionKey(w http.ResponseWriter, r *http.Re
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp)
 }
 
 // Helper methods to set up test data
@@ -357,8 +361,9 @@ func makeDefaultEncryptionKeys() map[string]string {
 	}
 }
 
-// SimulateError configures the server to return an error for specific requests
-func (m *MockAPIServer) SimulateError(path string, status int, message string) {
+// SimulateError configures the server to return an error for specific requests.
+// Currently a no-op placeholder; arguments are reserved for the future implementation.
+func (m *MockAPIServer) SimulateError(_ string, _ int, _ string) {
 	// This would require modifying the handler to check for error configurations
 	// For now, we'll keep it simple with the default behavior
 }

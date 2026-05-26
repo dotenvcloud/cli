@@ -11,43 +11,55 @@ import (
 	"github.com/dotenv/cli/internal/client"
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/ui"
-	dotenv "github.com/dotenv/sdk-go"
+	dotenv "github.com/lostlink/dotenv-sdk-go"
 )
 
-// getAPIClient returns a configured API client
+// apiClientFactory is the indirection seam tests use to swap in a fake
+// client. Default is buildAPIClient; tests override via t.Cleanup.
+var apiClientFactory = buildAPIClient
+
+// getAPIClient returns a configured API client. Behavior is identical to
+// the (now-deleted) getAPIClientWithoutOrgContext when withOrg is false.
 func getAPIClient() (*dotenv.Client, error) {
-	// Create factory
+	return apiClientFactory(true)
+}
+
+// getAPIClientWithoutOrgContext returns a client without enforcing that an
+// organization is selected — used by commands like "org list" that pre-date
+// org selection.
+func getAPIClientWithoutOrgContext() (*dotenv.Client, error) {
+	return apiClientFactory(false)
+}
+
+func buildAPIClient(withOrg bool) (*dotenv.Client, error) {
 	factory := client.NewFactory(config.GetAPIURL(""))
 
-	// Check for command-line flag override first
 	apiKey := viper.GetString("api_key")
-
-	// If not set via flag, check environment variable
 	if apiKey == "" {
 		apiKey = os.Getenv(config.EnvAPIKey)
 	}
 
-	// If API key is provided, bypass account system (for CI/CD)
+	// API key path bypasses account system (CI/CD).
 	if apiKey != "" {
 		apiURL := config.GetAPIURL("")
-		org := os.Getenv(config.EnvOrganization)
-
+		org := ""
+		if withOrg {
+			org = os.Getenv(config.EnvOrganization)
+		}
 		return factory.NewClientFromAPIKey(apiKey, apiURL, org), nil
 	}
 
-	// Get current account
 	account, err := getCurrentAccount()
 	if err != nil {
 		return nil, err
 	}
 
-	// Check organization context
-	orgULID := account.GetCurrentOrganizationULID()
-	if orgULID == "" {
-		return nil, fmt.Errorf("No organization selected. Run 'dotenv org list' to see available organizations.")
+	if withOrg {
+		if account.GetCurrentOrganizationULID() == "" {
+			return nil, fmt.Errorf("no organization selected. Run 'dotenv org list' to see available organizations")
+		}
 	}
 
-	// Handle OAuth token refresh if needed
 	if account.IsOAuth() {
 		configPath, err := config.ConfigPath()
 		if err != nil {
@@ -58,13 +70,11 @@ func getAPIClient() (*dotenv.Client, error) {
 			return nil, fmt.Errorf("failed to initialize account manager: %w", err)
 		}
 
-		// Use factory's refresh method
 		ctx := context.Background()
-		return factory.RefreshTokenAndCreateClient(ctx, account, am, true)
+		return factory.RefreshTokenAndCreateClient(ctx, account, am, withOrg)
 	}
 
-	// Create client from account (with organization context)
-	return factory.NewClientFromAccount(account, true)
+	return factory.NewClientFromAccount(account, withOrg)
 }
 
 // RefreshOrganizationsIfNeeded checks if organizations need refresh and refreshes them
@@ -96,10 +106,21 @@ func RefreshOrganizationsIfNeeded(ctx context.Context) error {
 	}
 
 	if orgRemoved {
-		ui.PrintWarning("Current organization no longer exists. Please select a new one with 'dotenv org use'")
+		ui.PrintWarningf("Current organization no longer exists. Please select a new one with 'dotenv org use'")
 	}
 
 	return nil
+}
+
+// accountForErrorContext returns the current account if available, surfacing a
+// warning when it cannot be loaded. Use in error-handling paths where the
+// account is needed only to enrich a subsequent error message.
+func accountForErrorContext() *config.Account {
+	account, err := getCurrentAccount()
+	if err != nil {
+		ui.PrintWarningf("account context unavailable: %v", err)
+	}
+	return account
 }
 
 // getCurrentAccount returns the current account
@@ -115,7 +136,7 @@ func getCurrentAccount() (*config.Account, error) {
 
 	account, err := am.GetCurrent()
 	if err != nil {
-		return nil, fmt.Errorf("No accounts configured. Run 'dotenv login' to add an account")
+		return nil, fmt.Errorf("no accounts configured. Run 'dotenv login' to add an account")
 	}
 
 	// TODO: Apply any environment overrides if needed
@@ -141,65 +162,12 @@ func displayAccountInfo() error {
 	}
 
 	if orgName != "" {
-		ui.PrintInfo("[Account: %s | Organization: %s]", account.Name, orgName)
+		ui.PrintInfof("[Account: %s | Organization: %s]", account.Name, orgName)
 	} else {
-		ui.PrintInfo("[Account: %s]", account.Name)
+		ui.PrintInfof("[Account: %s]", account.Name)
 	}
 
 	return nil
-}
-
-// ensureAuthenticated checks if we have valid credentials
-func ensureAuthenticated() error {
-	_, err := getCurrentAccount()
-	return err
-}
-
-// getAPIClientWithoutOrgContext returns a configured API client without organization context
-// This is useful for operations like listing organizations where we don't need/have an org selected
-func getAPIClientWithoutOrgContext() (*dotenv.Client, error) {
-	// Create factory
-	factory := client.NewFactory(config.GetAPIURL(""))
-
-	// Check for command-line flag override first
-	apiKey := viper.GetString("api_key")
-
-	// If not set via flag, check environment variable
-	if apiKey == "" {
-		apiKey = os.Getenv(config.EnvAPIKey)
-	}
-
-	// If API key is provided, bypass account system (for CI/CD)
-	if apiKey != "" {
-		apiURL := config.GetAPIURL("")
-		// Note: Not passing organization since this is for "without org context"
-		return factory.NewClientFromAPIKey(apiKey, apiURL, ""), nil
-	}
-
-	// Get current account
-	account, err := getCurrentAccount()
-	if err != nil {
-		return nil, err
-	}
-
-	// Handle OAuth token refresh if needed
-	if account.IsOAuth() {
-		configPath, err := config.ConfigPath()
-		if err != nil {
-			return nil, fmt.Errorf("failed to locate config directory: %w", err)
-		}
-		am, err := config.NewAccountManager(configPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize account manager: %w", err)
-		}
-
-		// Use factory's refresh method (without org context)
-		ctx := context.Background()
-		return factory.RefreshTokenAndCreateClient(ctx, account, am, false)
-	}
-
-	// Create client from account (without organization context)
-	return factory.NewClientFromAccount(account, false)
 }
 
 // getUnauthenticatedSDKClient returns an SDK client without authentication

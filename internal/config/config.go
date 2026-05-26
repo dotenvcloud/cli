@@ -123,9 +123,12 @@ func (c *Config) GetCurrentContext() (*Context, error) {
 }
 
 // AddAccount adds or updates an account
-func (c *Config) AddAccount(name string, account Account) error {
+func (c *Config) AddAccount(name string, account *Account) error {
 	if name == "" {
 		return fmt.Errorf("account name cannot be empty")
+	}
+	if account == nil {
+		return fmt.Errorf("account cannot be nil")
 	}
 
 	account.Name = name
@@ -136,7 +139,7 @@ func (c *Config) AddAccount(name string, account Account) error {
 		account.CreatedAt = time.Now()
 	}
 
-	c.Accounts[name] = account
+	c.Accounts[name] = *account
 
 	// Set as current if it's the first account
 	if len(c.Accounts) == 1 {
@@ -147,7 +150,7 @@ func (c *Config) AddAccount(name string, account Account) error {
 }
 
 // AddContext adds or updates a context (legacy)
-func (c *Config) AddContext(name string, context Context) error {
+func (c *Config) AddContext(_ string, _ *Context) error {
 	return fmt.Errorf("old configuration format detected. Please run 'dotenv init' to set up the new account system")
 }
 
@@ -173,7 +176,7 @@ func (c *Config) RemoveAccount(name string) error {
 }
 
 // RemoveContext removes a context (legacy)
-func (c *Config) RemoveContext(name string) error {
+func (c *Config) RemoveContext(_ string) error {
 	return fmt.Errorf("old configuration format detected. Please run 'dotenv init' to set up the new account system")
 }
 
@@ -213,7 +216,8 @@ func (c *Config) RenameAccount(oldName, newName string) error {
 }
 
 // RenameContext renames a context (legacy)
-func (c *Config) RenameContext(oldName, newName string) error {
+func (c *Config) RenameContext(_, newName string) error {
+	_ = newName
 	return fmt.Errorf("old configuration format detected. Please run 'dotenv init' to set up the new account system")
 }
 
@@ -228,7 +232,7 @@ func (c *Config) SetCurrentAccount(name string) error {
 }
 
 // SetCurrentContext sets the current active context (legacy)
-func (c *Config) SetCurrentContext(name string) error {
+func (c *Config) SetCurrentContext(_ string) error {
 	return fmt.Errorf("old configuration format detected. Please run 'dotenv init' to set up the new account system")
 }
 
@@ -261,7 +265,9 @@ func (c *Config) GetAPIURL() (string, error) {
 	return acct.APIURL, nil
 }
 
-// ConfigPath returns the default config file path
+// ConfigPath returns the default config file path.
+//
+//nolint:revive // keeping name for backwards compatibility with existing callers
 func ConfigPath() (string, error) {
 	home, err := UserHomeDir()
 	if err != nil {
@@ -271,7 +277,9 @@ func ConfigPath() (string, error) {
 	return filepath.Join(home, ".dotenv", "config.yaml"), nil
 }
 
-// ConfigDir returns the config directory path
+// ConfigDir returns the config directory path.
+//
+//nolint:revive // keeping name for backwards compatibility with existing callers
 func ConfigDir() (string, error) {
 	home, err := UserHomeDir()
 	if err != nil {

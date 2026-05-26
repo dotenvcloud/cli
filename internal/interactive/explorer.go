@@ -8,7 +8,7 @@ import (
 
 	"github.com/dotenv/cli/internal/hierarchy"
 	"github.com/dotenv/cli/internal/ui"
-	dotenv "github.com/dotenv/sdk-go"
+	dotenv "github.com/lostlink/dotenv-sdk-go"
 )
 
 // Action represents what to do with the selected resource
@@ -121,8 +121,7 @@ func (e *Explorer) buildOptions() []string {
 
 		// If this is a project or target, also allow actions including pull
 		if e.current.Type == hierarchy.NodeTypeProject || e.current.Type == hierarchy.NodeTypeTarget {
-			options = append(options, "") // Separator
-			options = append(options, "── Actions for "+e.current.Name+" ──")
+			options = append(options, "", "── Actions for "+e.current.Name+" ──") // Separator + header
 
 			// Customize pull option text based on level
 			levelName := "project"
@@ -141,8 +140,7 @@ func (e *Explorer) buildOptions() []string {
 	}
 
 	// Always add exit option
-	options = append(options, "") // Separator
-	options = append(options, "✗ Exit")
+	options = append(options, "", "✗ Exit") // Separator + exit
 
 	return options
 }
@@ -186,6 +184,8 @@ func (e *Explorer) formatNodeOption(node *hierarchy.Node) string {
 			label = fmt.Sprintf("%s [%s]", node.Name, status)
 		}
 		prefix = "🌿 "
+	case hierarchy.NodeTypeOrganization:
+		prefix = "🏢 "
 	}
 
 	return prefix + label
@@ -284,7 +284,7 @@ func (e *Explorer) navigateToChild(selected string) (Action, error) {
 			// Load children if needed
 			if len(child.Children) == 0 && child.Type != hierarchy.NodeTypeEnvironment {
 				if err := e.loadChildren(child); err != nil {
-					ui.PrintWarning("Failed to load children: %v", err)
+					ui.PrintWarningf("Failed to load children: %v", err)
 				}
 			}
 

@@ -51,6 +51,7 @@ The update command will:
 	RunE: runUpdate,
 }
 
+//nolint:gochecknoinits // cobra subcommand flag registration is idiomatic in init
 func init() {
 	updateCmd.Flags().BoolVar(&updateCheck, "check", false,
 		"only check for updates, don't install")
@@ -71,10 +72,10 @@ type ReleaseInfo struct {
 	} `json:"assets"`
 }
 
-func runUpdate(cmd *cobra.Command, args []string) error {
+func runUpdate(cmd *cobra.Command, _ []string) error {
 	currentVersion := build.GetInfo().Version
 
-	ui.PrintInfo("Current version: %s", currentVersion)
+	ui.PrintInfof("Current version: %s", currentVersion)
 
 	// Get latest release info
 	latest, err := getLatestRelease(cmd.Context())
@@ -97,11 +98,11 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	if !updateForce && !latestSemver.GreaterThan(current) {
-		ui.PrintSuccess("You are already on the latest version!")
+		ui.PrintSuccessf("You are already on the latest version!")
 		return nil
 	}
 
-	ui.PrintInfo("New version available: %s", latestVersion)
+	ui.PrintInfof("New version available: %s", latestVersion)
 
 	if updateCheck {
 		fmt.Println("\nRelease notes:")
@@ -118,7 +119,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		if !confirm {
-			ui.PrintInfo("Update cancelled")
+			ui.PrintInfof("Update canceled")
 			return nil
 		}
 	}
@@ -130,7 +131,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 func getLatestRelease(ctx context.Context) (*ReleaseInfo, error) {
 	url := "https://api.github.com/repos/dotenv/cli/releases/latest"
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
@@ -157,124 +158,125 @@ func getLatestRelease(ctx context.Context) (*ReleaseInfo, error) {
 }
 
 func installUpdate(ctx context.Context, release *ReleaseInfo) error {
-	// Determine asset name for current platform
-	assetName := fmt.Sprintf("dotenv_%s_%s_%s",
-		strings.TrimPrefix(release.TagName, "v"),
-		runtime.GOOS,
-		runtime.GOARCH,
-	)
-
-	if runtime.GOOS == "windows" {
-		assetName += ".exe"
-	}
-
-	// Find asset URL
-	var downloadURL string
-	for _, asset := range release.Assets {
-		if strings.Contains(asset.Name, assetName) {
-			downloadURL = asset.BrowserDownloadURL
-			break
-		}
-	}
-
-	if downloadURL == "" {
-		return fmt.Errorf("no release found for %s/%s", runtime.GOOS, runtime.GOARCH)
-	}
-
-	ui.PrintInfo("Downloading update...")
-
-	// Download to temp file
-	tmpFile, err := os.CreateTemp("", "dotenv-update-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmpFile.Name())
-
-	req, err := http.NewRequestWithContext(ctx, "GET", downloadURL, nil)
+	downloadURL, err := findReleaseAsset(release)
 	if err != nil {
 		return err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	ui.PrintInfof("Downloading update...")
+
+	tmpFile, err := downloadRelease(ctx, downloadURL)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer os.Remove(tmpFile)
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download failed: %d", resp.StatusCode)
+	if chmodErr := os.Chmod(tmpFile, 0o755); chmodErr != nil {
+		return chmodErr
 	}
 
-	// Show download progress
-	size := resp.ContentLength
-	if size > 0 {
-		ui.PrintInfo("Download size: %.2f MB", float64(size)/1024/1024)
-	}
-
-	_, err = io.Copy(tmpFile, resp.Body)
-	if err != nil {
-		return err
-	}
-
-	tmpFile.Close()
-
-	// Make executable
-	if err := os.Chmod(tmpFile.Name(), 0755); err != nil {
-		return err
-	}
-
-	// Get current executable path
 	exePath, err := os.Executable()
 	if err != nil {
 		return err
 	}
 
-	// Replace current binary
-	// On Windows, we need to rename first
-	if runtime.GOOS == "windows" {
-		backup := exePath + ".backup"
-		os.Remove(backup) // Remove any existing backup
-
-		if err := os.Rename(exePath, backup); err != nil {
-			return fmt.Errorf("failed to backup current binary: %w", err)
-		}
-
-		defer func() {
-			// Clean up backup on success
-			os.Remove(backup)
-		}()
+	if err := replaceBinary(tmpFile, exePath); err != nil {
+		return err
 	}
 
-	// Move new binary to current location
-	if err := os.Rename(tmpFile.Name(), exePath); err != nil {
-		// Try copying if rename fails (cross-device)
-		input, err := os.Open(tmpFile.Name())
-		if err != nil {
-			return err
-		}
-		defer input.Close()
-
-		output, err := os.Create(exePath)
-		if err != nil {
-			return err
-		}
-		defer output.Close()
-
-		if _, err := io.Copy(output, input); err != nil {
-			return err
-		}
-
-		if err := output.Chmod(0755); err != nil {
-			return err
-		}
-	}
-
-	ui.PrintSuccess("Successfully updated to version %s!", release.TagName)
-
-	// Show new version
+	ui.PrintSuccessf("Successfully updated to version %s!", release.TagName)
 	cmd := exec.Command(exePath, "version")
 	output, _ := cmd.Output()
 	fmt.Print(string(output))
-
 	return nil
+}
+
+func findReleaseAsset(release *ReleaseInfo) (string, error) {
+	assetName := fmt.Sprintf("dotenv_%s_%s_%s",
+		strings.TrimPrefix(release.TagName, "v"),
+		runtime.GOOS,
+		runtime.GOARCH,
+	)
+	if runtime.GOOS == platformWindows {
+		assetName += ".exe"
+	}
+	for _, asset := range release.Assets {
+		if strings.Contains(asset.Name, assetName) {
+			return asset.BrowserDownloadURL, nil
+		}
+	}
+	return "", fmt.Errorf("no release found for %s/%s", runtime.GOOS, runtime.GOARCH)
+}
+
+func downloadRelease(ctx context.Context, url string) (string, error) {
+	tmpFile, err := os.CreateTemp("", "dotenv-update-*")
+	if err != nil {
+		return "", err
+	}
+	tmpPath := tmpFile.Name()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	if err != nil {
+		_ = tmpFile.Close()
+		return "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		_ = tmpFile.Close()
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		_ = tmpFile.Close()
+		return "", fmt.Errorf("download failed: %d", resp.StatusCode)
+	}
+
+	if size := resp.ContentLength; size > 0 {
+		ui.PrintInfof("Download size: %.2f MB", float64(size)/1024/1024)
+	}
+
+	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
+		_ = tmpFile.Close()
+		return "", err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return "", err
+	}
+	return tmpPath, nil
+}
+
+func replaceBinary(srcPath, exePath string) error {
+	if runtime.GOOS == platformWindows {
+		backup := exePath + ".backup"
+		_ = os.Remove(backup)
+		if err := os.Rename(exePath, backup); err != nil {
+			return fmt.Errorf("failed to backup current binary: %w", err)
+		}
+		defer os.Remove(backup)
+	}
+
+	if err := os.Rename(srcPath, exePath); err == nil {
+		return nil
+	}
+	return copyFile(srcPath, exePath)
+}
+
+func copyFile(src, dst string) error {
+	input, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+
+	output, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer output.Close()
+
+	if _, err := io.Copy(output, input); err != nil {
+		return err
+	}
+	return output.Chmod(0o755)
 }

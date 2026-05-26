@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -14,7 +13,7 @@ import (
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/constants"
 	"github.com/dotenv/cli/internal/ui"
-	dotenv "github.com/dotenv/sdk-go"
+	dotenv "github.com/lostlink/dotenv-sdk-go"
 )
 
 var (
@@ -64,17 +63,18 @@ Resources:
   dotenv list all --paths`,
 
 	ValidArgs: []string{"organizations", "projects", "targets", "environments", "accounts", "all"},
-	PreRunE: func(cmd *cobra.Command, args []string) error {
+	PreRunE: func(cmd *cobra.Command, _ []string) error {
 		// Try to refresh organizations if needed
 		if err := RefreshOrganizationsIfNeeded(cmd.Context()); err != nil {
 			// Don't fail the command, just warn
-			ui.PrintWarning("Could not refresh organizations: %v", err)
+			ui.PrintWarningf("Could not refresh organizations: %v", err)
 		}
 		return nil
 	},
 	RunE: runList,
 }
 
+//nolint:gochecknoinits // cobra subcommand flag registration is idiomatic in init
 func init() {
 	listCmd.Flags().StringVar(&listOrganization, "organization", "",
 		"specify organization (overrides current account's organization)")
@@ -95,55 +95,57 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	// Handle deprecated --json flag
 	if listJSON {
-		listFormat = "json"
+		listFormat = formatJSON
 	}
 
 	resource := args[0]
 
 	// Display account/org info for resources that use API
 	// (not for "accounts" since that's local config)
-	if resource != "accounts" && viper.GetString("api_key") == "" && os.Getenv("DOTENV_API_KEY") == "" {
+	if resource != resourceAccounts && viper.GetString("api_key") == "" && os.Getenv("DOTENV_API_KEY") == "" {
 		if err := displayAccountInfo(); err != nil {
 			// Don't fail if we can't display account info
-			ui.PrintWarning("Could not display account info: %v", err)
+			ui.PrintWarningf("Could not display account info: %v", err)
 		}
 	}
 
-	switch resource {
-	case "accounts":
-		return listAccounts(cmd)
+	return dispatchListResource(cmd, resource, args)
+}
 
+func dispatchListResource(cmd *cobra.Command, resource string, args []string) error {
+	switch resource {
+	case resourceAccounts:
+		return listAccounts(cmd)
 	case "organizations":
 		return listOrganizations(cmd)
-
 	case "projects":
 		return listProjects(cmd, "")
-
-	case "targets":
+	case resourceTargets:
 		if len(args) < 2 {
 			return fmt.Errorf("project name required: use 'dotenv list targets <project>'")
 		}
 		return listTargets(cmd, args[1])
-
-	case "environments":
-		if len(args) < 2 {
-			return fmt.Errorf("project and target required: use 'dotenv list environments <project>/<target>'")
-		}
-		parts := strings.Split(args[1], "/")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid format '%s': expected 'project/target'", args[1])
-		}
-		return listEnvironments(cmd, parts[0], parts[1])
-
-	case "all":
+	case resourceEnvironments:
+		return listEnvironmentsFromArgs(cmd, args)
+	case resourceAll:
 		return listAll(cmd)
-
 	default:
-		return fmt.Errorf("unknown resource '%s': valid resources are accounts, organizations, projects, targets, environments, all, text", resource)
+		return fmt.Errorf("unknown resource '%s': valid resources are accounts, organizations, projects, targets, environments, all", resource)
 	}
 }
 
-func listAccounts(cmd *cobra.Command) error {
+func listEnvironmentsFromArgs(cmd *cobra.Command, args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("project and target required: use 'dotenv list environments <project>/<target>'")
+	}
+	parts := strings.Split(args[1], "/")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid format '%s': expected 'project/target'", args[1])
+	}
+	return listEnvironments(cmd, parts[0], parts[1])
+}
+
+func listAccounts(_ *cobra.Command) error {
 	configPath, err := config.ConfigPath()
 	if err != nil {
 		return err
@@ -156,7 +158,7 @@ func listAccounts(cmd *cobra.Command) error {
 	accounts := am.List()
 
 	if len(accounts) == 0 {
-		ui.PrintWarning("No accounts configured. Run 'dotenv init' to get started.")
+		ui.PrintWarningf("No accounts configured. Run 'dotenv init' to get started.")
 		return nil
 	}
 
@@ -167,123 +169,115 @@ func listAccounts(cmd *cobra.Command) error {
 	}
 
 	switch listFormat {
-	case "json":
-		// Build account details for JSON output
-		type accountInfo struct {
-			Name         string `json:"name"`
-			Type         string `json:"type"`
-			Organization string `json:"organization"`
-			APIURL       string `json:"api_url"`
-			Current      bool   `json:"current"`
-			UserEmail    string `json:"user_email,omitempty"`
-		}
-
-		accountList := []accountInfo{}
-		for _, name := range accounts {
-			account, err := am.Get(name)
-			if err != nil {
-				continue
-			}
-
-			info := accountInfo{
-				Name:    name,
-				Type:    account.AuthType,
-				APIURL:  account.APIURL,
-				Current: name == currentName,
-			}
-
-			if account.IsOAuth() {
-				org, err := account.GetCurrentOrganization()
-				if err == nil {
-					info.Organization = org.Name
-				}
-				// TODO: Store user email in account metadata
-			} else if account.Organization != nil {
-				info.Organization = account.Organization.Name
-			}
-
-			accountList = append(accountList, info)
-		}
-
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(accountList)
-
-	case "yaml":
-		// Simple YAML output
-		for _, name := range accounts {
-			account, err := am.Get(name)
-			if err != nil {
-				continue
-			}
-
-			fmt.Printf("- name: %s\n", name)
-			fmt.Printf("  type: %s\n", account.AuthType)
-
-			if account.IsOAuth() {
-				org, err := account.GetCurrentOrganization()
-				if err == nil {
-					fmt.Printf("  organization: %s\n", org.Name)
-				}
-				// TODO: Store and display user email in account metadata
-			} else if account.Organization != nil {
-				fmt.Printf("  organization: %s\n", account.Organization.Name)
-			}
-
-			fmt.Printf("  api_url: %s\n", account.APIURL)
-			fmt.Printf("  current: %v\n", name == currentName)
-			fmt.Println()
-		}
-		return nil
-
+	case formatJSON:
+		return renderAccountsJSON(am, accounts, currentName)
+	case formatYAML:
+		return renderAccountsYAML(am, accounts, currentName)
 	default:
-		// Table format
-		table := tablewriter.NewWriter(os.Stdout)
-		table.Header("NAME", "TYPE", "ORGANIZATION", "API URL", "CURRENT")
+		return renderAccountsTable(am, accounts, currentName)
+	}
+}
 
-		for _, name := range accounts {
-			account, err := am.Get(name)
-			if err != nil {
-				continue
-			}
+type accountInfo struct {
+	Name         string `json:"name"`
+	Type         string `json:"type"`
+	Organization string `json:"organization"`
+	APIURL       string `json:"api_url"`
+	Current      bool   `json:"current"`
+	UserEmail    string `json:"user_email,omitempty"`
+}
 
-			current := ""
-			if name == currentName {
-				current = "*"
-			}
+func accountOrgName(account *config.Account) string {
+	if account.IsOAuth() {
+		if org, err := account.GetCurrentOrganization(); err == nil {
+			return org.Name
+		}
+		return ""
+	}
+	if account.Organization != nil {
+		return account.Organization.Name
+	}
+	return ""
+}
 
-			authType := account.AuthType
-			if authType == "" {
-				authType = constants.AuthTypeAPIKey
-			}
+func renderAccountsJSON(am *config.AccountManager, accounts []string, currentName string) error {
+	accountList := []accountInfo{}
+	for _, name := range accounts {
+		account, err := am.Get(name)
+		if err != nil {
+			continue
+		}
+		accountList = append(accountList, accountInfo{
+			Name:         name,
+			Type:         account.AuthType,
+			APIURL:       account.APIURL,
+			Current:      name == currentName,
+			Organization: accountOrgName(account),
+		})
+	}
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(accountList)
+}
 
-			orgName := ""
-			if account.IsOAuth() {
-				org, err := account.GetCurrentOrganization()
-				if err == nil {
-					orgName = org.Name
-				}
-			} else if account.Organization != nil {
-				orgName = account.Organization.Name
-			}
+func renderAccountsYAML(am *config.AccountManager, accounts []string, currentName string) error {
+	for _, name := range accounts {
+		account, err := am.Get(name)
+		if err != nil {
+			continue
+		}
+		fmt.Printf("- name: %s\n", name)
+		fmt.Printf("  type: %s\n", account.AuthType)
+		if org := accountOrgName(account); org != "" {
+			fmt.Printf("  organization: %s\n", org)
+		}
+		fmt.Printf("  api_url: %s\n", account.APIURL)
+		fmt.Printf("  current: %v\n", name == currentName)
+		fmt.Println()
+	}
+	return nil
+}
 
-			apiURL := account.APIURL
-			if apiURL == constants.LegacyAPIURL {
-				apiURL = "default"
-			}
+func renderAccountsTable(am *config.AccountManager, accounts []string, currentName string) error {
+	table := tablewriter.NewWriter(os.Stdout)
+	table.Header("NAME", "TYPE", "ORGANIZATION", "API URL", "CURRENT")
 
-			table.Append([]string{
-				name,
-				authType,
-				orgName,
-				apiURL,
-				current,
-			})
+	for _, name := range accounts {
+		account, err := am.Get(name)
+		if err != nil {
+			continue
 		}
 
-		table.Render()
-		return nil
+		current := ""
+		if name == currentName {
+			current = "*"
+		}
+
+		authType := account.AuthType
+		if authType == "" {
+			authType = constants.AuthTypeAPIKey
+		}
+
+		apiURL := account.APIURL
+		if apiURL == constants.LegacyAPIURL {
+			apiURL = "default"
+		}
+
+		if err := table.Append([]string{
+			name,
+			authType,
+			accountOrgName(account),
+			apiURL,
+			current,
+		}); err != nil {
+			return fmt.Errorf("append account row: %w", err)
+		}
 	}
+
+	if err := table.Render(); err != nil {
+		return fmt.Errorf("render account table: %w", err)
+	}
+	return nil
 }
 
 func listOrganizations(cmd *cobra.Command) error {
@@ -293,103 +287,29 @@ func listOrganizations(cmd *cobra.Command) error {
 		return err
 	}
 
-	ui.PrintInfo("Fetching organizations...")
+	ui.PrintInfof("Fetching organizations...")
 
-	orgs, resp, err := client.Organizations.List(context.Background(), nil)
+	orgs, resp, err := client.Organizations.List(cmd.Context(), nil)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	if err != nil {
 		// Check if using API key authentication
 		if resp != nil && resp.StatusCode == 403 {
 			return fmt.Errorf("API key authentication only shows the organization tied to the key. Use OAuth for listing all organizations")
 		}
-		account, _ := getCurrentAccount()
-		return HandleAPIError(err, account)
+		return HandleAPIError(err, accountForErrorContext())
 	}
 
 	if len(orgs) == 0 {
-		ui.PrintWarning("No organizations found")
+		ui.PrintWarningf("No organizations found")
 		return nil
 	}
 
-	switch listFormat {
-	case "json":
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(orgs)
-
-	case "yaml":
-		// Simple YAML output
-		// Get current organization for comparison
-		account, _ := getCurrentAccount()
-		currentOrgID := ""
-		if account != nil {
-			if account.IsOAuth() && account.CurrentOrganization != "" {
-				currentOrgID = account.CurrentOrganization
-			} else if account.Organization != nil {
-				currentOrgID = account.Organization.ULID
-			}
-		}
-
-		for _, org := range orgs {
-			// Use ID if ULID is empty (API might return ULID in ID field)
-			ulid := org.ULID
-			if ulid == "" && org.ID != "" {
-				ulid = org.ID
-			}
-
-			fmt.Printf("- name: %s\n", org.Name)
-			fmt.Printf("  ulid: %s\n", ulid)
-			fmt.Printf("  plan: %s\n", org.PlanName)
-			fmt.Printf("  status: %s\n", org.Status)
-			if org.ID == currentOrgID || org.ULID == currentOrgID {
-				fmt.Printf("  current: true\n")
-			}
-			fmt.Println()
-		}
-		return nil
-
-	default:
-		// Table format
-		table := tablewriter.NewWriter(os.Stdout)
-		table.Header("NAME", "ULID", "PLAN", "STATUS", "CURRENT")
-
-		// Get current organization for comparison
-		account, _ := getCurrentAccount()
-		currentOrgID := ""
-		if account != nil {
-			if account.IsOAuth() && account.CurrentOrganization != "" {
-				currentOrgID = account.CurrentOrganization
-			} else if account.Organization != nil {
-				currentOrgID = account.Organization.ULID
-			}
-		}
-
-		for _, org := range orgs {
-			current := ""
-			if org.ID == currentOrgID || org.ULID == currentOrgID {
-				current = "*"
-			}
-
-			// Use ID if ULID is empty (API might return ULID in ID field)
-			ulid := org.ULID
-			if ulid == "" && org.ID != "" {
-				ulid = org.ID
-			}
-
-			table.Append([]string{
-				org.Name,
-				ulid,
-				org.PlanName,
-				org.Status,
-				current,
-			})
-		}
-
-		table.Render()
-		return nil
-	}
+	return renderOrgList(orgs, listFormat)
 }
 
-func listProjects(cmd *cobra.Command, orgSlug string) error {
+func listProjects(cmd *cobra.Command, _ string) error {
 	client, err := getAPIClient()
 	if err != nil {
 		return err
@@ -397,16 +317,18 @@ func listProjects(cmd *cobra.Command, orgSlug string) error {
 
 	// Note: organization context is already set in the client via getAPIClient()
 
-	ui.PrintInfo("Fetching projects...")
+	ui.PrintInfof("Fetching projects...")
 
-	projects, _, err := client.Projects.List(context.Background(), nil)
+	projects, projResp, err := client.Projects.List(cmd.Context(), nil)
+	if projResp != nil {
+		defer projResp.Body.Close()
+	}
 	if err != nil {
-		account, _ := getCurrentAccount()
-		return HandleAPIError(err, account)
+		return HandleAPIError(err, accountForErrorContext())
 	}
 
 	if len(projects) == 0 {
-		ui.PrintWarning("No projects found")
+		ui.PrintWarningf("No projects found")
 		return nil
 	}
 
@@ -419,59 +341,65 @@ func listProjects(cmd *cobra.Command, orgSlug string) error {
 	}
 
 	switch listFormat {
-	case "json":
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		if listWithPaths {
-			// Create enhanced output with paths
-			type projectWithPath struct {
-				*dotenv.Project
-				Path string `json:"path"`
-			}
-			enhanced := make([]projectWithPath, len(projects))
-			for i, p := range projects {
-				enhanced[i] = projectWithPath{
-					Project: p,
-					Path:    p.Slug,
-				}
-			}
-			return encoder.Encode(enhanced)
-		}
-		return encoder.Encode(projects)
-
-	case "yaml":
-		// Simple YAML output
-		for _, proj := range projects {
-			fmt.Printf("- name: %s\n", proj.Name)
-			fmt.Printf("  slug: %s\n", proj.Slug)
-			if listWithPaths {
-				fmt.Printf("  path: %s\n", proj.Slug)
-			}
-			fmt.Printf("  secrets: %d\n", proj.SecretCount)
-			fmt.Printf("  targets: %d\n", proj.TargetCount)
-			fmt.Printf("  environments: %d\n", proj.EnvironmentCount)
-			fmt.Println()
-		}
+	case formatJSON:
+		return renderProjectsJSON(projects)
+	case formatYAML:
+		renderProjectsYAML(projects)
 		return nil
-
 	default:
-		// Table format
-		table := tablewriter.NewWriter(os.Stdout)
-		table.Header("NAME", "SLUG", "SECRETS", "TARGETS", "ENVIRONMENTS")
-
-		for _, proj := range projects {
-			table.Append([]string{
-				proj.Name,
-				proj.Slug,
-				fmt.Sprintf("%d", proj.SecretCount),
-				fmt.Sprintf("%d", proj.TargetCount),
-				fmt.Sprintf("%d", proj.EnvironmentCount),
-			})
-		}
-
-		table.Render()
-		return nil
+		return renderProjectsTable(projects)
 	}
+}
+
+func renderProjectsJSON(projects []*dotenv.Project) error {
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	if !listWithPaths {
+		return encoder.Encode(projects)
+	}
+	type projectWithPath struct {
+		*dotenv.Project
+		Path string `json:"path"`
+	}
+	enhanced := make([]projectWithPath, len(projects))
+	for i, p := range projects {
+		enhanced[i] = projectWithPath{Project: p, Path: p.Slug}
+	}
+	return encoder.Encode(enhanced)
+}
+
+func renderProjectsYAML(projects []*dotenv.Project) {
+	for _, proj := range projects {
+		fmt.Printf("- name: %s\n", proj.Name)
+		fmt.Printf("  slug: %s\n", proj.Slug)
+		if listWithPaths {
+			fmt.Printf("  path: %s\n", proj.Slug)
+		}
+		fmt.Printf("  secrets: %d\n", proj.SecretCount)
+		fmt.Printf("  targets: %d\n", proj.TargetCount)
+		fmt.Printf("  environments: %d\n", proj.EnvironmentCount)
+		fmt.Println()
+	}
+}
+
+func renderProjectsTable(projects []*dotenv.Project) error {
+	table := tablewriter.NewWriter(os.Stdout)
+	table.Header("NAME", "SLUG", "SECRETS", "TARGETS", "ENVIRONMENTS")
+	for _, proj := range projects {
+		if err := table.Append([]string{
+			proj.Name,
+			proj.Slug,
+			fmt.Sprintf("%d", proj.SecretCount),
+			fmt.Sprintf("%d", proj.TargetCount),
+			fmt.Sprintf("%d", proj.EnvironmentCount),
+		}); err != nil {
+			return fmt.Errorf("append project row: %w", err)
+		}
+	}
+	if err := table.Render(); err != nil {
+		return fmt.Errorf("render project table: %w", err)
+	}
+	return nil
 }
 
 func listTargets(cmd *cobra.Command, projectSlug string) error {
@@ -480,15 +408,18 @@ func listTargets(cmd *cobra.Command, projectSlug string) error {
 		return err
 	}
 
-	ui.PrintInfo("Fetching targets from %s...", projectSlug)
+	ui.PrintInfof("Fetching targets from %s...", projectSlug)
 
-	targets, _, err := client.Targets.List(context.Background(), projectSlug, nil)
+	targets, tgtResp, err := client.Targets.List(cmd.Context(), projectSlug, nil)
+	if tgtResp != nil {
+		defer tgtResp.Body.Close()
+	}
 	if err != nil {
 		return fmt.Errorf("failed to list targets: %w", err)
 	}
 
 	if len(targets) == 0 {
-		ui.PrintWarning("No targets found")
+		ui.PrintWarningf("No targets found")
 		return nil
 	}
 
@@ -501,62 +432,70 @@ func listTargets(cmd *cobra.Command, projectSlug string) error {
 	}
 
 	switch listFormat {
-	case "json":
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		if listWithPaths {
-			// Create enhanced output with paths
-			type targetWithPath struct {
-				*dotenv.Target
-				Path string `json:"path"`
-			}
-			enhanced := make([]targetWithPath, len(targets))
-			for i, t := range targets {
-				enhanced[i] = targetWithPath{
-					Target: t,
-					Path:   fmt.Sprintf("%s/%s", projectSlug, t.Slug),
-				}
-			}
-			return encoder.Encode(enhanced)
-		}
-		return encoder.Encode(targets)
-
-	case "yaml":
-		// Simple YAML output
-		for _, target := range targets {
-			fmt.Printf("- name: %s\n", target.Name)
-			fmt.Printf("  slug: %s\n", target.Slug)
-			if listWithPaths {
-				fmt.Printf("  path: %s/%s\n", projectSlug, target.Slug)
-			}
-			if target.Description != "" {
-				fmt.Printf("  description: %s\n", target.Description)
-			}
-			fmt.Println()
-		}
+	case formatJSON:
+		return renderTargetsJSON(targets, projectSlug)
+	case formatYAML:
+		renderTargetsYAML(targets, projectSlug)
 		return nil
-
 	default:
-		// Table format
-		table := tablewriter.NewWriter(os.Stdout)
-		table.Header("NAME", "SLUG", "DESCRIPTION")
-
-		for _, target := range targets {
-			desc := target.Description
-			if len(desc) > 50 {
-				desc = desc[:47] + "..."
-			}
-
-			table.Append([]string{
-				target.Name,
-				target.Slug,
-				desc,
-			})
-		}
-
-		table.Render()
-		return nil
+		return renderTargetsTable(targets)
 	}
+}
+
+func renderTargetsJSON(targets []*dotenv.Target, projectSlug string) error {
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	if listWithPaths {
+		type targetWithPath struct {
+			*dotenv.Target
+			Path string `json:"path"`
+		}
+		enhanced := make([]targetWithPath, len(targets))
+		for i, t := range targets {
+			enhanced[i] = targetWithPath{
+				Target: t,
+				Path:   fmt.Sprintf("%s/%s", projectSlug, t.Slug),
+			}
+		}
+		return encoder.Encode(enhanced)
+	}
+	return encoder.Encode(targets)
+}
+
+func renderTargetsYAML(targets []*dotenv.Target, projectSlug string) {
+	for _, target := range targets {
+		fmt.Printf("- name: %s\n", target.Name)
+		fmt.Printf("  slug: %s\n", target.Slug)
+		if listWithPaths {
+			fmt.Printf("  path: %s/%s\n", projectSlug, target.Slug)
+		}
+		if target.Description != "" {
+			fmt.Printf("  description: %s\n", target.Description)
+		}
+		fmt.Println()
+	}
+}
+
+func renderTargetsTable(targets []*dotenv.Target) error {
+	table := tablewriter.NewWriter(os.Stdout)
+	table.Header("NAME", "SLUG", "DESCRIPTION")
+	for _, target := range targets {
+		desc := target.Description
+		if len(desc) > 50 {
+			desc = desc[:47] + "..."
+		}
+		if err := table.Append([]string{
+			target.Name,
+			target.Slug,
+			desc,
+		}); err != nil {
+			return fmt.Errorf("append target row: %w", err)
+		}
+	}
+	if err := table.Render(); err != nil {
+		return fmt.Errorf("render target table: %w", err)
+	}
+	return nil
 }
 
 func listEnvironments(cmd *cobra.Command, projectSlug, targetSlug string) error {
@@ -565,15 +504,18 @@ func listEnvironments(cmd *cobra.Command, projectSlug, targetSlug string) error 
 		return err
 	}
 
-	ui.PrintInfo("Fetching environments from %s/%s...", projectSlug, targetSlug)
+	ui.PrintInfof("Fetching environments from %s/%s...", projectSlug, targetSlug)
 
-	envs, _, err := client.Environments.List(context.Background(), projectSlug, targetSlug, nil)
+	envs, envResp, err := client.Environments.List(cmd.Context(), projectSlug, targetSlug, nil)
+	if envResp != nil {
+		defer envResp.Body.Close()
+	}
 	if err != nil {
 		return fmt.Errorf("failed to list environments: %w", err)
 	}
 
 	if len(envs) == 0 {
-		ui.PrintWarning("No environments found")
+		ui.PrintWarningf("No environments found")
 		return nil
 	}
 
@@ -586,64 +528,81 @@ func listEnvironments(cmd *cobra.Command, projectSlug, targetSlug string) error 
 	}
 
 	switch listFormat {
-	case "json":
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		if listWithPaths {
-			// Create enhanced output with paths
-			type envWithPath struct {
-				*dotenv.Environment
-				Path string `json:"path"`
-			}
-			enhanced := make([]envWithPath, len(envs))
-			for i, e := range envs {
-				enhanced[i] = envWithPath{
-					Environment: e,
-					Path:        fmt.Sprintf("%s/%s/%s", projectSlug, targetSlug, e.Slug),
-				}
-			}
-			return encoder.Encode(enhanced)
-		}
-		return encoder.Encode(envs)
-
-	case "yaml":
-		// Simple YAML output
-		for _, env := range envs {
-			fmt.Printf("- name: %s\n", env.Name)
-			fmt.Printf("  slug: %s\n", env.Slug)
-			if listWithPaths {
-				fmt.Printf("  path: %s/%s/%s\n", projectSlug, targetSlug, env.Slug)
-			}
-			fmt.Printf("  status: %s\n", env.Status)
-			if env.Description != "" {
-				fmt.Printf("  description: %s\n", env.Description)
-			}
-			fmt.Println()
-		}
+	case formatJSON:
+		return renderEnvsJSON(envs, projectSlug, targetSlug)
+	case formatYAML:
+		renderEnvsYAML(envs, projectSlug, targetSlug)
 		return nil
-
 	default:
-		// Table format
-		table := tablewriter.NewWriter(os.Stdout)
-		table.Header("NAME", "SLUG", "STATUS", "DESCRIPTION")
-
-		for _, env := range envs {
-			desc := env.Description
-			if len(desc) > 40 {
-				desc = desc[:37] + "..."
-			}
-
-			table.Append([]string{
-				env.Name,
-				env.Slug,
-				env.Status,
-				desc,
-			})
-		}
-
-		table.Render()
-		return nil
+		return renderEnvsTable(envs)
 	}
+}
+
+func renderEnvsJSON(envs []*dotenv.Environment, projectSlug, targetSlug string) error {
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	if listWithPaths {
+		type envWithPath struct {
+			*dotenv.Environment
+			Path string `json:"path"`
+		}
+		enhanced := make([]envWithPath, len(envs))
+		for i, e := range envs {
+			enhanced[i] = envWithPath{
+				Environment: e,
+				Path:        fmt.Sprintf("%s/%s/%s", projectSlug, targetSlug, e.Slug),
+			}
+		}
+		return encoder.Encode(enhanced)
+	}
+	return encoder.Encode(envs)
+}
+
+func renderEnvsYAML(envs []*dotenv.Environment, projectSlug, targetSlug string) {
+	for _, env := range envs {
+		fmt.Printf("- name: %s\n", env.Name)
+		fmt.Printf("  slug: %s\n", env.Slug)
+		if listWithPaths {
+			fmt.Printf("  path: %s/%s/%s\n", projectSlug, targetSlug, env.Slug)
+		}
+		fmt.Printf("  status: %s\n", env.Status)
+		if env.Description != "" {
+			fmt.Printf("  description: %s\n", env.Description)
+		}
+		fmt.Println()
+	}
+}
+
+func renderEnvsTable(envs []*dotenv.Environment) error {
+	table := tablewriter.NewWriter(os.Stdout)
+	table.Header("NAME", "SLUG", "STATUS", "DESCRIPTION")
+	for _, env := range envs {
+		desc := env.Description
+		if len(desc) > 40 {
+			desc = desc[:37] + "..."
+		}
+		if err := table.Append([]string{
+			env.Name,
+			env.Slug,
+			env.Status,
+			desc,
+		}); err != nil {
+			return fmt.Errorf("append env row: %w", err)
+		}
+	}
+	if err := table.Render(); err != nil {
+		return fmt.Errorf("render env table: %w", err)
+	}
+	return nil
+}
+
+type resourceInfo struct {
+	Type        string
+	Path        string
+	Name        string
+	Description string
+	Status      string
+	Count       int
 }
 
 func listAll(cmd *cobra.Command) error {
@@ -657,65 +616,85 @@ func listAll(cmd *cobra.Command) error {
 		return err
 	}
 
-	// Get organization
 	orgIdentifier, err := account.GetOrganizationIdentifier()
 	if err != nil {
 		return fmt.Errorf("failed to get organization: %w", err)
 	}
 
-	ui.PrintInfo("Fetching all resources from %s...", orgIdentifier)
+	ui.PrintInfof("Fetching all resources from %s...", orgIdentifier)
 
-	// Fetch all projects
-	projects, _, err := client.Projects.List(context.Background(), nil)
+	projects, projResp, err := client.Projects.List(cmd.Context(), nil)
+	if projResp != nil {
+		defer projResp.Body.Close()
+	}
 	if err != nil {
-		account, _ := getCurrentAccount()
-		return HandleAPIError(err, account)
+		return HandleAPIError(err, accountForErrorContext())
 	}
 
-	// Handle --paths flag
 	if listPaths {
-		// Just output paths
-		for _, project := range projects {
-			fmt.Println(project.Slug)
-
-			// Fetch targets for this project
-			targets, _, err := client.Targets.List(context.Background(), project.Slug, nil)
-			if err != nil {
-				ui.PrintWarning("Failed to fetch targets for %s: %v", project.Slug, err)
-				continue
-			}
-
-			for _, target := range targets {
-				fmt.Printf("%s/%s\n", project.Slug, target.Slug)
-
-				// Fetch environments for this target
-				envs, _, err := client.Environments.List(context.Background(), project.Slug, target.Slug, nil)
-				if err != nil {
-					ui.PrintWarning("Failed to fetch environments for %s/%s: %v", project.Slug, target.Slug, err)
-					continue
-				}
-
-				for _, env := range envs {
-					fmt.Printf("%s/%s/%s\n", project.Slug, target.Slug, env.Slug)
-				}
-			}
-		}
+		printAllPaths(cmd, client, projects)
 		return nil
 	}
 
-	// Collect all resources
-	type resourceInfo struct {
-		Type        string
-		Path        string
-		Name        string
-		Description string
-		Status      string
-		Count       int
+	resources := collectAllResources(cmd, client, projects)
+	if len(resources) == 0 {
+		ui.PrintWarningf("No resources found")
+		return nil
 	}
 
-	var resources []resourceInfo
+	switch listFormat {
+	case formatJSON:
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(resources)
+	case formatYAML:
+		renderAllYAML(resources)
+		return nil
+	default:
+		return renderAllTable(resources)
+	}
+}
 
-	// Add projects
+func printAllPaths(cmd *cobra.Command, client *dotenv.Client, projects []*dotenv.Project) {
+	for _, project := range projects {
+		fmt.Println(project.Slug)
+		if err := printProjectPaths(cmd, client, project); err != nil {
+			ui.PrintWarningf("%v", err)
+		}
+	}
+}
+
+func printProjectPaths(cmd *cobra.Command, client *dotenv.Client, project *dotenv.Project) error {
+	targets, tgtResp, err := client.Targets.List(cmd.Context(), project.Slug, nil)
+	if tgtResp != nil {
+		defer tgtResp.Body.Close()
+	}
+	if err != nil {
+		return fmt.Errorf("failed to fetch targets for %s: %w", project.Slug, err)
+	}
+	for _, target := range targets {
+		fmt.Printf("%s/%s\n", project.Slug, target.Slug)
+		printTargetEnvPaths(cmd, client, project.Slug, target.Slug)
+	}
+	return nil
+}
+
+func printTargetEnvPaths(cmd *cobra.Command, client *dotenv.Client, projectSlug, targetSlug string) {
+	envs, envResp, envErr := client.Environments.List(cmd.Context(), projectSlug, targetSlug, nil)
+	if envResp != nil {
+		defer envResp.Body.Close()
+	}
+	if envErr != nil {
+		ui.PrintWarningf("Failed to fetch environments for %s/%s: %v", projectSlug, targetSlug, envErr)
+		return
+	}
+	for _, env := range envs {
+		fmt.Printf("%s/%s/%s\n", projectSlug, targetSlug, env.Slug)
+	}
+}
+
+func collectAllResources(cmd *cobra.Command, client *dotenv.Client, projects []*dotenv.Project) []resourceInfo {
+	var resources []resourceInfo
 	for _, project := range projects {
 		resources = append(resources, resourceInfo{
 			Type:  "Project",
@@ -723,100 +702,100 @@ func listAll(cmd *cobra.Command) error {
 			Name:  project.Name,
 			Count: project.SecretCount,
 		})
-
-		// Fetch targets for this project
-		targets, _, err := client.Targets.List(context.Background(), project.Slug, nil)
-		if err != nil {
-			ui.PrintWarning("Failed to fetch targets for %s: %v", project.Slug, err)
-			continue
-		}
-
-		for _, target := range targets {
-			resources = append(resources, resourceInfo{
-				Type:        "Target",
-				Path:        fmt.Sprintf("%s/%s", project.Slug, target.Slug),
-				Name:        target.Name,
-				Description: target.Description,
-			})
-
-			// Fetch environments for this target
-			envs, _, err := client.Environments.List(context.Background(), project.Slug, target.Slug, nil)
-			if err != nil {
-				ui.PrintWarning("Failed to fetch environments for %s/%s: %v", project.Slug, target.Slug, err)
-				continue
-			}
-
-			for _, env := range envs {
-				resources = append(resources, resourceInfo{
-					Type:        "Environment",
-					Path:        fmt.Sprintf("%s/%s/%s", project.Slug, target.Slug, env.Slug),
-					Name:        env.Name,
-					Description: env.Description,
-					Status:      env.Status,
-				})
-			}
-		}
+		resources = append(resources, collectProjectTargets(cmd, client, project)...)
 	}
+	return resources
+}
 
-	if len(resources) == 0 {
-		ui.PrintWarning("No resources found")
+func collectProjectTargets(cmd *cobra.Command, client *dotenv.Client, project *dotenv.Project) []resourceInfo {
+	targets, tgtResp, err := client.Targets.List(cmd.Context(), project.Slug, nil)
+	if tgtResp != nil {
+		defer tgtResp.Body.Close()
+	}
+	if err != nil {
+		ui.PrintWarningf("Failed to fetch targets for %s: %v", project.Slug, err)
 		return nil
 	}
+	var resources []resourceInfo
+	for _, target := range targets {
+		resources = append(resources, resourceInfo{
+			Type:        "Target",
+			Path:        fmt.Sprintf("%s/%s", project.Slug, target.Slug),
+			Name:        target.Name,
+			Description: target.Description,
+		})
+		resources = append(resources, collectTargetEnvs(cmd, client, project.Slug, target.Slug)...)
+	}
+	return resources
+}
 
-	switch listFormat {
-	case "json":
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(resources)
-
-	case "yaml":
-		// Simple YAML output
-		for _, r := range resources {
-			fmt.Printf("- type: %s\n", r.Type)
-			fmt.Printf("  path: %s\n", r.Path)
-			fmt.Printf("  name: %s\n", r.Name)
-			if r.Description != "" {
-				fmt.Printf("  description: %s\n", r.Description)
-			}
-			if r.Status != "" {
-				fmt.Printf("  status: %s\n", r.Status)
-			}
-			if r.Count > 0 {
-				fmt.Printf("  secrets: %d\n", r.Count)
-			}
-			fmt.Println()
-		}
-		return nil
-
-	default:
-		// Table format
-		table := tablewriter.NewWriter(os.Stdout)
-		table.Header("TYPE", "PATH", "NAME", "STATUS", "DETAILS")
-
-		for _, r := range resources {
-			details := r.Description
-			if r.Count > 0 {
-				details = fmt.Sprintf("%d secrets", r.Count)
-			}
-			if len(details) > 40 {
-				details = details[:37] + "..."
-			}
-
-			status := r.Status
-			if status == "" && r.Type != "Environment" {
-				status = "-"
-			}
-
-			table.Append([]string{
-				r.Type,
-				r.Path,
-				r.Name,
-				status,
-				details,
-			})
-		}
-
-		table.Render()
+func collectTargetEnvs(cmd *cobra.Command, client *dotenv.Client, projectSlug, targetSlug string) []resourceInfo {
+	envs, envResp, envErr := client.Environments.List(cmd.Context(), projectSlug, targetSlug, nil)
+	if envResp != nil {
+		defer envResp.Body.Close()
+	}
+	if envErr != nil {
+		ui.PrintWarningf("Failed to fetch environments for %s/%s: %v", projectSlug, targetSlug, envErr)
 		return nil
 	}
+	var resources []resourceInfo
+	for _, env := range envs {
+		resources = append(resources, resourceInfo{
+			Type:        "Environment",
+			Path:        fmt.Sprintf("%s/%s/%s", projectSlug, targetSlug, env.Slug),
+			Name:        env.Name,
+			Description: env.Description,
+			Status:      env.Status,
+		})
+	}
+	return resources
+}
+
+func renderAllYAML(resources []resourceInfo) {
+	for _, r := range resources {
+		fmt.Printf("- type: %s\n", r.Type)
+		fmt.Printf("  path: %s\n", r.Path)
+		fmt.Printf("  name: %s\n", r.Name)
+		if r.Description != "" {
+			fmt.Printf("  description: %s\n", r.Description)
+		}
+		if r.Status != "" {
+			fmt.Printf("  status: %s\n", r.Status)
+		}
+		if r.Count > 0 {
+			fmt.Printf("  secrets: %d\n", r.Count)
+		}
+		fmt.Println()
+	}
+}
+
+func renderAllTable(resources []resourceInfo) error {
+	table := tablewriter.NewWriter(os.Stdout)
+	table.Header("TYPE", "PATH", "NAME", "STATUS", "DETAILS")
+	for _, r := range resources {
+		details := r.Description
+		if r.Count > 0 {
+			details = fmt.Sprintf("%d secrets", r.Count)
+		}
+		if len(details) > 40 {
+			details = details[:37] + "..."
+		}
+		status := r.Status
+		if status == "" && r.Type != "Environment" {
+			status = "-"
+		}
+		if err := table.Append([]string{
+			r.Type,
+			r.Path,
+			r.Name,
+			status,
+			details,
+		}); err != nil {
+			return fmt.Errorf("append resource row: %w", err)
+		}
+	}
+	if err := table.Render(); err != nil {
+		return fmt.Errorf("render resource table: %w", err)
+	}
+	return nil
 }

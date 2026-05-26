@@ -1,11 +1,9 @@
 linters:
   enable:
     - bodyclose
-    - depguard
     - dogsled
     - dupl
     - errcheck
-    - exportloopref
     - exhaustive
     - funlen
     - gochecknoinits
@@ -14,7 +12,6 @@ linters:
     - gocyclo
     - gofmt
     - goimports
-    - gomnd
     - goprintffuncname
     - gosec
     - gosimple
@@ -35,19 +32,16 @@ linters:
     - whitespace
 
 linters-settings:
-  depguard:
-    list-type: blacklist
-    packages:
-      - github.com/sirupsen/logrus
-    packages-with-error-message:
-      - github.com/sirupsen/logrus: "logging is allowed only by zerolog"
   dupl:
     threshold: 100
   funlen:
     lines: 100
     statements: 50
   gci:
-    local-prefixes: github.com/lostlink/dotenv-cli
+    sections:
+      - standard
+      - default
+      - prefix(github.com/lostlink/dotenv-cli)
   goconst:
     min-len: 2
     min-occurrences: 2
@@ -68,15 +62,12 @@ linters-settings:
     min-complexity: 15
   goimports:
     local-prefixes: github.com/lostlink/dotenv-cli
-  gomnd:
-    settings:
-      mnd:
-        checks: argument,case,condition,operation,return,assign
   gosec:
     excludes:
       - G204  # Subprocess launched with variable
   govet:
-    check-shadowing: true
+    enable:
+      - shadow
   lll:
     line-length: 140
   maligned:

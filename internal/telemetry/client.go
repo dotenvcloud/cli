@@ -8,9 +8,12 @@ import (
 	"sync"
 	"time"
 
-	dotenv "github.com/dotenv/sdk-go"
 	"github.com/google/uuid"
+	dotenv "github.com/lostlink/dotenv-sdk-go"
 )
+
+// cliVersionKey is a context key for the CLI version, typed to avoid string key collisions.
+type cliVersionKey struct{}
 
 // Event represents a telemetry event
 type Event struct {
@@ -164,7 +167,8 @@ func (c *Client) sendBatch(events []Event) {
 
 	// Convert our Event type to SDK's TelemetryEvent type
 	sdkEvents := make([]dotenv.TelemetryEvent, len(events))
-	for i, event := range events {
+	for i := range events {
+		event := &events[i]
 		sdkEvents[i] = dotenv.TelemetryEvent{
 			ID:         event.ID,
 			Name:       event.Name,
@@ -185,7 +189,7 @@ func (c *Client) sendBatch(events []Event) {
 	defer cancel()
 
 	// Add CLI version to context for the SDK to use
-	ctx = context.WithValue(ctx, "cli-version", "1.0.0") // TODO: Get from version package
+	ctx = context.WithValue(ctx, cliVersionKey{}, "1.0.0") // TODO: Get from version package
 
 	// Use SDK to send batch
 	_, err := c.sdkClient.Telemetry.SendBatch(ctx, sdkEvents)
@@ -231,19 +235,25 @@ func (c *Client) TrackError(command string, err error) {
 	// Sanitize error message to remove sensitive data
 	errMsg := fmt.Sprintf("%T", err)
 
-	c.Track("cli.error", map[string]interface{}{
+	if err := c.Track("cli.error", map[string]interface{}{
 		"command":    command,
 		"error_type": errMsg,
 		"os":         runtime.GOOS,
 		"arch":       runtime.GOARCH,
-	})
+	}); err != nil {
+		// Telemetry is best-effort; ignore submission failures.
+		_ = err
+	}
 }
 
 // TrackCommand tracks a command execution
 func (c *Client) TrackCommand(command string, duration time.Duration, success bool) {
-	c.Track("cli.command", map[string]interface{}{
+	if err := c.Track("cli.command", map[string]interface{}{
 		"command":  command,
 		"duration": duration.Milliseconds(),
 		"success":  success,
-	})
+	}); err != nil {
+		// Telemetry is best-effort; ignore submission failures.
+		_ = err
+	}
 }

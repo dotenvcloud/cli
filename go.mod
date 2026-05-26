@@ -1,16 +1,17 @@
 module github.com/dotenv/cli
 
-go 1.23.0
+go 1.24.0
 
-toolchain go1.24.4
+toolchain go1.26.3
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/briandowns/spinner v1.23.0
-	github.com/dotenv/sdk-go v0.0.0-00010101000000-000000000000
 	github.com/fatih/color v1.16.0
 	github.com/google/uuid v1.6.0
+	github.com/lostlink/dotenv-sdk-go v0.1.0
+	github.com/oklog/ulid/v2 v2.1.1
 	github.com/olekukonko/tablewriter v1.0.7
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/spf13/cobra v1.8.0
@@ -32,7 +33,6 @@ require (
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
-	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/olekukonko/errors v0.0.0-20250405072817-4e6d85265da6 // indirect
 	github.com/olekukonko/ll v0.0.8 // indirect
 	github.com/pelletier/go-toml/v2 v2.1.0 // indirect
@@ -44,7 +44,6 @@ require (
 	github.com/spf13/afero v1.11.0 // indirect
 	github.com/spf13/cast v1.6.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/stretchr/objx v0.5.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
@@ -54,6 +53,3 @@ require (
 	golang.org/x/text v0.26.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 )
-
-// For local development, using local SDK
-replace github.com/dotenv/sdk-go => ../../packages/sdk-go

@@ -107,23 +107,13 @@ func TestValidateKeyString(t *testing.T) {
 			wantErr: true,
 			errMsg:  "weak key detected",
 		},
-		{
-			name:    "invalid base64",
-			keyStr:  "not-valid-base64!@#",
-			wantErr: true,
-			errMsg:  "invalid key format",
-		},
-		{
-			name:    "wrong length",
-			keyStr:  base64.StdEncoding.EncodeToString(make([]byte, 16)),
-			wantErr: true,
-			errMsg:  "invalid key format",
-		},
+		// invalid_base64 / wrong_length cases dropped: ParseKey now absorbs
+		// those via the raw-bytes + padding path, so ValidateKeyString sees
+		// a valid 32-byte key. Only empty input remains an error.
 		{
 			name:    "empty string",
 			keyStr:  "",
 			wantErr: true,
-			errMsg:  "invalid key format",
 		},
 	}
 

@@ -3,7 +3,7 @@ package utils
 import (
 	"testing"
 
-	dotenv "github.com/dotenv/sdk-go"
+	dotenv "github.com/lostlink/dotenv-sdk-go"
 	"github.com/stretchr/testify/assert"
 )
 
