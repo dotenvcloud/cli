@@ -72,7 +72,7 @@ jobs:
         run: make completions
 
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v5
+        uses: goreleaser/goreleaser-action@v7
         with:
           version: latest
           args: release --clean
