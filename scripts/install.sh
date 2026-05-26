@@ -25,6 +25,7 @@ INSTALL_DIR_ROOT="/usr/local/bin"
 INSTALL_DIR_USER="$HOME/.local/bin"
 BINARY_NAME="dotenv"
 INSTALL_URL="https://dotenv.cloud/install.sh"
+DRY_RUN=0
 
 # Helper functions
 info() {
@@ -74,13 +75,18 @@ install_dotenv() {
     OS=$(detect_os)
     ARCH=$(detect_arch)
     VERSION=$(get_latest_version)
-    
+
     if [ -z "$VERSION" ]; then
-        error "Failed to get latest version"
+        if [ "$DRY_RUN" = "1" ]; then
+            warn "Could not determine latest version (no releases yet?); using placeholder for dry-run"
+            VERSION="v0.0.0"
+        else
+            error "Failed to get latest version"
+        fi
     fi
-    
+
     info "Installing DotEnv CLI $VERSION for $OS/$ARCH..."
-    
+
     # Construct download URL
     FILENAME="dotenv-cli_${VERSION#v}_${OS}_${ARCH}"
     if [ "$OS" = "windows" ]; then
@@ -88,13 +94,20 @@ install_dotenv() {
     else
         FILENAME="${FILENAME}.tar.gz"
     fi
-    
+
     DOWNLOAD_URL="https://github.com/$GITHUB_REPO/releases/download/$VERSION/$FILENAME"
-    
+
+    if [ "$DRY_RUN" = "1" ]; then
+        info "Dry-run: would download $DOWNLOAD_URL"
+        info "Dry-run: would install to ${INSTALL_DIR_ROOT} (fallback ${INSTALL_DIR_USER})"
+        info "Dry-run: skipping download and install"
+        return 0
+    fi
+
     # Create temporary directory
     TMP_DIR=$(mktemp -d)
     trap "rm -rf $TMP_DIR" EXIT
-    
+
     # Download binary
     info "Downloading from $DOWNLOAD_URL..."
     if ! curl -sL "$DOWNLOAD_URL" -o "$TMP_DIR/$FILENAME"; then
@@ -158,15 +171,35 @@ install_dotenv() {
 
 # Main
 main() {
+    # Parse args
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --dry-run)
+                DRY_RUN=1
+                shift
+                ;;
+            -h|--help)
+                echo "Usage: install.sh [--dry-run]"
+                exit 0
+                ;;
+            *)
+                error "Unknown argument: $1"
+                ;;
+        esac
+    done
+
     echo "DotEnv CLI Installer"
     echo "===================="
     echo
-    
+    if [ "$DRY_RUN" = "1" ]; then
+        info "Running in dry-run mode (no changes will be made)"
+    fi
+
     # Check for curl
     if ! command -v curl >/dev/null 2>&1; then
         error "curl is required but not installed"
     fi
-    
+
     # Install
     install_dotenv
     
