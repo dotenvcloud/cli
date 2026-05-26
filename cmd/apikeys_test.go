@@ -13,7 +13,7 @@ import (
 
 	"github.com/dotenv/cli/cmd"
 	"github.com/dotenv/cli/test/helpers"
-	dotenv "github.com/dotenv/sdk-go"
+	dotenv "github.com/lostlink/dotenv-sdk-go"
 )
 
 func TestAPIKeysListCommand(t *testing.T) {

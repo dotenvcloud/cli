@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	dotenv "github.com/dotenv/sdk-go"
+	dotenv "github.com/lostlink/dotenv-sdk-go"
 	"github.com/google/uuid"
 )
 

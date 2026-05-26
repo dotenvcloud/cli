@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	dotenv "github.com/dotenv/sdk-go"
+	dotenv "github.com/lostlink/dotenv-sdk-go"
 	"github.com/oklog/ulid/v2"
 )
 

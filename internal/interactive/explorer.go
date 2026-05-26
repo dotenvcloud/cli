@@ -8,7 +8,7 @@ import (
 
 	"github.com/dotenv/cli/internal/hierarchy"
 	"github.com/dotenv/cli/internal/ui"
-	dotenv "github.com/dotenv/sdk-go"
+	dotenv "github.com/lostlink/dotenv-sdk-go"
 )
 
 // Action represents what to do with the selected resource

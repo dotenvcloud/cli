@@ -20,7 +20,7 @@ import (
 	jsonformat "github.com/dotenv/cli/internal/formats/json"
 	"github.com/dotenv/cli/internal/formats/yaml"
 	"github.com/dotenv/cli/internal/ui"
-	dotenv "github.com/dotenv/sdk-go"
+	dotenv "github.com/lostlink/dotenv-sdk-go"
 )
 
 var (

@@ -12,7 +12,7 @@ import (
 	"github.com/dotenv/cli/internal/client"
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/ui"
-	dotenv "github.com/dotenv/sdk-go"
+	dotenv "github.com/lostlink/dotenv-sdk-go"
 )
 
 var (

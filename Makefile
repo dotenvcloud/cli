@@ -144,23 +144,8 @@ update-deps:
 	go get -u ./...
 	go mod tidy
 
-# Run SDK tests
-test-sdk:
-	@echo "Running SDK tests..."
-	@cd ../../packages/sdk-go && go test -v ./...
-
-# Run SDK integration tests
-test-sdk-integration:
-	@echo "Running SDK integration tests..."
-	@cd ../../packages/sdk-go && go test -v -tags=integration ./...
-
-# Run SDK benchmarks
-test-sdk-bench:
-	@echo "Running SDK benchmarks..."
-	@cd ../../packages/sdk-go && go test -bench=. -benchmem ./...
-
-# Run all tests including SDK
-test-all: test test-compatibility test-sdk test-sdk-integration
+# Run all tests
+test-all: test test-compatibility
 	@echo "All tests complete"
 
 # Run CI pipeline locally

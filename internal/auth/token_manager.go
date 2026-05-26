@@ -10,7 +10,7 @@ import (
 	"github.com/dotenv/cli/internal/constants"
 	"github.com/dotenv/cli/internal/errors"
 	"github.com/dotenv/cli/internal/utils"
-	dotenv "github.com/dotenv/sdk-go"
+	dotenv "github.com/lostlink/dotenv-sdk-go"
 )
 
 // TokenManager handles OAuth token refresh and validation

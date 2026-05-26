@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	dotenv "github.com/dotenv/sdk-go"
+	dotenv "github.com/lostlink/dotenv-sdk-go"
 )
 
 // MockAPIServer simulates the DotEnv API
