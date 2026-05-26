@@ -68,11 +68,12 @@ jobs:
         flags: cli
         name: cli-${{ matrix.os }}-${{ matrix.go }}
 
+    - name: Build binary
+      # Integration tests fork `../../bin/dotenv`, so build it first.
+      run: go build -v -o bin/dotenv .
+
     - name: Run integration tests
       run: go test -v -tags=integration ./test/integration/...
-
-    - name: Build binary
-      run: go build -v .
 
   lint:
     name: Lint
@@ -98,6 +99,10 @@ jobs:
     - name: Configure git for private SDK module
       run: |
         git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
+
+    - name: Install dependencies
+      # golangci-lint typecheck needs modules present in the cache.
+      run: go mod download
 
     - name: golangci-lint
       uses: golangci/golangci-lint-action@v6
@@ -138,6 +143,9 @@ jobs:
     - name: Configure git for private SDK module
       run: |
         git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
+
+    - name: Install dependencies
+      run: go mod download
 
     - name: Run Gosec
       uses: securego/gosec@master

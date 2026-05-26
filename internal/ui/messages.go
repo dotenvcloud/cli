@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -9,36 +10,43 @@ import (
 	"github.com/spf13/viper"
 )
 
+// Stdout is the destination for Print* helpers. Defaults to os.Stdout; tests
+// swap to a buffer to capture output.
+var Stdout io.Writer = os.Stdout
+
+// Stderr is the destination for PrintError. Defaults to os.Stderr; tests swap.
+var Stderr io.Writer = os.Stderr
+
 // PrintSuccess prints a success message
 func PrintSuccess(format string, args ...interface{}) {
 	if !viper.GetBool("quiet") {
-		fmt.Printf("%s %s\n", Success("✓"), fmt.Sprintf(format, args...))
+		fmt.Fprintf(Stdout, "%s %s\n", Success("✓"), fmt.Sprintf(format, args...))
 	}
 }
 
 // PrintError prints an error message
 func PrintError(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, "%s %s\n", Error("✗"), fmt.Sprintf(format, args...))
+	fmt.Fprintf(Stderr, "%s %s\n", Error("✗"), fmt.Sprintf(format, args...))
 }
 
 // PrintWarning prints a warning message
 func PrintWarning(format string, args ...interface{}) {
 	if !viper.GetBool("quiet") {
-		fmt.Printf("%s %s\n", Warning("!"), fmt.Sprintf(format, args...))
+		fmt.Fprintf(Stdout, "%s %s\n", Warning("!"), fmt.Sprintf(format, args...))
 	}
 }
 
 // PrintInfo prints an info message
 func PrintInfo(format string, args ...interface{}) {
 	if !viper.GetBool("quiet") {
-		fmt.Printf("%s %s\n", Info("ℹ"), fmt.Sprintf(format, args...))
+		fmt.Fprintf(Stdout, "%s %s\n", Info("ℹ"), fmt.Sprintf(format, args...))
 	}
 }
 
 // PrintDebug prints a debug message
 func PrintDebug(format string, args ...interface{}) {
 	if viper.GetBool("debug") {
-		fmt.Printf("%s %s\n", "[DEBUG]", fmt.Sprintf(format, args...))
+		fmt.Fprintf(Stdout, "%s %s\n", "[DEBUG]", fmt.Sprintf(format, args...))
 	}
 }
 

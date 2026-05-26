@@ -101,12 +101,9 @@ func (m *MockAPIServer) handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *MockAPIServer) handleListOrganizations(w http.ResponseWriter, r *http.Request) {
-	resp := dotenv.JSONAPIResponse{
-		Data: []interface{}{},
-	}
-
+	data := make([]interface{}, 0, len(m.organizations))
 	for _, org := range m.organizations {
-		resp.Data = append(resp.Data, map[string]interface{}{
+		data = append(data, map[string]interface{}{
 			"type": "organizations",
 			"id":   org.ID,
 			"attributes": map[string]interface{}{
@@ -122,7 +119,7 @@ func (m *MockAPIServer) handleListOrganizations(w http.ResponseWriter, r *http.R
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(dotenv.JSONAPIResponse{Data: data})
 }
 
 func (m *MockAPIServer) handleGetOrganization(w http.ResponseWriter, r *http.Request) {
@@ -157,12 +154,9 @@ func (m *MockAPIServer) handleListProjects(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	resp := dotenv.JSONAPIResponse{
-		Data: []interface{}{},
-	}
-
+	data := make([]interface{}, 0, len(projects))
 	for _, proj := range projects {
-		resp.Data = append(resp.Data, map[string]interface{}{
+		data = append(data, map[string]interface{}{
 			"type": "projects",
 			"id":   proj.ID,
 			"attributes": map[string]interface{}{
@@ -182,7 +176,7 @@ func (m *MockAPIServer) handleListProjects(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(dotenv.JSONAPIResponse{Data: data})
 }
 
 func (m *MockAPIServer) handleGetSecrets(w http.ResponseWriter, r *http.Request) {
@@ -203,12 +197,9 @@ func (m *MockAPIServer) handleGetSecrets(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	resp := dotenv.JSONAPIResponse{
-		Data: []interface{}{},
-	}
-
+	data := make([]interface{}, 0, len(secrets))
 	for k, v := range secrets {
-		resp.Data = append(resp.Data, map[string]interface{}{
+		data = append(data, map[string]interface{}{
 			"type": "secrets",
 			"id":   fmt.Sprintf("secret-%s", k),
 			"attributes": map[string]interface{}{
@@ -217,6 +208,7 @@ func (m *MockAPIServer) handleGetSecrets(w http.ResponseWriter, r *http.Request)
 			},
 		})
 	}
+	resp := dotenv.JSONAPIResponse{Data: data}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)

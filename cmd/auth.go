@@ -101,7 +101,7 @@ func runAuthInfo(cmd *cobra.Command, args []string) error {
 
 		if authInfoVerbose {
 			// Detailed table view
-			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			w := tabwriter.NewWriter(ui.Stdout, 0, 0, 2, ' ', 0)
 			fmt.Fprintln(w, "NAME\tSLUG\tROLE\tID\tJOINED")
 			fmt.Fprintln(w, "────\t────\t────\t──\t──────")
 

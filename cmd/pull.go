@@ -234,9 +234,11 @@ func runPull(cmd *cobra.Command, args []string) error {
 			ui.PrintSuccess("Secrets written to %s", pullOutput)
 		}
 	} else if !pullQuiet {
-		// Print to stdout
-		fmt.Println() // Add blank line for better readability
-		fmt.Print(output)
+		// Print to stdout — use the cobra-bound writer so tests can capture
+		// via rootCmd.SetOut.
+		out := cmd.OutOrStdout()
+		fmt.Fprintln(out)
+		fmt.Fprint(out, output)
 	}
 
 	return nil
@@ -244,9 +246,21 @@ func runPull(cmd *cobra.Command, args []string) error {
 
 // processHierarchicalSecrets processes the hierarchical response from the API
 func processHierarchicalSecrets(ctx context.Context, resp *dotenv.SecretsHierarchyResponse, merge bool, decrypt bool, clientKeyPath string, projectSlug string, client *dotenv.Client) (map[string]string, error) {
-	// Get encryption key if decryption is requested
+	// Get encryption key if decryption is requested AND at least one level
+	// actually carries encrypted content. Plaintext-only responses don't need
+	// a server round-trip for the key.
+	needsKey := false
+	if resp != nil {
+		for _, lvl := range resp.Data.Attributes.Levels {
+			if lvl.Encrypted {
+				needsKey = true
+				break
+			}
+		}
+	}
+
 	var encKey []byte
-	if decrypt {
+	if decrypt && needsKey {
 		var err error
 		encKey, err = getEncryptionKey(ctx, clientKeyPath, projectSlug, client)
 		if err != nil {

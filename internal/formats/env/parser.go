@@ -47,11 +47,12 @@ func (p *Parser) Parse(r io.Reader) (map[string]string, error) {
 				if idx := strings.Index(line, multilineQuote); idx >= 0 {
 					currentValue.WriteString(line[:idx])
 					result[currentKey] = p.processValue(currentValue.String())
+					closingQuote := multilineQuote
 					inMultiline = false
 					multilineQuote = ""
 
 					// Process rest of line if any
-					rest := strings.TrimSpace(line[idx+len(multilineQuote):])
+					rest := strings.TrimSpace(line[idx+len(closingQuote):])
 					if rest != "" && !strings.HasPrefix(rest, "#") {
 						return nil, fmt.Errorf("line %d: unexpected content after closing quote", lineNum)
 					}
@@ -79,6 +80,9 @@ func (p *Parser) Parse(r io.Reader) (map[string]string, error) {
 		}
 
 		key := strings.TrimSpace(line[:equals])
+		// Strip shell `export ` prefix so `export KEY=value` parses as KEY.
+		key = strings.TrimPrefix(key, "export ")
+		key = strings.TrimSpace(key)
 		value := line[equals+1:]
 
 		// Validate key

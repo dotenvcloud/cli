@@ -1,6 +1,7 @@
 package helpers
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -9,9 +10,27 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/dotenv/cli/internal/config"
+	"github.com/dotenv/cli/internal/ui"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
+
+// RedirectUI swaps ui.Stdout / ui.Stderr to the supplied buffers for the
+// lifetime of the test. Tests that assert on Print*-produced text need this
+// because cobra's SetOut/SetErr only captures cobra's own writes.
+func (tc *TestConfig) RedirectUI(t *testing.T, stdout, stderr *bytes.Buffer) {
+	if stdout != nil {
+		oldOut := ui.Stdout
+		ui.Stdout = stdout
+		t.Cleanup(func() { ui.Stdout = oldOut })
+	}
+	if stderr != nil {
+		oldErr := ui.Stderr
+		ui.Stderr = stderr
+		t.Cleanup(func() { ui.Stderr = oldErr })
+	}
+}
 
 // TestConfig holds test configuration
 type TestConfig struct {
@@ -21,24 +40,86 @@ type TestConfig struct {
 	APIKey     string
 }
 
-// NewTestConfig creates a new test configuration
+// NewTestConfig creates a new test configuration.
+//
+// Sets DOTENV_CONFIG_DIR + HOME to fresh temp paths so the CLI under test
+// cannot leak into the developer's real ~/.dotenv account store (which would
+// otherwise trigger OAuth refresh against a real API and hit rate limits).
+//
+// Layout: tempDir/ (HOME) -> .dotenv/ (DOTENV_CONFIG_DIR via UserHomeDir) ->
+// config.yaml. This matches the production layout config.ConfigPath() returns.
 func NewTestConfig(t *testing.T) *TestConfig {
 	tempDir := t.TempDir()
+	dotenvDir := filepath.Join(tempDir, ".dotenv")
+	if err := os.MkdirAll(dotenvDir, 0700); err != nil {
+		t.Fatalf("create .dotenv dir: %v", err)
+	}
+
+	t.Setenv("DOTENV_CONFIG_DIR", dotenvDir)
+	t.Setenv("HOME", tempDir)
+	t.Setenv("USERPROFILE", tempDir) // Windows fallback.
+	t.Setenv("DOTENV_API_KEY", "")   // Don't leak real env API keys.
 
 	return &TestConfig{
 		TempDir:    tempDir,
-		ConfigPath: filepath.Join(tempDir, "config.yaml"),
+		ConfigPath: filepath.Join(dotenvDir, "config.yaml"),
 		APIKey:     "dotenv_01ARZ3NDEKTSV4RRFFQ69G5FAV_test123456",
 	}
 }
 
-// WriteConfig writes a test configuration file
-func (tc *TestConfig) WriteConfig(t *testing.T, config interface{}) {
-	data, err := yaml.Marshal(config)
+// WriteConfig writes a test configuration file.
+//
+// Legacy compatibility: if the supplied config carries the old `contexts`
+// shape, this method translates the first context into the new accounts/
+// account_manager format via the production AccountManager so the CLI under
+// test can authenticate. Tests written for the modern shape pass through
+// unchanged.
+func (tc *TestConfig) WriteConfig(t *testing.T, cfg interface{}) {
+	if m, ok := cfg.(map[string]interface{}); ok {
+		if _, hasContexts := m["contexts"]; hasContexts {
+			tc.writeAccountFromLegacy(t, m)
+			return
+		}
+	}
+
+	data, err := yaml.Marshal(cfg)
 	require.NoError(t, err)
 
 	err = os.WriteFile(tc.ConfigPath, data, 0600)
 	require.NoError(t, err)
+}
+
+func (tc *TestConfig) writeAccountFromLegacy(t *testing.T, m map[string]interface{}) {
+	contexts, _ := m["contexts"].(map[string]interface{})
+	currentName, _ := m["current_context"].(string)
+	if currentName == "" {
+		for name := range contexts {
+			currentName = name
+			break
+		}
+	}
+
+	ctx, _ := contexts[currentName].(map[string]interface{})
+	apiURL, _ := ctx["api_url"].(string)
+	apiKey, _ := ctx["api_key"].(string)
+	orgULID, _ := ctx["organization"].(string)
+	if apiKey == "" {
+		apiKey = tc.APIKey
+	}
+
+	am, err := config.NewAccountManager(tc.ConfigPath)
+	require.NoError(t, err)
+
+	orgInfo := &config.OrgInfo{ULID: orgULID, Name: orgULID}
+	require.NoError(t, am.CreateWithAPIKey(currentName, apiURL, apiKey, orgInfo))
+	require.NoError(t, am.Use(currentName))
+
+	// Some commands (notably `apikeys`) still read the organization via
+	// viper rather than from the active account. Bind via env so those
+	// commands see the same value the account would supply.
+	if orgULID != "" {
+		t.Setenv("DOTENV_ORGANIZATION", orgULID)
+	}
 }
 
 // WriteFixture writes a fixture file

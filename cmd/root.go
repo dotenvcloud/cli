@@ -32,6 +32,12 @@ var rootCmd *cobra.Command
 // NewRootCommand creates a new root command instance.
 // This is useful for testing as it returns a fresh command tree.
 func NewRootCommand() *cobra.Command {
+	// Reset flag-bound module vars to their defaults so back-to-back tests
+	// don't inherit state from a previous invocation. cobra's flag defaults
+	// are set in each subcommand's init(), which only runs once for the
+	// process, so we restore the documented zero/default state here.
+	resetCommandState()
+
 	cmd := &cobra.Command{
 		Use:   "dotenv",
 		Short: "DotEnv CLI - Secure environment variable management",
@@ -55,6 +61,11 @@ For more information, visit: https://dotenv.cloud/docs/cli`,
 			if quiet {
 				viper.Set("quiet", true)
 			}
+
+			// Mirror cobra's bound writers into the ui package so tests that
+			// call rootCmd.SetOut / SetErr capture Print* output too.
+			ui.Stdout = cmd.OutOrStdout()
+			ui.Stderr = cmd.ErrOrStderr()
 
 			// Record command start time
 			commandStart = time.Now()
@@ -226,6 +237,30 @@ func initTelemetry() {
 	// Note: We're not using an API key for telemetry as it's anonymous
 	telemetryClient = telemetry.NewClient(sdkClient, analyticsID)
 	telemetryClient.SetEnabled(true)
+}
+
+// resetCommandState restores module-level flag-bound vars to their declared
+// defaults. Called at the top of NewRootCommand so tests that build a fresh
+// root start from the canonical state, not whatever the previous test left.
+func resetCommandState() {
+	// Restore ui sinks in case a prior test swapped them.
+	ui.Stdout = os.Stdout
+	ui.Stderr = os.Stderr
+
+	cfgFile = ""
+	debug = false
+	quiet = false
+	noColor = false
+	globalAPIKey = ""
+
+	pullOutput = ""
+	pullResolve = false
+	pullFormat = "env"
+	pullClientKey = ""
+	pullDecrypt = true
+	pullQuiet = false
+	pullMerge = true
+	pullLevelOnly = false
 }
 
 // generateAnalyticsID generates a new anonymous analytics ID

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -157,7 +156,7 @@ func runAPIKeysList(cmd *cobra.Command, args []string) error {
 	}
 
 	// Display in table format
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	w := tabwriter.NewWriter(ui.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "ID\tNAME\tTOKEN PREFIX\tABILITIES\tLAST USED\tCREATED")
 	fmt.Fprintln(w, "──\t────\t────────────\t─────────\t─────────\t───────")
 

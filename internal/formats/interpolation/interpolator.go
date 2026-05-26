@@ -3,7 +3,7 @@ package interpolation
 import (
 	"fmt"
 	"os"
-	"regexp"
+	"strings"
 )
 
 // Interpolator handles variable interpolation
@@ -35,6 +35,11 @@ func NewInterpolator(vars map[string]string, opts *Options) *Interpolator {
 	if opts == nil {
 		opts = DefaultOptions()
 	}
+	if opts.MaxDepth <= 0 {
+		// MaxDepth zero-value means "caller didn't set it" — fall back to
+		// the default so deep but legitimate chains still resolve.
+		opts.MaxDepth = DefaultOptions().MaxDepth
+	}
 	if vars == nil {
 		vars = make(map[string]string)
 	}
@@ -50,134 +55,270 @@ func (i *Interpolator) Interpolate(text string) (string, error) {
 	return i.interpolateWithDepth(text, 0, make(map[string]bool))
 }
 
-// interpolateWithDepth handles recursive interpolation with cycle detection
+// interpolateWithDepth handles recursive interpolation with cycle detection.
+//
+// Order of checks per pass:
+//  1. depth >= MaxDepth → "maximum interpolation depth exceeded"
+//  2. refs in `visiting` set → "circular reference detected for variable …"
+//  3. substitute once; if anything actually changed, recurse with refs added
+//     to visiting set.
 func (i *Interpolator) interpolateWithDepth(text string, depth int, visiting map[string]bool) (string, error) {
-	if depth > i.options.MaxDepth {
+	if depth >= i.options.MaxDepth {
 		return "", fmt.Errorf("maximum interpolation depth exceeded")
 	}
 
-	// Track if we made any substitutions
+	refs := extractRefs(text)
+	for _, name := range refs {
+		if visiting[name] {
+			return "", fmt.Errorf("circular reference detected for variable '%s'", name)
+		}
+	}
+
+	result, changed, err := i.substitute(text, visiting)
+	if err != nil {
+		return "", err
+	}
+	if !changed || !i.options.RecursiveResolve {
+		return result, nil
+	}
+
+	newVisiting := make(map[string]bool, len(visiting)+len(refs))
+	for k, v := range visiting {
+		newVisiting[k] = v
+	}
+	for _, name := range refs {
+		newVisiting[name] = true
+	}
+	return i.interpolateWithDepth(result, depth+1, newVisiting)
+}
+
+// substitute walks text and replaces ${VAR[:op operand]} and $VAR refs.
+// Returns the new string, whether anything actually changed (i.e. a value
+// was substituted), and any error.
+//
+// Uses brace-counting (not regex) so nested ${...} inside operands works.
+func (i *Interpolator) substitute(text string, visiting map[string]bool) (string, bool, error) {
+	var b strings.Builder
 	changed := false
-	var lastError error
-
-	// Pattern for ${VAR} or ${VAR:-default} or ${VAR:?error}
-	re := regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:([-?])([^}]*))?\}`)
-
-	result := re.ReplaceAllStringFunc(text, func(match string) string {
-		changed = true
-		parts := re.FindStringSubmatch(match)
-
-		varName := parts[1]
-		operator := parts[3]
-		operand := parts[4]
-
-		// Check for circular reference
-		if visiting[varName] {
-			lastError = fmt.Errorf("circular reference detected for variable '%s'", varName)
-			return match
+	n := len(text)
+	for pos := 0; pos < n; {
+		c := text[pos]
+		// Preserve escaped dollar: \$ is emitted literally.
+		if c == '\\' && pos+1 < n && text[pos+1] == '$' {
+			b.WriteByte('\\')
+			b.WriteByte('$')
+			pos += 2
+			continue
 		}
-
-		// Look up variable
-		value := i.lookupVariable(varName)
-
-		// Handle operators
-		switch operator {
-		case "-": // Use default if not set
-			if value == "" {
-				value = operand
-			}
-		case "?": // Error if not set
-			if value == "" {
-				if operand != "" {
-					// Custom error message
-					lastError = fmt.Errorf("variable %s: %s", varName, operand)
-				} else {
-					lastError = fmt.Errorf("variable %s is not set", varName)
-				}
-				if i.options.FailOnMissing {
-					return match
-				}
-			}
-		default:
-			// No operator
-			if value == "" {
-				if i.options.FailOnMissing {
-					lastError = fmt.Errorf("variable %s is not set", varName)
-					return match
-				}
-				if i.options.KeepUnresolved {
-					return match // Keep original
-				}
-				return "" // Replace with empty string
-			}
+		if c != '$' {
+			b.WriteByte(c)
+			pos++
+			continue
 		}
+		// $...
+		if pos+1 < n && text[pos+1] == '{' {
+			// find matching `}` with brace counting
+			depth := 1
+			end := pos + 2
+			for end < n {
+				switch text[end] {
+				case '{':
+					depth++
+				case '}':
+					depth--
+				}
+				if depth == 0 {
+					break
+				}
+				end++
+			}
+			if depth != 0 {
+				// unterminated; emit literal and continue
+				b.WriteByte('$')
+				pos++
+				continue
+			}
+			inner := text[pos+2 : end]
+			match := text[pos : end+1]
+			value, sub, err := i.evalBracedRef(inner, match, visiting)
+			if err != nil {
+				return "", false, err
+			}
+			if sub {
+				changed = true
+			}
+			b.WriteString(value)
+			pos = end + 1
+			continue
+		}
+		// $VAR (simple)
+		if pos+1 < n && isVarStart(text[pos+1]) {
+			j := pos + 1
+			for j < n && isVarChar(text[j]) {
+				j++
+			}
+			varName := text[pos+1 : j]
+			if visiting[varName] {
+				return "", false, fmt.Errorf("circular reference detected for variable '%s'", varName)
+			}
+			value := i.lookupVariable(varName)
+			if value != "" {
+				b.WriteString(value)
+				changed = true
+			} else if i.options.FailOnMissing {
+				return "", false, fmt.Errorf("variable %s is not set", varName)
+			} else if i.options.KeepUnresolved {
+				b.WriteString(text[pos:j])
+			} else {
+				changed = true
+			}
+			pos = j
+			continue
+		}
+		b.WriteByte(c)
+		pos++
+	}
+	return b.String(), changed, nil
+}
 
-		return value
-	})
-
-	// Return early if we had an error
-	if lastError != nil {
-		return "", lastError
+// evalBracedRef evaluates the contents of a ${...} block. `match` is the
+// full original match (including the braces) used when we want to preserve
+// the source text for "keep unresolved" mode.
+func (i *Interpolator) evalBracedRef(inner, match string, visiting map[string]bool) (string, bool, error) {
+	// Parse VAR followed by optional :op operand.
+	j := 0
+	for j < len(inner) && isVarChar(inner[j]) {
+		j++
+	}
+	if j == 0 {
+		// no var name; treat as literal
+		return match, false, nil
+	}
+	varName := inner[:j]
+	if visiting[varName] {
+		return "", false, fmt.Errorf("circular reference detected for variable '%s'", varName)
 	}
 
-	// Also handle simple $VAR format
-	re2 := regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)`)
-	result = re2.ReplaceAllStringFunc(result, func(match string) string {
-		varName := match[1:]
+	value := i.lookupVariable(varName)
+	isSet := value != ""
 
-		// Check for circular reference
-		if visiting[varName] {
-			lastError = fmt.Errorf("circular reference detected for variable '%s'", varName)
-			return match
+	if j == len(inner) {
+		// No operator
+		if isSet {
+			return value, true, nil
 		}
-
-		value := i.lookupVariable(varName)
-
-		if value != "" {
-			changed = true
-			return value
-		}
-
 		if i.options.FailOnMissing {
-			lastError = fmt.Errorf("variable %s is not set", varName)
-			return match
+			return "", false, fmt.Errorf("variable %s is not set", varName)
 		}
-
 		if i.options.KeepUnresolved {
-			return match
+			return match, false, nil
 		}
-
-		changed = true
-		return ""
-	})
-
-	// Return early if we had an error
-	if lastError != nil {
-		return "", lastError
+		return "", true, nil
 	}
 
-	// Handle recursive interpolation
-	if changed && i.options.RecursiveResolve && depth < i.options.MaxDepth {
-		// Create a new visiting map for the next level
-		newVisiting := make(map[string]bool)
-		for k, v := range visiting {
-			newVisiting[k] = v
-		}
+	if inner[j] != ':' {
+		// Unknown format; emit literal.
+		return match, false, nil
+	}
+	if j+1 >= len(inner) {
+		return match, false, nil
+	}
+	op := inner[j+1]
+	operand := inner[j+2:]
 
-		// Mark all variables in the current text as visiting
-		matches := re.FindAllStringSubmatch(text, -1)
-		for _, match := range matches {
-			newVisiting[match[1]] = true
-		}
-		matches2 := re2.FindAllStringSubmatch(text, -1)
-		for _, match := range matches2 {
-			newVisiting[match[1]] = true
-		}
-
-		return i.interpolateWithDepth(result, depth+1, newVisiting)
+	// Recursively interpolate the operand so nested ${...} resolves.
+	newVisiting := make(map[string]bool, len(visiting)+1)
+	for k, v := range visiting {
+		newVisiting[k] = v
+	}
+	newVisiting[varName] = true
+	operandResolved, err := i.interpolateWithDepth(operand, 0, newVisiting)
+	if err != nil {
+		return "", false, err
 	}
 
-	return result, nil
+	switch op {
+	case '-': // use default if unset/empty
+		if !isSet {
+			return operandResolved, true, nil
+		}
+		return value, true, nil
+	case '+': // use operand if set, empty otherwise
+		if isSet {
+			return operandResolved, true, nil
+		}
+		return "", true, nil
+	case '?': // error if unset
+		if !isSet {
+			if operandResolved != "" {
+				return "", false, fmt.Errorf("variable %s: %s", varName, operandResolved)
+			}
+			return "", false, fmt.Errorf("variable %s is not set", varName)
+		}
+		return value, true, nil
+	default:
+		// Unknown operator; emit literal.
+		return match, false, nil
+	}
+}
+
+// extractRefs returns the top-level variable names referenced by ${VAR}
+// or $VAR in text. Operand-nested refs aren't included.
+func extractRefs(text string) []string {
+	var refs []string
+	n := len(text)
+	for pos := 0; pos < n; {
+		c := text[pos]
+		if c == '\\' && pos+1 < n && text[pos+1] == '$' {
+			pos += 2
+			continue
+		}
+		if c != '$' {
+			pos++
+			continue
+		}
+		if pos+1 < n && text[pos+1] == '{' {
+			// var name follows {
+			j := pos + 2
+			for j < n && isVarChar(text[j]) {
+				j++
+			}
+			if j > pos+2 {
+				refs = append(refs, text[pos+2:j])
+			}
+			// skip to matching brace
+			depth := 1
+			for j < n && depth > 0 {
+				switch text[j] {
+				case '{':
+					depth++
+				case '}':
+					depth--
+				}
+				j++
+			}
+			pos = j
+			continue
+		}
+		if pos+1 < n && isVarStart(text[pos+1]) {
+			j := pos + 1
+			for j < n && isVarChar(text[j]) {
+				j++
+			}
+			refs = append(refs, text[pos+1:j])
+			pos = j
+			continue
+		}
+		pos++
+	}
+	return refs
+}
+
+func isVarStart(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_'
+}
+func isVarChar(b byte) bool {
+	return isVarStart(b) || (b >= '0' && b <= '9')
 }
 
 // lookupVariable looks up a variable value
