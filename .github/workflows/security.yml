@@ -11,8 +11,6 @@ on:
 # merged code on a daily cadence.
 permissions:
   contents: read
-  security-events: write  # upload-sarif → Code Scanning API
-  actions: read           # codeql-action telemetry (workflow-runs API)
 env:
   GOPRIVATE: github.com/lostlink/*
 
@@ -67,8 +65,11 @@ jobs:
           args: --severity-threshold=high
 
       - name: Upload SARIF results
-        uses: github/codeql-action/upload-sarif@v4
+        # Private repo: Code Scanning API needs GHAS. Persist SARIF as
+        # workflow artifact instead.
+        uses: actions/upload-artifact@v4
         if: always()
-        continue-on-error: true
         with:
-          sarif_file: trivy-results.sarif
+          name: trivy-fs-sarif
+          path: trivy-results.sarif
+          retention-days: 30
