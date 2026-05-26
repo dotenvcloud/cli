@@ -52,9 +52,14 @@ jobs:
           git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
 
       - name: Download modules
+        shell: bash
         run: go mod download
 
       - name: Run tests
+        # bash on all OSes so `-coverprofile=coverage.out ./...` token
+        # parsing is consistent — PowerShell splits the `=` form and go
+        # test ends up trying to load a package named `.out`.
+        shell: bash
         run: go test -v -race -coverprofile=coverage.out ./...
 
       - name: Upload coverage
@@ -71,10 +76,12 @@ jobs:
 
       - name: Run integration tests
         if: matrix.os == 'ubuntu-latest'
+        shell: bash
         run: go test -v -tags=integration ./test/integration/...
 
       - name: Run compatibility tests
         if: matrix.os == 'ubuntu-latest' && matrix.go == '1.26'
+        shell: bash
         run: make test-compatibility
 
   lint:

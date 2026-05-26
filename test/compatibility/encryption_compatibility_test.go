@@ -333,15 +333,18 @@ func TestKeyDerivation_Compatibility(t *testing.T) {
 	salt := []byte("test-salt")
 
 	// Derive key using our implementation
-	derivedKey := key.DeriveKey(password, salt, 32)
-	assert.Len(t, derivedKey, 32)
+	derivedKey, err := key.DeriveKey(password, salt, key.DefaultIterations)
+	require.NoError(t, err)
+	assert.Len(t, derivedKey, key.RequiredKeySize)
 
 	// The derived key should be deterministic
-	derivedKey2 := key.DeriveKey(password, salt, 32)
+	derivedKey2, err := key.DeriveKey(password, salt, key.DefaultIterations)
+	require.NoError(t, err)
 	assert.Equal(t, derivedKey, derivedKey2)
 
 	// Different password should give different key
-	differentKey := key.DeriveKey("different-password", salt, 32)
+	differentKey, err := key.DeriveKey("different-password", salt, key.DefaultIterations)
+	require.NoError(t, err)
 	assert.NotEqual(t, derivedKey, differentKey)
 }
 
