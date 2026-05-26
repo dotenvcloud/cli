@@ -21,9 +21,18 @@ jobs:
   build-cli:
     runs-on: ubuntu-latest
     steps:
+      - name: Mint GitHub App token (SDK access)
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.SDK_ACCESS_APP_ID }}
+          private-key: ${{ secrets.SDK_ACCESS_APP_PRIVATE_KEY }}
+          owner: lostlink
+          repositories: dotenv-sdk-go
+
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         
@@ -59,6 +68,11 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # Dockerfile uses BuildKit `--mount=type=secret,id=gh_pat` to
+          # fetch the private lostlink/dotenv-sdk-go module. Token is a
+          # short-lived GitHub App installation token (rotates per run).
+          secrets: |
+            gh_pat=${{ steps.app-token.outputs.token }}
           build-args: |
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
             VCS_REF=${{ github.sha }}

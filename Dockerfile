@@ -1,11 +1,20 @@
+# syntax=docker/dockerfile:1.4
 # Build stage
 FROM golang:1.23-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates
 
 WORKDIR /build
+
+# Private SDK module needs a token to fetch. Pass via BuildKit secret:
+#   docker build --secret id=gh_pat,env=GH_PAT .
+# In CI this is wired through docker/build-push-action's `secrets:` input.
+ENV GOPRIVATE=github.com/lostlink/*
+
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=secret,id=gh_pat,required=true \
+    git config --global url."https://x-access-token:$(cat /run/secrets/gh_pat)@github.com/".insteadOf "https://github.com/" && \
+    go mod download
 
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build \

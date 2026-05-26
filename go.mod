@@ -10,7 +10,7 @@ require (
 	github.com/briandowns/spinner v1.23.0
 	github.com/fatih/color v1.16.0
 	github.com/google/uuid v1.6.0
-	github.com/lostlink/dotenv-sdk-go v0.0.0-00010101000000-000000000000
+	github.com/lostlink/dotenv-sdk-go v0.1.0
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/olekukonko/tablewriter v1.0.7
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
@@ -53,8 +53,3 @@ require (
 	golang.org/x/text v0.26.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 )
-
-// TODO: drop this replace once lostlink/dotenv-sdk-go publishes a tagged
-// release. CI will then resolve the version pinned in `require` above.
-// Local-dev override: point at a sibling clone path. Adjust per workstation.
-replace github.com/lostlink/dotenv-sdk-go => ../../packages/sdk-go

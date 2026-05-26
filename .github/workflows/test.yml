@@ -6,6 +6,16 @@ on:
   pull_request:
     branches: [ main ]
 
+# CLI depends on the private module github.com/lostlink/dotenv-sdk-go.
+# Each job mints a short-lived (~1h) GitHub App installation token to fetch
+# it. Repo secrets required:
+#   SDK_ACCESS_APP_ID           — GitHub App ID
+#   SDK_ACCESS_APP_PRIVATE_KEY  — App private key (PEM, including header)
+# The App must be installed on lostlink/dotenv-sdk-go with Contents: Read.
+# Same App pattern as release-please (see lostlink/dotenv workflow).
+env:
+  GOPRIVATE: github.com/lostlink/*
+
 jobs:
   test:
     name: Test
@@ -16,12 +26,26 @@ jobs:
         go: ['1.21', '1.22', '1.23']
 
     steps:
+    - name: Mint GitHub App token (SDK access)
+      id: app-token
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ secrets.SDK_ACCESS_APP_ID }}
+        private-key: ${{ secrets.SDK_ACCESS_APP_PRIVATE_KEY }}
+        owner: lostlink
+        repositories: dotenv-sdk-go
+
     - uses: actions/checkout@v4
 
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
         go-version: ${{ matrix.go }}
+
+    - name: Configure git for private SDK module
+      shell: bash
+      run: |
+        git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
 
     - name: Cache Go modules
       uses: actions/cache@v4
@@ -55,6 +79,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Mint GitHub App token (SDK access)
+      id: app-token
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ secrets.SDK_ACCESS_APP_ID }}
+        private-key: ${{ secrets.SDK_ACCESS_APP_PRIVATE_KEY }}
+        owner: lostlink
+        repositories: dotenv-sdk-go
+
     - uses: actions/checkout@v4
 
     - name: Set up Go
@@ -62,10 +95,18 @@ jobs:
       with:
         go-version: '1.23'
 
+    - name: Configure git for private SDK module
+      run: |
+        git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
+
     - name: golangci-lint
       uses: golangci/golangci-lint-action@v6
       with:
-        version: latest
+        # Pin to v1.54.x — repo's .golangci.yml uses pre-v1.55 schema
+        # (depguard.list-type, gci.local-prefixes, govet.check-shadowing,
+        # nolintlint.allow-leading-space, gomnd, maligned). Modernise config
+        # in a follow-up PR before unpinning.
+        version: v1.54.2
         args: --timeout=5m
 
     - name: Check formatting
@@ -78,6 +119,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Mint GitHub App token (SDK access)
+      id: app-token
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ secrets.SDK_ACCESS_APP_ID }}
+        private-key: ${{ secrets.SDK_ACCESS_APP_PRIVATE_KEY }}
+        owner: lostlink
+        repositories: dotenv-sdk-go
+
     - uses: actions/checkout@v4
 
     - name: Set up Go
@@ -85,13 +135,21 @@ jobs:
       with:
         go-version: '1.23'
 
+    - name: Configure git for private SDK module
+      run: |
+        git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
+
     - name: Run Gosec
       uses: securego/gosec@master
       with:
         args: '-no-fail -fmt sarif -out results.sarif ./...'
 
     - name: Upload SARIF
+      # Requires GitHub Advanced Security / Code Security enabled on the
+      # repository. Non-fatal so the rest of the security job (govulncheck)
+      # still runs on repos without that feature.
       uses: github/codeql-action/upload-sarif@v3
+      continue-on-error: true
       with:
         sarif_file: results.sarif
 
