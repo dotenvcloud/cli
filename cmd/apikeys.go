@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -147,10 +146,9 @@ func runAPIKeysList(cmd *cobra.Command, args []string) error {
 	ui.PrintInfo("Listing API keys for organization %s...", org)
 
 	// List API keys
-	keys, _, err := client.APIKeys.List(context.Background(), org)
+	keys, _, err := client.APIKeys.List(cmd.Context(), org)
 	if err != nil {
-		account, _ := getCurrentAccount()
-		return HandleAPIError(err, account)
+		return HandleAPIError(err, accountForErrorContext())
 	}
 
 	if len(keys) == 0 {
@@ -223,10 +221,9 @@ func runAPIKeysCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create API key
-	resp, _, err := client.APIKeys.Create(context.Background(), org, createReq)
+	resp, _, err := client.APIKeys.Create(cmd.Context(), org, createReq)
 	if err != nil {
-		account, _ := getCurrentAccount()
-		return HandleAPIError(err, account)
+		return HandleAPIError(err, accountForErrorContext())
 	}
 
 	ui.PrintSuccess("API key created successfully!")
@@ -268,10 +265,9 @@ func runAPIKeysUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Update API key
-	key, _, err := client.APIKeys.Update(context.Background(), org, keyID, updateReq)
+	key, _, err := client.APIKeys.Update(cmd.Context(), org, keyID, updateReq)
 	if err != nil {
-		account, _ := getCurrentAccount()
-		return HandleAPIError(err, account)
+		return HandleAPIError(err, accountForErrorContext())
 	}
 
 	ui.PrintSuccess("API key updated successfully!")
@@ -309,10 +305,9 @@ func runAPIKeysDelete(cmd *cobra.Command, args []string) error {
 	ui.PrintInfo("Deleting API key %s...", keyID)
 
 	// Delete API key
-	_, err = client.APIKeys.Delete(context.Background(), org, keyID)
+	_, err = client.APIKeys.Delete(cmd.Context(), org, keyID)
 	if err != nil {
-		account, _ := getCurrentAccount()
-		return HandleAPIError(err, account)
+		return HandleAPIError(err, accountForErrorContext())
 	}
 
 	ui.PrintSuccess("API key deleted successfully!")
@@ -348,10 +343,9 @@ func runAPIKeysRotate(cmd *cobra.Command, args []string) error {
 	ui.PrintInfo("Rotating API key %s...", keyID)
 
 	// Rotate API key
-	resp, _, err := client.APIKeys.Rotate(context.Background(), org, keyID)
+	resp, _, err := client.APIKeys.Rotate(cmd.Context(), org, keyID)
 	if err != nil {
-		account, _ := getCurrentAccount()
-		return HandleAPIError(err, account)
+		return HandleAPIError(err, accountForErrorContext())
 	}
 
 	ui.PrintSuccess("API key rotated successfully!")

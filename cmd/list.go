@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -139,7 +138,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		return listAll(cmd)
 
 	default:
-		return fmt.Errorf("unknown resource '%s': valid resources are accounts, organizations, projects, targets, environments, all, text", resource)
+		return fmt.Errorf("unknown resource '%s': valid resources are accounts, organizations, projects, targets, environments, all", resource)
 	}
 }
 
@@ -295,14 +294,13 @@ func listOrganizations(cmd *cobra.Command) error {
 
 	ui.PrintInfo("Fetching organizations...")
 
-	orgs, resp, err := client.Organizations.List(context.Background(), nil)
+	orgs, resp, err := client.Organizations.List(cmd.Context(), nil)
 	if err != nil {
 		// Check if using API key authentication
 		if resp != nil && resp.StatusCode == 403 {
 			return fmt.Errorf("API key authentication only shows the organization tied to the key. Use OAuth for listing all organizations")
 		}
-		account, _ := getCurrentAccount()
-		return HandleAPIError(err, account)
+		return HandleAPIError(err, accountForErrorContext())
 	}
 
 	if len(orgs) == 0 {
@@ -319,7 +317,7 @@ func listOrganizations(cmd *cobra.Command) error {
 	case "yaml":
 		// Simple YAML output
 		// Get current organization for comparison
-		account, _ := getCurrentAccount()
+		account := accountForErrorContext()
 		currentOrgID := ""
 		if account != nil {
 			if account.IsOAuth() && account.CurrentOrganization != "" {
@@ -353,7 +351,7 @@ func listOrganizations(cmd *cobra.Command) error {
 		table.Header("NAME", "ULID", "PLAN", "STATUS", "CURRENT")
 
 		// Get current organization for comparison
-		account, _ := getCurrentAccount()
+		account := accountForErrorContext()
 		currentOrgID := ""
 		if account != nil {
 			if account.IsOAuth() && account.CurrentOrganization != "" {
@@ -399,10 +397,9 @@ func listProjects(cmd *cobra.Command, orgSlug string) error {
 
 	ui.PrintInfo("Fetching projects...")
 
-	projects, _, err := client.Projects.List(context.Background(), nil)
+	projects, _, err := client.Projects.List(cmd.Context(), nil)
 	if err != nil {
-		account, _ := getCurrentAccount()
-		return HandleAPIError(err, account)
+		return HandleAPIError(err, accountForErrorContext())
 	}
 
 	if len(projects) == 0 {
@@ -482,7 +479,7 @@ func listTargets(cmd *cobra.Command, projectSlug string) error {
 
 	ui.PrintInfo("Fetching targets from %s...", projectSlug)
 
-	targets, _, err := client.Targets.List(context.Background(), projectSlug, nil)
+	targets, _, err := client.Targets.List(cmd.Context(), projectSlug, nil)
 	if err != nil {
 		return fmt.Errorf("failed to list targets: %w", err)
 	}
@@ -567,7 +564,7 @@ func listEnvironments(cmd *cobra.Command, projectSlug, targetSlug string) error 
 
 	ui.PrintInfo("Fetching environments from %s/%s...", projectSlug, targetSlug)
 
-	envs, _, err := client.Environments.List(context.Background(), projectSlug, targetSlug, nil)
+	envs, _, err := client.Environments.List(cmd.Context(), projectSlug, targetSlug, nil)
 	if err != nil {
 		return fmt.Errorf("failed to list environments: %w", err)
 	}
@@ -666,10 +663,9 @@ func listAll(cmd *cobra.Command) error {
 	ui.PrintInfo("Fetching all resources from %s...", orgIdentifier)
 
 	// Fetch all projects
-	projects, _, err := client.Projects.List(context.Background(), nil)
+	projects, _, err := client.Projects.List(cmd.Context(), nil)
 	if err != nil {
-		account, _ := getCurrentAccount()
-		return HandleAPIError(err, account)
+		return HandleAPIError(err, accountForErrorContext())
 	}
 
 	// Handle --paths flag
@@ -679,7 +675,7 @@ func listAll(cmd *cobra.Command) error {
 			fmt.Println(project.Slug)
 
 			// Fetch targets for this project
-			targets, _, err := client.Targets.List(context.Background(), project.Slug, nil)
+			targets, _, err := client.Targets.List(cmd.Context(), project.Slug, nil)
 			if err != nil {
 				ui.PrintWarning("Failed to fetch targets for %s: %v", project.Slug, err)
 				continue
@@ -689,7 +685,7 @@ func listAll(cmd *cobra.Command) error {
 				fmt.Printf("%s/%s\n", project.Slug, target.Slug)
 
 				// Fetch environments for this target
-				envs, _, err := client.Environments.List(context.Background(), project.Slug, target.Slug, nil)
+				envs, _, err := client.Environments.List(cmd.Context(), project.Slug, target.Slug, nil)
 				if err != nil {
 					ui.PrintWarning("Failed to fetch environments for %s/%s: %v", project.Slug, target.Slug, err)
 					continue
@@ -725,7 +721,7 @@ func listAll(cmd *cobra.Command) error {
 		})
 
 		// Fetch targets for this project
-		targets, _, err := client.Targets.List(context.Background(), project.Slug, nil)
+		targets, _, err := client.Targets.List(cmd.Context(), project.Slug, nil)
 		if err != nil {
 			ui.PrintWarning("Failed to fetch targets for %s: %v", project.Slug, err)
 			continue
@@ -740,7 +736,7 @@ func listAll(cmd *cobra.Command) error {
 			})
 
 			// Fetch environments for this target
-			envs, _, err := client.Environments.List(context.Background(), project.Slug, target.Slug, nil)
+			envs, _, err := client.Environments.List(cmd.Context(), project.Slug, target.Slug, nil)
 			if err != nil {
 				ui.PrintWarning("Failed to fetch environments for %s/%s: %v", project.Slug, target.Slug, err)
 				continue

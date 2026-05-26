@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -118,14 +117,13 @@ func runOrgList(cmd *cobra.Command, args []string) error {
 
 	ui.PrintInfo("Fetching organizations...")
 
-	orgs, resp, err := client.Organizations.List(context.Background(), nil)
+	orgs, resp, err := client.Organizations.List(cmd.Context(), nil)
 	if err != nil {
 		// Check if using API key authentication
 		if resp != nil && resp.StatusCode == 403 {
 			return fmt.Errorf("API key authentication only shows the organization tied to the key. Use OAuth for listing all organizations")
 		}
-		account, _ := getCurrentAccount()
-		return HandleAPIError(err, account)
+		return HandleAPIError(err, accountForErrorContext())
 	}
 
 	if len(orgs) == 0 {
@@ -142,7 +140,7 @@ func runOrgList(cmd *cobra.Command, args []string) error {
 	case "yaml":
 		// Simple YAML output
 		// Get current organization for comparison
-		account, _ := getCurrentAccount()
+		account := accountForErrorContext()
 		currentOrgID := ""
 		if account != nil {
 			if account.IsOAuth() && account.CurrentOrganization != "" {
@@ -176,7 +174,7 @@ func runOrgList(cmd *cobra.Command, args []string) error {
 		table.Header("NAME", "ULID", "PLAN", "STATUS", "CURRENT")
 
 		// Get current organization for comparison
-		account, _ := getCurrentAccount()
+		account := accountForErrorContext()
 		currentOrgID := ""
 		if account != nil {
 			if account.IsOAuth() && account.CurrentOrganization != "" {

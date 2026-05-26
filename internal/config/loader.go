@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/dotenv/cli/internal/config/crypto"
 	"github.com/dotenv/cli/internal/constants"
@@ -79,13 +80,21 @@ func (l *Loader) Load() (*Config, error) {
 	return &config, nil
 }
 
-// Save encrypts and writes the configuration
+// Save encrypts and writes the configuration. Writes are guarded by an
+// advisory file lock so concurrent CLI invocations don't race the atomic
+// rename and silently drop one writer's edits.
 func (l *Loader) Save(config *Config) error {
 	// Create config directory if it doesn't exist
 	dir := filepath.Dir(l.path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
+
+	lock, err := acquireFileLock(l.path+".lock", 5*time.Second, 30*time.Second)
+	if err != nil {
+		return err
+	}
+	defer lock.release()
 
 	// Create a copy to avoid modifying the original
 	configCopy := *config

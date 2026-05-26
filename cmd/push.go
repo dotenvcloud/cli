@@ -147,7 +147,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 	}
 
 	// Verify project exists
-	project, resp, err := client.Projects.Get(context.Background(), projectSlug)
+	project, resp, err := client.Projects.Get(cmd.Context(), projectSlug)
 	if err != nil {
 		if resp != nil && resp.StatusCode == 404 {
 			return fmt.Errorf("project '%s' not found in organization", projectSlug)
@@ -171,7 +171,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 			}
 		} else {
 			// Get key from server
-			encKeyResp, _, err := client.Encryption.GetEncryptionKey(context.Background(), projectSlug)
+			encKeyResp, _, err := client.Encryption.GetEncryptionKey(cmd.Context(), projectSlug)
 			if err != nil {
 				return fmt.Errorf("failed to get encryption key: %w", err)
 			}
@@ -186,13 +186,24 @@ func runPush(cmd *cobra.Command, args []string) error {
 	// Process files
 	if singleFile != "" {
 		// Single file mode
-		return pushSingleFile(context.Background(), client, project, targetSlug, environmentSlug,
+		return pushSingleFile(cmd.Context(), client, project, targetSlug, environmentSlug,
 			singleFile, encKey, pushForce)
 	} else {
 		// Multi-file mode
-		return pushMultipleFiles(context.Background(), client, project, pushProject, pushTarget,
+		return pushMultipleFiles(cmd.Context(), client, project, pushProject, pushTarget,
 			pushEnvironment, encKey, pushForce)
 	}
+}
+
+// slugForLabel looks up the slug for the label the user picked. Exact-match
+// avoids the substring bug where one slug was a prefix of another.
+func slugForLabel(selected string, labels []string, slugAt func(int) string) (string, error) {
+	for i, label := range labels {
+		if label == selected {
+			return slugAt(i), nil
+		}
+	}
+	return "", fmt.Errorf("internal: selected label %q not found in options", selected)
 }
 
 func pushSingleFile(ctx context.Context, client *dotenv.Client, project *dotenv.Project,
@@ -312,12 +323,11 @@ func pushMultipleFiles(ctx context.Context, client *dotenv.Client, project *dote
 			return err
 		}
 
-		var targetSlug string
-		for _, t := range targets {
-			if strings.Contains(selected, t.Slug) {
-				targetSlug = t.Slug
-				break
-			}
+		// Resolve by exact label match — substring matching was wrong when
+		// one slug was a prefix of another (e.g. `prod` / `prod-eu`).
+		targetSlug, err := slugForLabel(selected, targetNames, func(i int) string { return targets[i].Slug })
+		if err != nil {
+			return err
 		}
 
 		sets = append(sets, secretSet{
@@ -349,12 +359,9 @@ func pushMultipleFiles(ctx context.Context, client *dotenv.Client, project *dote
 			return err
 		}
 
-		var targetSlug string
-		for _, t := range targets {
-			if strings.Contains(selectedTarget, t.Slug) {
-				targetSlug = t.Slug
-				break
-			}
+		targetSlug, err := slugForLabel(selectedTarget, targetNames, func(i int) string { return targets[i].Slug })
+		if err != nil {
+			return err
 		}
 
 		// Now get environments for this target
@@ -377,12 +384,9 @@ func pushMultipleFiles(ctx context.Context, client *dotenv.Client, project *dote
 			return err
 		}
 
-		var envSlug string
-		for _, e := range envs {
-			if strings.Contains(selectedEnv, e.Slug) {
-				envSlug = e.Slug
-				break
-			}
+		envSlug, err := slugForLabel(selectedEnv, envNames, func(i int) string { return envs[i].Slug })
+		if err != nil {
+			return err
 		}
 
 		sets = append(sets, secretSet{

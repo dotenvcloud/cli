@@ -13,6 +13,7 @@ import (
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/constants"
 	"github.com/dotenv/cli/internal/telemetry"
+	"github.com/dotenv/cli/internal/ui"
 )
 
 var (
@@ -61,22 +62,9 @@ For more information, visit: https://dotenv.cloud/docs/cli`,
 			// Initialize telemetry if enabled
 			initTelemetry()
 		},
-		PersistentPostRun: func(cmd *cobra.Command, args []string) {
-			// Track command execution
-			if telemetryClient != nil && telemetryClient.IsEnabled() {
-				// Get command name for telemetry
-				commandName := cmd.CommandPath()
-
-				// Calculate duration
-				duration := time.Since(commandStart)
-
-				// Command considered successful if no error occurred
-				success := cmd.Context().Err() == nil
-
-				// Track the command
-				telemetryClient.TrackCommand(commandName, duration, success)
-			}
-		},
+		// Telemetry tracking happens in Execute() so the actual RunE error
+		// (which PersistentPostRun cannot see — cobra hands us only the cmd
+		// + args, not the returned error) drives the success flag.
 	}
 
 	// Setup persistent flags
@@ -126,10 +114,15 @@ For more information, visit: https://dotenv.cloud/docs/cli`,
 
 // Execute runs the root command
 func Execute() error {
-	err := rootCmd.Execute()
+	executedCmd, err := rootCmd.ExecuteC()
 
-	// Close telemetry client if initialized
 	if telemetryClient != nil {
+		// executedCmd can be nil if cobra fails at root flag parsing before
+		// dispatching to a subcommand. commandStart can be zero if
+		// PersistentPreRun never fired (same path).
+		if telemetryClient.IsEnabled() && executedCmd != nil && !commandStart.IsZero() {
+			telemetryClient.TrackCommand(executedCmd.CommandPath(), time.Since(commandStart), err == nil)
+		}
 		telemetryClient.Close()
 	}
 
@@ -218,8 +211,12 @@ func initTelemetry() {
 		// Generate new analytics ID if not present
 		analyticsID = generateAnalyticsID()
 		cfg.Preferences.AnalyticsID = analyticsID
-		// Save config with new analytics ID
-		loader.Save(cfg)
+		// Save config with new analytics ID; failures are non-fatal but should
+		// be surfaced so a misconfigured config dir doesn't silently disable
+		// analytics ID persistence across runs.
+		if err := loader.Save(cfg); err != nil {
+			ui.PrintWarning("failed to persist analytics ID: %v", err)
+		}
 	}
 
 	// Create unauthenticated SDK client for telemetry

@@ -121,19 +121,35 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.23'
+
     - name: Run Gosec
       uses: securego/gosec@master
       with:
         args: '-no-fail -fmt sarif -out results.sarif ./apps/cli/...'
-        
+
     - name: Upload SARIF
       uses: github/codeql-action/upload-sarif@v2
       with:
         sarif_file: results.sarif
+
+    - name: Install govulncheck
+      run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+    - name: Run govulncheck (CLI)
+      working-directory: apps/cli
+      run: govulncheck ./...
+
+    - name: Run govulncheck (SDK)
+      working-directory: packages/sdk-go
+      run: govulncheck ./...
 
   sdk-test:
     name: SDK Tests

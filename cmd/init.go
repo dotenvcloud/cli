@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -176,7 +175,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		factory := client.NewFactory(apiURL)
 		tempClient := factory.NewClientFromAPIKey(apiKey, apiURL, "")
 
-		orgs, _, err := tempClient.Organizations.List(context.Background(), nil)
+		orgs, _, err := tempClient.Organizations.List(cmd.Context(), nil)
 		if err != nil {
 			ui.PrintWarning("Could not verify API key: %v", err)
 

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -79,10 +78,9 @@ func runAuthInfo(cmd *cobra.Command, args []string) error {
 	// Get authenticated user info
 	ui.PrintInfo("Fetching user information...")
 
-	user, organizations, _, err := client.User.GetAuthenticatedUser(context.Background())
+	user, organizations, _, err := client.User.GetAuthenticatedUser(cmd.Context())
 	if err != nil {
-		account, _ := getCurrentAccount()
-		return HandleAPIError(err, account)
+		return HandleAPIError(err, accountForErrorContext())
 	}
 
 	// Display user info

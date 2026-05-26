@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -139,11 +140,10 @@ func runPull(cmd *cobra.Command, args []string) error {
 	}
 
 	// Retrieve secrets using GetProjectSecrets
-	hierarchyResp, _, err := client.Secrets.GetProjectSecrets(context.Background(), projectSlug, targetSlug, environmentSlug)
+	hierarchyResp, _, err := client.Secrets.GetProjectSecrets(cmd.Context(), projectSlug, targetSlug, environmentSlug)
 	if err != nil {
 		// Get current account for better error messages
-		account, _ := getCurrentAccount()
-		return HandleAPIError(err, account)
+		return HandleAPIError(err, accountForErrorContext())
 	}
 
 	// Check if we got any levels
@@ -155,7 +155,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 	}
 
 	// Process the hierarchical response
-	secrets, err := processHierarchicalSecrets(hierarchyResp, pullMerge, pullDecrypt, pullClientKey, projectSlug, client)
+	secrets, err := processHierarchicalSecrets(cmd.Context(), hierarchyResp, pullMerge, pullDecrypt, pullClientKey, projectSlug, client)
 	if err != nil {
 		return err
 	}
@@ -243,12 +243,12 @@ func runPull(cmd *cobra.Command, args []string) error {
 }
 
 // processHierarchicalSecrets processes the hierarchical response from the API
-func processHierarchicalSecrets(resp *dotenv.SecretsHierarchyResponse, merge bool, decrypt bool, clientKeyPath string, projectSlug string, client *dotenv.Client) (map[string]string, error) {
+func processHierarchicalSecrets(ctx context.Context, resp *dotenv.SecretsHierarchyResponse, merge bool, decrypt bool, clientKeyPath string, projectSlug string, client *dotenv.Client) (map[string]string, error) {
 	// Get encryption key if decryption is requested
 	var encKey []byte
 	if decrypt {
 		var err error
-		encKey, err = getEncryptionKey(clientKeyPath, projectSlug, client)
+		encKey, err = getEncryptionKey(ctx, clientKeyPath, projectSlug, client)
 		if err != nil {
 			// If this is a client-managed key project and no key was provided, prompt for it
 			if err == ErrClientManagedKey && clientKeyPath == "" {
@@ -274,7 +274,7 @@ func processHierarchicalSecrets(resp *dotenv.SecretsHierarchyResponse, merge boo
 }
 
 // getEncryptionKey retrieves the encryption key from client file or server
-func getEncryptionKey(clientKeyPath string, projectSlug string, client *dotenv.Client) ([]byte, error) {
+func getEncryptionKey(ctx context.Context, clientKeyPath string, projectSlug string, client *dotenv.Client) ([]byte, error) {
 	if clientKeyPath != "" {
 		// Use client-provided key
 		keyData, err := os.ReadFile(clientKeyPath)
@@ -290,10 +290,11 @@ func getEncryptionKey(clientKeyPath string, projectSlug string, client *dotenv.C
 	}
 
 	// Get encryption key from server
-	encKeyResp, resp, err := client.Encryption.GetEncryptionKey(context.Background(), projectSlug)
+	encKeyResp, _, err := client.Encryption.GetEncryptionKey(ctx, projectSlug)
 	if err != nil {
-		// Check if it's a 400 error (likely client-managed key)
-		if resp != nil && resp.StatusCode == 400 {
+		// SDK now exposes a typed sentinel for the client-managed envelope
+		// (F-19); prefer that over HTTP-400 sniffing.
+		if errors.Is(err, dotenv.ErrClientManagedEncryption) {
 			return nil, ErrClientManagedKey
 		}
 
@@ -301,7 +302,7 @@ func getEncryptionKey(clientKeyPath string, projectSlug string, client *dotenv.C
 		if dotenv.IsNotFound(err) {
 			return nil, fmt.Errorf("encryption key not found for project '%s'. The project may not have encryption enabled", projectSlug)
 		}
-		account, _ := getCurrentAccount()
+		account := accountForErrorContext()
 		return nil, HandleAPIError(err, account)
 	}
 

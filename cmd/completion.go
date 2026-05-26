@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -300,12 +301,15 @@ func environmentCompletionForTarget(cmd *cobra.Command, project, target, toCompl
 
 // Simple in-memory cache for completion data
 var (
+	projectCacheMu   sync.RWMutex
 	projectCache     []string
 	projectCacheTime time.Time
 	cacheDuration    = 5 * time.Minute
 )
 
 func getCachedProjects() []string {
+	projectCacheMu.RLock()
+	defer projectCacheMu.RUnlock()
 	if time.Since(projectCacheTime) > cacheDuration {
 		return nil
 	}
@@ -313,6 +317,8 @@ func getCachedProjects() []string {
 }
 
 func cacheProjects(projects []string) {
+	projectCacheMu.Lock()
+	defer projectCacheMu.Unlock()
 	projectCache = projects
 	projectCacheTime = time.Now()
 }

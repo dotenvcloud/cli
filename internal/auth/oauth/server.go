@@ -27,13 +27,15 @@ func NewCallbackServer(expectedState string) *CallbackServer {
 	}
 }
 
-// FindAvailablePort finds an available port for the callback server
+// FindAvailablePort finds an available port for the callback server. The
+// listener is bound to 127.0.0.1 so the OAuth callback is reachable only from
+// the local machine; no LAN exposure.
 func (s *CallbackServer) FindAvailablePort() (string, error) {
 	// Try ports 43893-43895 as configured in the OAuth client
 	ports := []string{"43893", "43894", "43895"}
 
 	for _, port := range ports {
-		listener, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
+		listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%s", port))
 		if err == nil {
 			listener.Close()
 			s.Port = port
@@ -42,7 +44,7 @@ func (s *CallbackServer) FindAvailablePort() (string, error) {
 	}
 
 	// If configured ports are not available, find a random port
-	listener, err := net.Listen("tcp", ":0")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", fmt.Errorf("failed to find available port: %w", err)
 	}
@@ -59,7 +61,7 @@ func (s *CallbackServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/callback", s.handleCallback)
 
 	server := &http.Server{
-		Addr:    fmt.Sprintf(":%s", s.Port),
+		Addr:    fmt.Sprintf("127.0.0.1:%s", s.Port),
 		Handler: mux,
 	}
 

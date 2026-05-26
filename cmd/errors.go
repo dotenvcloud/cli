@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/ui"
@@ -18,8 +19,9 @@ func HandleAPIError(err error, account *config.Account) error {
 		return nil
 	}
 
-	// Check for client-managed key error
-	if errors.Is(err, ErrClientManagedKey) {
+	// Check for client-managed key error — either CLI's sentinel or the SDK
+	// typed sentinel exposed by F-19.
+	if errors.Is(err, ErrClientManagedKey) || errors.Is(err, dotenv.ErrClientManagedEncryption) {
 		return fmt.Errorf("this project uses client-managed encryption. Please provide your encryption key using --client-key flag or you will be prompted for it")
 	}
 
@@ -110,48 +112,34 @@ func ShowErrorWithHelp(err error) {
 	ui.PrintError("%v", err)
 
 	// Add contextual help based on error message
+	msg := err.Error()
 	switch {
-	case contains(err.Error(), "No organization selected"):
+	case strings.Contains(msg, "No organization selected"):
 		ui.PrintInfo("\nTo fix this:")
 		ui.PrintInfo("1. Run 'dotenv org list' to see available organizations")
 		ui.PrintInfo("2. Run 'dotenv org use <organization>' to select one")
 
-	case contains(err.Error(), "not found"):
+	case strings.Contains(msg, "not found"):
 		ui.PrintInfo("\nTo troubleshoot:")
 		ui.PrintInfo("1. Check your spelling and try again")
 		ui.PrintInfo("2. Run 'dotenv list' commands to see available resources")
 		ui.PrintInfo("3. Ensure you have the correct organization selected")
 
-	case contains(err.Error(), "Access denied"):
+	case strings.Contains(msg, "Access denied"):
 		ui.PrintInfo("\nTo resolve:")
 		ui.PrintInfo("1. Contact your organization administrator for access")
 		ui.PrintInfo("2. Check that you're using the correct organization")
 		ui.PrintInfo("3. Verify your account has the necessary permissions")
 
-	case contains(err.Error(), "session has expired"):
+	case strings.Contains(msg, "session has expired"):
 		ui.PrintInfo("\nYour authentication has expired. Please run:")
 		ui.PrintInfo("  dotenv login")
 
-	case contains(err.Error(), "client-managed encryption"):
+	case strings.Contains(msg, "client-managed encryption"):
 		ui.PrintInfo("\nThis project uses client-managed encryption keys.")
 		ui.PrintInfo("To provide your key:")
 		ui.PrintInfo("1. Use the --client-key flag: dotenv pull <project> --client-key=path/to/key")
 		ui.PrintInfo("2. Or wait to be prompted for the key")
 		ui.PrintInfo("3. The key should be in base64, hex, or raw format")
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && len(substr) > 0 &&
-		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
-			(len(s) > len(substr) && findSubstring(s, substr))))
-}
-
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
