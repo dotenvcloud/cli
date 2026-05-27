@@ -38,6 +38,18 @@ jobs:
           owner: lostlink
           repositories: dotenv-sdk-go
 
+      - name: Mint GitHub App token (Homebrew tap + Scoop bucket)
+        # Short-lived (~1h), repo-scoped install token. Replaces the
+        # long-lived PATs HOMEBREW_TAP_GITHUB_TOKEN and
+        # SCOOP_BUCKET_GITHUB_TOKEN.
+        id: publish-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.PUBLISH_APP_ID }}
+          private-key: ${{ secrets.PUBLISH_APP_PRIVATE_KEY }}
+          owner: lostlink
+          repositories: dotenv-homebrew-tap,dotenv-scoop-bucket
+
       - name: Checkout
         uses: actions/checkout@v6
         with:
@@ -99,8 +111,8 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
-          SCOOP_BUCKET_GITHUB_TOKEN: ${{ secrets.SCOOP_BUCKET_GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.publish-token.outputs.token }}
+          SCOOP_BUCKET_GITHUB_TOKEN: ${{ steps.publish-token.outputs.token }}
           # Dockerfile fetches the private dotenv-sdk-go module via
           # `--mount=type=secret,id=gh_pat`; .goreleaser.yml passes it
           # through with `--secret=id=gh_pat,env=GH_PAT`.
