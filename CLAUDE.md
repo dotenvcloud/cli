@@ -228,16 +228,24 @@ GOOS=linux GOARCH=amd64 go build -o dotenv-linux-amd64
 ## User Experience
 
 ### Installation
+
+Two release channels — stable (tagged) and nightly (rolling main HEAD).
+
 ```bash
-# macOS
+# Stable, macOS
 brew install dotenv-cli
 
-# Linux/Windows
-curl -sSL https://get.dotenv.cloud | bash
+# Stable, Linux/Windows
+curl -sSL https://dotenv.cloud/install.sh | bash
+
+# Nightly (bleeding-edge main HEAD)
+curl -sSL https://dotenv.cloud/install.sh | bash -s -- --nightly
 
 # Go
-go install github.com/dotenv/cli@latest
+go install github.com/lostlink/dotenv-cli@latest
 ```
+
+Stable comes from `release.yml` (GoReleaser on `v*` tag). Nightly comes from `nightly.yml` (rolling pre-release on every main-CI success). See `docs/INSTALLATION.md` for full channel docs.
 
 ### First Run Experience
 1. `dotenv init` - Interactive setup

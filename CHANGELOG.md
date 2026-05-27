@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Nightly release channel: rolling `nightly` GitHub pre-release rebuilt on every successful CI on `main`, pinned to that commit's SHA.
+- `install.sh --nightly` flag pulls the matching OS/ARCH asset from the `nightly` tag.
 - Initial release of DotEnv CLI
 - Core commands: init, login, pull, push, list, export, refresh, update, use-context, version
 - Support for hierarchical secrets (project/target/environment)
