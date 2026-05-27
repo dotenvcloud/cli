@@ -75,6 +75,11 @@ jobs:
       - name: Generate completions
         run: make completions
 
+      - name: Export GOVERSION
+        # GoReleaser v2 removed `.Runtime.Goversion`; ldflag injection
+        # now reads `{{ .Env.GOVERSION }}` from this var.
+        run: echo "GOVERSION=$(go version | awk '{print $3}')" >> "$GITHUB_ENV"
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
