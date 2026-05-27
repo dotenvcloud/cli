@@ -9,6 +9,7 @@ permissions:
   contents: write
   packages: write
   id-token: write  # For Sigstore signing
+  checks: read     # wait-on-check-action lists check-runs on tag SHA
 
 env:
   GOPRIVATE: github.com/lostlink/*
