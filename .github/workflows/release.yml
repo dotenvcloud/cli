@@ -9,7 +9,6 @@ permissions:
   contents: write
   packages: write
   id-token: write  # For Sigstore signing
-  checks: read     # wait-on-check-action lists check-runs on tag SHA
 
 env:
   GOPRIVATE: github.com/lostlink/*
@@ -18,16 +17,10 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - name: Wait for CI on tagged commit
-        # v1.3.4 exits failure when the target check doesn't yet exist on
-        # the SHA (Build depends on test/lint/security, so it appears
-        # late). v1.7.0 retries until the check shows up.
-        uses: lewagon/wait-on-check-action@v1.7.0
-        with:
-          ref: ${{ github.sha }}
-          check-name: 'Build'
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          wait-interval: 30
+      # No `wait-on-check` gate. Tag SHA = main HEAD, which already
+      # passed CI on PR merge (branch protection enforced). Re-gating
+      # on tag-push CI was a 60s appearance-deadline race that broke
+      # every retry. Branch protection is the real gate.
 
       - name: Mint GitHub App token (SDK access)
         id: app-token
