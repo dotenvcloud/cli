@@ -49,12 +49,16 @@ checksum:
   name_template: 'checksums.txt'
 
 signs:
+  # cosign v2.x defaults to `--new-bundle-format`, which makes
+  # --output-certificate / --output-signature no-ops and writes the
+  # cert + signature into a single .bundle file. Old config tried
+  # to open an empty cert/sig path → "create bundle file: open : no
+  # such file or directory".
   - cmd: cosign
-    certificate: '${artifact}.pem'
+    signature: '${artifact}.bundle'
     args:
       - sign-blob
-      - '--output-certificate=${certificate}'
-      - '--output-signature=${signature}'
+      - '--bundle=${signature}'
       - '${artifact}'
       - '--yes'
     artifacts: checksum
