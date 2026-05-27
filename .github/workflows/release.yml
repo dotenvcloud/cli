@@ -113,7 +113,3 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.publish-token.outputs.token }}
           SCOOP_BUCKET_GITHUB_TOKEN: ${{ steps.publish-token.outputs.token }}
-          # Dockerfile fetches the private dotenv-sdk-go module via
-          # `--mount=type=secret,id=gh_pat`; .goreleaser.yml passes it
-          # through with `--secret=id=gh_pat,env=GH_PAT`.
-          GH_PAT: ${{ steps.app-token.outputs.token }}
