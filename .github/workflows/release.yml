@@ -80,14 +80,23 @@ jobs:
         # now reads `{{ .Env.GOVERSION }}` from this var.
         run: echo "GOVERSION=$(go version | awk '{print $3}')" >> "$GITHUB_ENV"
 
+      - name: Install syft (SBOM generator)
+        # GoReleaser's `sboms` stage shells out to `syft` (default cmd).
+        # Not pre-installed on hosted runners. Generates CycloneDX JSON
+        # attached to each release archive for supply-chain hygiene.
+        run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sudo sh -s -- -b /usr/local/bin
+
+      - name: Install snapcraft
+        # GoReleaser's `snapcrafts` stage shells out to `snapcraft`. Not
+        # pre-installed on hosted runners. Builds the `.snap` artifact
+        # consumed by `sudo snap install dotenv-cli`.
+        uses: samuelmeuli/action-snapcraft@v2
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
           version: latest
-          # snapcraft and sbom (syft) tools aren't installed on the
-          # hosted runner. Skip them for v0.1.0. Add proper tooling
-          # in a follow-up workflow if needed.
-          args: release --clean --skip=snapcraft,sbom
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
