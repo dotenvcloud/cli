@@ -20,17 +20,17 @@ jobs:
     steps:
       - name: Mint GitHub App token (SDK access)
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.SDK_ACCESS_APP_ID }}
           private-key: ${{ secrets.SDK_ACCESS_APP_PRIVATE_KEY }}
           owner: lostlink
           repositories: dotenv-sdk-go
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.26'
           cache: true
@@ -48,7 +48,7 @@ jobs:
           govulncheck ./...
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'fs'
           scan-ref: '.'
@@ -57,7 +57,7 @@ jobs:
           output: 'trivy-results.sarif'
 
       - name: Run Snyk
-        uses: snyk/actions/golang@master
+        uses: snyk/actions/golang@v1.0.0
         continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -67,7 +67,7 @@ jobs:
       - name: Upload SARIF results
         # Private repo: Code Scanning API needs GHAS. Persist SARIF as
         # workflow artifact instead.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: trivy-fs-sarif
