@@ -150,9 +150,10 @@ snapcrafts:
         command: dotenv
         plugs: [network, home]
 
-# Docker images. Dockerfile uses BuildKit `--mount=type=secret,id=gh_pat`
-# to fetch the private lostlink/dotenv-sdk-go module — GH_PAT must be set
-# in the workflow env from a short-lived GitHub App installation token.
+# Docker images. GoReleaser builds the binary outside Docker, so use
+# `Dockerfile.goreleaser` (single-stage, COPY prebuilt binary) — NOT
+# the from-source multi-stage `Dockerfile` (which is for
+# docker-publish.yml's rolling main builds).
 dockers:
   - image_templates:
       - "lostlink/{{ .ProjectName }}:{{ .Version }}-amd64"
@@ -160,8 +161,7 @@ dockers:
     use: buildx
     build_flag_templates:
       - "--platform=linux/amd64"
-      - "--secret=id=gh_pat,env=GH_PAT"
-    dockerfile: Dockerfile
+    dockerfile: Dockerfile.goreleaser
 
   - image_templates:
       - "lostlink/{{ .ProjectName }}:{{ .Version }}-arm64"
@@ -170,8 +170,7 @@ dockers:
     goarch: arm64
     build_flag_templates:
       - "--platform=linux/arm64"
-      - "--secret=id=gh_pat,env=GH_PAT"
-    dockerfile: Dockerfile
+    dockerfile: Dockerfile.goreleaser
 
 docker_manifests:
   - name_template: "lostlink/{{ .ProjectName }}:{{ .Version }}"

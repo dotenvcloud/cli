@@ -1,0 +1,26 @@
+# GoReleaser docker build. GoReleaser builds the binary outside Docker
+# and presents a build context that only contains the prebuilt `dotenv`
+# binary, the nFPM packages, and this Dockerfile. No go.mod / go.sum /
+# source tree is available — so this is a single-stage runtime image
+# that just copies the binary in.
+#
+# The from-source multi-stage `Dockerfile` is still used by
+# docker-publish.yml for rolling main builds.
+
+FROM alpine:3.19
+
+RUN apk add --no-cache ca-certificates
+
+RUN addgroup -g 1000 -S dotenv && \
+    adduser -u 1000 -S dotenv -G dotenv
+
+COPY dotenv /usr/local/bin/dotenv
+
+RUN mkdir -p /home/dotenv/.config/dotenv && \
+    chown -R dotenv:dotenv /home/dotenv
+
+USER dotenv
+WORKDIR /home/dotenv
+
+ENTRYPOINT ["dotenv"]
+CMD ["--help"]
