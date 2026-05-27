@@ -38,6 +38,18 @@ jobs:
           owner: lostlink
           repositories: dotenv-sdk-go
 
+      - name: Mint GitHub App token (Homebrew tap + Scoop bucket)
+        # Short-lived (~1h), repo-scoped install token. Replaces the
+        # long-lived PATs HOMEBREW_TAP_GITHUB_TOKEN and
+        # SCOOP_BUCKET_GITHUB_TOKEN.
+        id: publish-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.PUBLISH_APP_ID }}
+          private-key: ${{ secrets.PUBLISH_APP_PRIVATE_KEY }}
+          owner: lostlink
+          repositories: dotenv-homebrew-tap,dotenv-scoop-bucket
+
       - name: Checkout
         uses: actions/checkout@v6
         with:
@@ -80,6 +92,18 @@ jobs:
         # now reads `{{ .Env.GOVERSION }}` from this var.
         run: echo "GOVERSION=$(go version | awk '{print $3}')" >> "$GITHUB_ENV"
 
+      - name: Install syft (SBOM generator)
+        # GoReleaser's `sboms` stage shells out to `syft` (default cmd).
+        # Not pre-installed on hosted runners. Generates CycloneDX JSON
+        # attached to each release archive for supply-chain hygiene.
+        run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sudo sh -s -- -b /usr/local/bin
+
+      - name: Install snapcraft
+        # GoReleaser's `snapcrafts` stage shells out to `snapcraft`. Not
+        # pre-installed on hosted runners. Builds the `.snap` artifact
+        # consumed by `sudo snap install dotenv-cli`.
+        uses: samuelmeuli/action-snapcraft@v2
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
@@ -87,5 +111,9 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
-          SCOOP_BUCKET_GITHUB_TOKEN: ${{ secrets.SCOOP_BUCKET_GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.publish-token.outputs.token }}
+          SCOOP_BUCKET_GITHUB_TOKEN: ${{ steps.publish-token.outputs.token }}
+          # Dockerfile fetches the private dotenv-sdk-go module via
+          # `--mount=type=secret,id=gh_pat`; .goreleaser.yml passes it
+          # through with `--secret=id=gh_pat,env=GH_PAT`.
+          GH_PAT: ${{ steps.app-token.outputs.token }}
