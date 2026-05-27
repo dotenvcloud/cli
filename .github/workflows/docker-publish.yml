@@ -1,9 +1,8 @@
 name: Docker Build and Publish
 
 on:
-  push:
-    tags:
-      - 'v*'
+  # Tag-triggered image publishing is owned by release.yml (GoReleaser).
+  # This workflow builds rolling main images and weekly security scans.
   workflow_run:
     workflows: ["CI"]
     types: [completed]
