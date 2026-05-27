@@ -84,7 +84,10 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           version: latest
-          args: release --clean
+          # snapcraft and sbom (syft) tools aren't installed on the
+          # hosted runner. Skip them for v0.1.0. Add proper tooling
+          # in a follow-up workflow if needed.
+          args: release --clean --skip=snapcraft,sbom
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
