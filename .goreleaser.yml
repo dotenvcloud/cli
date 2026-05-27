@@ -61,8 +61,11 @@ signs:
     output: true
 
 sboms:
+  # Default cmd is `syft` and default args write a CycloneDX JSON
+  # alongside each archive. The previous custom args used the v0.x
+  # `--file` flag which syft v1 removed → "command did not write any
+  # files". Stick to the defaults.
   - artifacts: archive
-    args: ["$artifact", "--file", "$sbom", "--output", "cyclonedx-json"]
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
