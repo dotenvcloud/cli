@@ -7,6 +7,13 @@ on:
   pull_request:
     branches: [ main ]
 
+# Cancel obsolete runs on the same ref. New push to a PR branch cancels
+# the prior PR-sync run; new push to main cancels any in-flight main run.
+# Saves Actions minutes on rapid-fire commits.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 # CLI depends on the private module github.com/lostlink/dotenv-sdk-go.
 # Each job mints a short-lived (~1h) GitHub App installation token to fetch
 # it. Repo secrets required:
@@ -180,6 +187,11 @@ jobs:
 
   build:
     name: Build
+    # Pre-merge cross-compile gate. Skip on push events — release.yml
+    # (tag push) and nightly.yml (workflow_run on main) drive GoReleaser
+    # which does the real cross-compile right after. No external workflow
+    # depends on this job's check-run.
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     needs: [test, lint, security]
     steps:
