@@ -18,12 +18,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Wait for CI on tagged commit
-        uses: lewagon/wait-on-check-action@v1.3.4
+        # v1.3.4 exits failure when the target check doesn't yet exist on
+        # the SHA (Build depends on test/lint/security, so it appears
+        # late). v1.7.0 retries until the check shows up.
+        uses: lewagon/wait-on-check-action@v1.7.0
         with:
           ref: ${{ github.sha }}
           check-name: 'Build'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-          wait-interval: 20
+          wait-interval: 30
 
       - name: Mint GitHub App token (SDK access)
         id: app-token
