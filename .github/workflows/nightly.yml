@@ -1,0 +1,113 @@
+name: Nightly
+
+# Rolling pre-release published on every successful CI on `main`.
+# Maintains a single `nightly` GitHub Release that is deleted and
+# recreated each run, pinned to the current main HEAD SHA. Users get
+# stable download URLs under `releases/download/nightly/...` for
+# bleeding-edge binaries.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write  # delete + recreate `nightly` release and tag
+  id-token: write  # cosign keyless signing
+
+env:
+  GOPRIVATE: github.com/lostlink/*
+
+jobs:
+  nightly:
+    # workflow_run gate: only proceed when upstream CI succeeded.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint GitHub App token (SDK access)
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.SDK_ACCESS_APP_ID }}
+          private-key: ${{ secrets.SDK_ACCESS_APP_PRIVATE_KEY }}
+          owner: lostlink
+          repositories: dotenv-sdk-go
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Configure git for private SDK module
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.1.2
+
+      - name: Install syft (SBOM generator)
+        run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sudo sh -s -- -b /usr/local/bin
+
+      - name: Generate completions
+        run: make completions
+
+      - name: Export GOVERSION
+        run: echo "GOVERSION=$(go version | awk '{print $3}')" >> "$GITHUB_ENV"
+
+      - name: GoReleaser snapshot build
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: latest
+          # Skip stages that don't apply to the nightly channel:
+          # - docker:    docker-publish.yml owns rolling main images.
+          # - snapcraft: not needed for the bleeding-edge channel; nightly
+          #              users on snap can pull the docker image instead.
+          # - homebrew/scoop: tap + bucket carry only stable releases.
+          # - publish/announce/validate: snapshot mode would no-op these
+          #                              anyway; managing the `nightly`
+          #                              release manually below.
+          args: release --snapshot --clean --skip=docker,snapcraft,homebrew,scoop,publish,announce,validate
+
+      - name: Recreate `nightly` pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Delete prior nightly release + tag (idempotent — swallows
+          # the "release not found" exit code on the first ever run).
+          gh release delete nightly --yes --cleanup-tag 2>/dev/null || true
+
+          # Pin to the current main HEAD SHA. `gh release create
+          # --target <sha>` creates the `nightly` tag at that commit.
+          gh release create nightly \
+            --target "${{ github.sha }}" \
+            --prerelease \
+            --title "nightly (main @ ${GITHUB_SHA:0:7})" \
+            --notes "Rolling build from main. Replaced on every successful main CI. Full SHA: ${GITHUB_SHA}" \
+            dist/dotenv-cli_*_linux_amd64.tar.gz \
+            dist/dotenv-cli_*_linux_arm64.tar.gz \
+            dist/dotenv-cli_*_linux_386.tar.gz \
+            dist/dotenv-cli_*_darwin_amd64.tar.gz \
+            dist/dotenv-cli_*_darwin_arm64.tar.gz \
+            dist/dotenv-cli_*_windows_amd64.zip \
+            dist/dotenv-cli_*_windows_386.zip \
+            dist/dotenv-cli_*_linux_amd64.deb \
+            dist/dotenv-cli_*_linux_arm64.deb \
+            dist/dotenv-cli_*_linux_386.deb \
+            dist/dotenv-cli_*_linux_amd64.rpm \
+            dist/dotenv-cli_*_linux_arm64.rpm \
+            dist/dotenv-cli_*_linux_386.rpm \
+            dist/dotenv-cli_*_linux_amd64.apk \
+            dist/dotenv-cli_*_linux_arm64.apk \
+            dist/dotenv-cli_*_linux_386.apk \
+            dist/checksums.txt \
+            dist/checksums.txt.bundle \
+            dist/*.sbom.json

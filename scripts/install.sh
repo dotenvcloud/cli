@@ -10,6 +10,7 @@
 #   curl -sSL https://dotenv.cloud/install.sh | bash
 #   wget -qO- https://dotenv.cloud/install.sh | bash
 #   ./install.sh --dry-run     # CI smoke test, no side effects
+#   ./install.sh --nightly     # Pull bleeding-edge main HEAD build
 #
 
 set -e
@@ -27,6 +28,7 @@ INSTALL_DIR_USER="$HOME/.local/bin"
 BINARY_NAME="dotenv"
 INSTALL_URL="https://dotenv.cloud/install.sh"
 DRY_RUN=0
+NIGHTLY=0
 
 # Helper functions
 info() {
@@ -98,32 +100,66 @@ get_latest_version() {
 install_dotenv() {
     OS=$(detect_os)
     ARCH=$(detect_arch)
-    VERSION=$(get_latest_version)
 
-    if [ -z "$VERSION" ]; then
-        if [ "$DRY_RUN" = "1" ]; then
-            warn "Could not determine latest version; using placeholder for dry-run"
-            VERSION="v0.0.0"
-            RESOLVED_TAG="placeholder"
+    if [ "$NIGHTLY" = "1" ]; then
+        # Nightly: rolling pre-release at the `nightly` tag, with
+        # versioned asset names like dotenv-cli_0.1.1-next_linux_amd64.tar.gz.
+        # Resolve the asset URL via the GH API by OS_ARCH suffix rather
+        # than guessing the embedded version string.
+        EXT="tar.gz"
+        [ "$OS" = "windows" ] && EXT="zip"
+        ASSET_SUFFIX="_${OS}_${ARCH}.${EXT}"
+
+        info "Resolving nightly asset URL for $OS/$ARCH..."
+        DOWNLOAD_URL=$(curl -sL "https://api.github.com/repos/$GITHUB_REPO/releases/tags/nightly" \
+            | grep '"browser_download_url"' \
+            | sed -E 's/.*"(https:\/\/[^"]+)".*/\1/' \
+            | grep -E "${ASSET_SUFFIX}$" \
+            | head -1)
+
+        if [ -z "$DOWNLOAD_URL" ]; then
+            if [ "$DRY_RUN" = "1" ]; then
+                warn "Could not resolve nightly asset URL; using placeholder for dry-run"
+                DOWNLOAD_URL="https://github.com/$GITHUB_REPO/releases/download/nightly/<asset>"
+                FILENAME="<asset>${ASSET_SUFFIX}"
+            else
+                error "Failed to find a nightly asset for $OS/$ARCH (suffix: $ASSET_SUFFIX)"
+            fi
         else
-            error "Failed to get latest version"
+            FILENAME=$(basename "$DOWNLOAD_URL")
         fi
+
+        VERSION="nightly"
+        info "Resolved tag: nightly (rolling main HEAD)"
+        info "Installing DotEnv CLI nightly for $OS/$ARCH..."
     else
-        RESOLVED_TAG="real"
+        VERSION=$(get_latest_version)
+
+        if [ -z "$VERSION" ]; then
+            if [ "$DRY_RUN" = "1" ]; then
+                warn "Could not determine latest version; using placeholder for dry-run"
+                VERSION="v0.0.0"
+                RESOLVED_TAG="placeholder"
+            else
+                error "Failed to get latest version"
+            fi
+        else
+            RESOLVED_TAG="real"
+        fi
+
+        info "Resolved tag: $VERSION ($RESOLVED_TAG)"
+        info "Installing DotEnv CLI $VERSION for $OS/$ARCH..."
+
+        # Construct download URL
+        FILENAME="dotenv-cli_${VERSION#v}_${OS}_${ARCH}"
+        if [ "$OS" = "windows" ]; then
+            FILENAME="${FILENAME}.zip"
+        else
+            FILENAME="${FILENAME}.tar.gz"
+        fi
+
+        DOWNLOAD_URL="https://github.com/$GITHUB_REPO/releases/download/$VERSION/$FILENAME"
     fi
-
-    info "Resolved tag: $VERSION ($RESOLVED_TAG)"
-    info "Installing DotEnv CLI $VERSION for $OS/$ARCH..."
-
-    # Construct download URL
-    FILENAME="dotenv-cli_${VERSION#v}_${OS}_${ARCH}"
-    if [ "$OS" = "windows" ]; then
-        FILENAME="${FILENAME}.zip"
-    else
-        FILENAME="${FILENAME}.tar.gz"
-    fi
-
-    DOWNLOAD_URL="https://github.com/$GITHUB_REPO/releases/download/$VERSION/$FILENAME"
 
     if [ "$DRY_RUN" = "1" ]; then
         info "Dry-run: would download $DOWNLOAD_URL"
@@ -206,8 +242,12 @@ main() {
                 DRY_RUN=1
                 shift
                 ;;
+            --nightly)
+                NIGHTLY=1
+                shift
+                ;;
             -h|--help)
-                echo "Usage: install.sh [--dry-run] [-h|--help]"
+                echo "Usage: install.sh [--dry-run] [--nightly] [-h|--help]"
                 exit 0
                 ;;
             *)
@@ -225,6 +265,9 @@ main() {
     echo
     if [ "$DRY_RUN" = "1" ]; then
         info "Running in dry-run mode (no changes will be made)"
+    fi
+    if [ "$NIGHTLY" = "1" ]; then
+        info "Channel: nightly (bleeding-edge main HEAD)"
     fi
 
     # Check for curl

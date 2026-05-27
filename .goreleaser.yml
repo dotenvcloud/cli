@@ -222,6 +222,12 @@ release:
     curl -sSL https://dotenv.cloud/install.sh | bash
     ```
 
+    ### Nightly (bleeding-edge main HEAD)
+    ```bash
+    curl -sSL https://dotenv.cloud/install.sh | bash -s -- --nightly
+    ```
+    Tracks rolling `main` HEAD. See [docs/INSTALLATION.md](https://github.com/lostlink/dotenv-cli/blob/main/docs/INSTALLATION.md#release-channels).
+
 changelog:
   use: github
   sort: asc

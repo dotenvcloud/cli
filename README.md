@@ -39,6 +39,20 @@ Using curl:
 curl -sSL https://dotenv.cloud/install.sh | bash
 ```
 
+#### Nightly (bleeding-edge `main` HEAD)
+
+For staging/dev environments that want the latest unreleased commits, the
+installer accepts `--nightly`. The `nightly` GitHub pre-release is
+rebuilt on every successful CI on `main`.
+
+```bash
+curl -sSL https://dotenv.cloud/install.sh | bash -s -- --nightly
+```
+
+Nightly builds are unsigned for Homebrew/Scoop and not published to
+the `lostlink/dotenv-homebrew-tap` / `lostlink/dotenv-scoop-bucket`
+repositories — those carry stable releases only.
+
 ### Windows
 
 Using Scoop:

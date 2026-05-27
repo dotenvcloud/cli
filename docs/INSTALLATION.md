@@ -4,6 +4,7 @@ This guide covers all installation methods for the DotEnv CLI across different p
 
 ## Table of Contents
 - [System Requirements](#system-requirements)
+- [Release Channels](#release-channels)
 - [Recommended Installation](#recommended-installation)
 - [Platform-Specific Instructions](#platform-specific-instructions)
 - [Installation from Source](#installation-from-source)
@@ -17,6 +18,45 @@ This guide covers all installation methods for the DotEnv CLI across different p
 - **Architecture**: x86_64 (Intel/AMD) or ARM64 (Apple Silicon, ARM)
 - **Disk Space**: ~50MB
 - **Network**: Internet connection for API access
+
+## Release Channels
+
+The CLI publishes two install channels.
+
+### Stable
+
+Tagged releases (`v0.1.0`, `v0.2.0`, …). Published by `release.yml` on every `v*` tag push. Available via every install method below — Homebrew, Scoop, deb/rpm/apk, Docker (`:v0.1.0`, `:latest`), and the install script's default behavior.
+
+```bash
+curl -sSL https://dotenv.cloud/install.sh | bash
+```
+
+### Nightly (bleeding-edge `main` HEAD)
+
+For staging/dev environments that want the latest unreleased commits. A single `nightly` GitHub pre-release is **rebuilt on every successful CI on `main`** and pinned to that commit's SHA. Replaces the previous nightly in place — no Release-page churn.
+
+```bash
+curl -sSL https://dotenv.cloud/install.sh | bash -s -- --nightly
+```
+
+Direct asset URL pattern (versioned filename — the installer's `--nightly` flag handles the lookup for you):
+
+```
+https://github.com/lostlink/dotenv-cli/releases/download/nightly/dotenv-cli_<version>-next_<os>_<arch>.<ext>
+```
+
+Or pull the rolling main image from Docker Hub / GHCR (published by `docker-publish.yml`):
+
+```bash
+docker pull lostlink/dotenv-cli:main
+# or
+docker pull ghcr.io/lostlink/dotenv-cli:main
+```
+
+**Caveats**:
+- Nightly artifacts are **not** published to the Homebrew tap or Scoop bucket. Those carry stable releases only.
+- Nightly versions look like `0.1.1-next` — the next patch after the most recent stable, with `-next` suffix.
+- No stability or back-compat guarantees. Use stable for production.
 
 ## Recommended Installation
 
