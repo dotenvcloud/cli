@@ -95,7 +95,7 @@ jobs:
         # GoReleaser's `snapcrafts` stage shells out to `snapcraft`. Not
         # pre-installed on hosted runners. Builds the `.snap` artifact
         # consumed by `sudo snap install dotenv-cli`.
-        uses: samuelmeuli/action-snapcraft@v2
+        uses: samuelmeuli/action-snapcraft@v3
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
