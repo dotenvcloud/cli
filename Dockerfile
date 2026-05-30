@@ -9,7 +9,7 @@ WORKDIR /build
 # Private SDK module needs a token to fetch. Pass via BuildKit secret:
 #   docker build --secret id=gh_pat,env=GH_PAT .
 # In CI this is wired through docker/build-push-action's `secrets:` input.
-ENV GOPRIVATE=github.com/lostlink/*
+ENV GOPRIVATE=github.com/dotenvcloud/*
 
 COPY go.mod go.sum ./
 RUN --mount=type=secret,id=gh_pat,required=true \
