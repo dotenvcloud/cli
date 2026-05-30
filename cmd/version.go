@@ -3,8 +3,9 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/dotenv/cli/internal/build"
 	"github.com/spf13/cobra"
+
+	"github.com/dotenv/cli/internal/build"
 )
 
 var versionCmd = &cobra.Command{

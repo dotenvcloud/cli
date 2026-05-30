@@ -4,8 +4,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/dotenv/cli/internal/constants"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/dotenv/cli/internal/constants"
 )
 
 func TestGetAPIURL(t *testing.T) {

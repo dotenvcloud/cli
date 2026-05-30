@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	dotenv "github.com/dotenvcloud/sdk-go"
+
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/constants"
-	dotenv "github.com/dotenvcloud/sdk-go"
 )
 
 // Options contains configuration for creating SDK clients

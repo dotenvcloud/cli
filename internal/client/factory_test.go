@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dotenv/cli/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dotenv/cli/internal/config"
 )
 
 func TestNewFactory(t *testing.T) {

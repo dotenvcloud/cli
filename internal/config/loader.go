@@ -7,9 +7,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/dotenv/cli/internal/config/crypto"
 	"github.com/dotenv/cli/internal/constants"
-	"gopkg.in/yaml.v3"
 )
 
 // Loader handles configuration loading and saving
