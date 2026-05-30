@@ -19,11 +19,11 @@ concurrency:
 # it. Repo secrets required:
 #   SDK_ACCESS_APP_ID           — GitHub App ID
 #   SDK_ACCESS_APP_PRIVATE_KEY  — App private key (PEM, including header)
-# The App must be installed on lostlink/dotenv-sdk-go with Contents: Read.
+# The App must be installed on dotenvcloud/sdk-go with Contents: Read.
 permissions:
   contents: read
 env:
-  GOPRIVATE: github.com/lostlink/*
+  GOPRIVATE: github.com/dotenvcloud/*
 
 jobs:
   test:
@@ -41,8 +41,8 @@ jobs:
         with:
           app-id: ${{ secrets.SDK_ACCESS_APP_ID }}
           private-key: ${{ secrets.SDK_ACCESS_APP_PRIVATE_KEY }}
-          owner: lostlink
-          repositories: dotenv-sdk-go
+          owner: dotenvcloud
+          repositories: sdk-go
 
       - uses: actions/checkout@v6
 
@@ -100,8 +100,8 @@ jobs:
         with:
           app-id: ${{ secrets.SDK_ACCESS_APP_ID }}
           private-key: ${{ secrets.SDK_ACCESS_APP_PRIVATE_KEY }}
-          owner: lostlink
-          repositories: dotenv-sdk-go
+          owner: dotenvcloud
+          repositories: sdk-go
 
       - uses: actions/checkout@v6
 
@@ -146,8 +146,8 @@ jobs:
         with:
           app-id: ${{ secrets.SDK_ACCESS_APP_ID }}
           private-key: ${{ secrets.SDK_ACCESS_APP_PRIVATE_KEY }}
-          owner: lostlink
-          repositories: dotenv-sdk-go
+          owner: dotenvcloud
+          repositories: sdk-go
 
       - uses: actions/checkout@v6
 
@@ -201,8 +201,8 @@ jobs:
         with:
           app-id: ${{ secrets.SDK_ACCESS_APP_ID }}
           private-key: ${{ secrets.SDK_ACCESS_APP_PRIVATE_KEY }}
-          owner: lostlink
-          repositories: dotenv-sdk-go
+          owner: dotenvcloud
+          repositories: sdk-go
 
       - uses: actions/checkout@v6
 

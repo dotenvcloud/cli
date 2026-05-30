@@ -242,7 +242,7 @@ curl -sSL https://dotenv.cloud/install.sh | bash
 curl -sSL https://dotenv.cloud/install.sh | bash -s -- --nightly
 
 # Go
-go install github.com/lostlink/dotenv-cli@latest
+go install github.com/dotenvcloud/cli@latest
 ```
 
 Stable comes from `release.yml` (GoReleaser on `v*` tag). Nightly comes from `nightly.yml` (rolling pre-release on every main-CI success). See `docs/INSTALLATION.md` for full channel docs.

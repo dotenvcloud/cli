@@ -50,7 +50,7 @@ curl -sSL https://dotenv.cloud/install.sh | bash -s -- --nightly
 ```
 
 Nightly builds are unsigned for Homebrew/Scoop and not published to
-the `lostlink/dotenv-homebrew-tap` / `lostlink/dotenv-scoop-bucket`
+the `dotenvcloud/homebrew-tap` / `dotenvcloud/scoop-bucket`
 repositories — those carry stable releases only.
 
 ### Windows

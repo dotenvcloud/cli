@@ -42,15 +42,15 @@ curl -sSL https://dotenv.cloud/install.sh | bash -s -- --nightly
 Direct asset URL pattern (versioned filename — the installer's `--nightly` flag handles the lookup for you):
 
 ```
-https://github.com/lostlink/dotenv-cli/releases/download/nightly/dotenv-cli_<version>-next_<os>_<arch>.<ext>
+https://github.com/dotenvcloud/cli/releases/download/nightly/dotenv-cli_<version>-next_<os>_<arch>.<ext>
 ```
 
 Or pull the rolling main image from Docker Hub / GHCR (published by `docker-publish.yml`):
 
 ```bash
-docker pull lostlink/dotenv-cli:main
+docker pull dotenvcloud/cli:main
 # or
-docker pull ghcr.io/lostlink/dotenv-cli:main
+docker pull ghcr.io/dotenvcloud/cli:main
 ```
 
 **Caveats**:
