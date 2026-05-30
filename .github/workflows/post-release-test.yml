@@ -24,7 +24,7 @@ jobs:
       
       - name: Test Homebrew installation
         run: |
-          brew tap lostlink/dotenv
+          brew tap dotenvcloud/dotenv
           brew install dotenv-cli
           dotenv version
           dotenv --help
@@ -42,7 +42,7 @@ jobs:
         run: |
           Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
           iwr -useb get.scoop.sh | iex
-          scoop bucket add dotenv https://github.com/lostlink/dotenv-scoop-bucket
+          scoop bucket add dotenv https://github.com/dotenvcloud/scoop-bucket
           scoop install dotenv-cli
           dotenv version
           dotenv --help
@@ -64,8 +64,8 @@ jobs:
     steps:
       - name: Test Docker image
         run: |
-          docker run --rm lostlink/dotenv-cli:latest version
-          docker run --rm ghcr.io/lostlink/dotenv-cli:latest version
+          docker run --rm dotenvcloud/cli:latest version
+          docker run --rm ghcr.io/dotenvcloud/cli:latest version
 
   test-linux-packages:
     runs-on: ubuntu-latest
@@ -74,7 +74,7 @@ jobs:
         run: |
           VERSION=${{ github.event.release.tag_name || github.event.inputs.version }}
           curl -L -o dotenv.deb \
-            "https://github.com/lostlink/dotenv-cli/releases/download/${VERSION}/dotenv-cli_${VERSION#v}_linux_amd64.deb"
+            "https://github.com/dotenvcloud/cli/releases/download/${VERSION}/dotenv-cli_${VERSION#v}_linux_amd64.deb"
           sudo dpkg -i dotenv.deb
           dotenv version
       

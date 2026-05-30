@@ -7,12 +7,12 @@ on:
 
 # Per-push gosec + govulncheck run in ci.yml. This workflow exists to
 # catch newly-disclosed CVEs (govulncheck), filesystem-level issues
-# (Trivy fs), and third-party dependency advisories (Snyk) in already-
+# (Trivy fs), and third-party dependency advisories in already-
 # merged code on a daily cadence.
 permissions:
   contents: read
 env:
-  GOPRIVATE: github.com/lostlink/*
+  GOPRIVATE: github.com/dotenvcloud/*
 
 jobs:
   scan:
@@ -24,8 +24,8 @@ jobs:
         with:
           app-id: ${{ secrets.SDK_ACCESS_APP_ID }}
           private-key: ${{ secrets.SDK_ACCESS_APP_PRIVATE_KEY }}
-          owner: lostlink
-          repositories: dotenv-sdk-go
+          owner: dotenvcloud
+          repositories: sdk-go
 
       - uses: actions/checkout@v6
 
@@ -55,14 +55,6 @@ jobs:
           severity: 'CRITICAL,HIGH'
           format: 'sarif'
           output: 'trivy-results.sarif'
-
-      - name: Run Snyk
-        uses: snyk/actions/golang@v1.0.0
-        continue-on-error: true
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: --severity-threshold=high
 
       - name: Upload SARIF results
         # Private repo: Code Scanning API needs GHAS. Persist SARIF as

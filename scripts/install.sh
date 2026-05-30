@@ -22,7 +22,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Configuration
-GITHUB_REPO="lostlink/dotenv-cli"
+GITHUB_REPO="dotenvcloud/cli"
 INSTALL_DIR_ROOT="/usr/local/bin"
 INSTALL_DIR_USER="$HOME/.local/bin"
 BINARY_NAME="dotenv"

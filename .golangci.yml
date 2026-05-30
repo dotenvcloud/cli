@@ -41,7 +41,7 @@ linters-settings:
     sections:
       - standard
       - default
-      - prefix(github.com/lostlink/dotenv-cli)
+      - prefix(github.com/dotenv/cli)
   goconst:
     min-len: 2
     min-occurrences: 2
@@ -61,7 +61,7 @@ linters-settings:
   gocyclo:
     min-complexity: 15
   goimports:
-    local-prefixes: github.com/lostlink/dotenv-cli
+    local-prefixes: github.com/dotenv/cli
   gosec:
     excludes:
       - G204  # Subprocess launched with variable

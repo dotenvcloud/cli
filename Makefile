@@ -155,39 +155,39 @@ ci: clean build test-coverage test-race lint
 # Docker commands
 docker-build:
 	@echo "Building CLI Docker image..."
-	docker build -t lostlink/dotenv-cli:local .
+	docker build -t dotenvcloud/cli:local .
 
 # Multi-platform Docker build
 docker-build-multi:
 	@echo "Building multi-platform CLI Docker image..."
-	docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t lostlink/dotenv-cli:local .
+	docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t dotenvcloud/cli:local .
 
 # Push Docker image to registry
 docker-push:
-	docker push lostlink/dotenv-cli:latest
+	docker push dotenvcloud/cli:latest
 
 # Pull Docker image from registry
 docker-pull:
-	docker pull lostlink/dotenv-cli:latest
+	docker pull dotenvcloud/cli:latest
 
 # Test CLI in Docker
 docker-test:
 	@echo "Running CLI tests in Docker..."
-	docker run --rm lostlink/dotenv-cli:local test
+	docker run --rm dotenvcloud/cli:local test
 
 # Shell into Docker container for debugging
 docker-shell:
-	docker run --rm -it lostlink/dotenv-cli:local sh
+	docker run --rm -it dotenvcloud/cli:local sh
 
 # Run CLI in Docker with custom arguments
 # Usage: make docker-run ARGS="login --email=user@example.com"
 docker-run:
-	docker run --rm -it lostlink/dotenv-cli:local $(ARGS)
+	docker run --rm -it dotenvcloud/cli:local $(ARGS)
 
 # Clean Docker images
 docker-clean:
 	docker image prune -f
-	docker rmi lostlink/dotenv-cli:local || true
+	docker rmi dotenvcloud/cli:local || true
 
 # Show help
 help:

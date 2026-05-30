@@ -77,9 +77,9 @@ snapshot:
 brews:
   - name: dotenv-cli
     repository:
-      owner: lostlink
-      name: dotenv-homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      owner: dotenvcloud
+      name: homebrew-tap
+      token: "{{ .Env.PUBLISH_APP_TOKEN }}"
     directory: Formula
     homepage: "https://dotenv.cloud"
     description: "Secure environment variable management CLI"
@@ -104,9 +104,9 @@ brews:
 
 scoops:
   - repository:
-      owner: lostlink
-      name: dotenv-scoop-bucket
-      token: "{{ .Env.SCOOP_BUCKET_GITHUB_TOKEN }}"
+      owner: dotenvcloud
+      name: scoop-bucket
+      token: "{{ .Env.PUBLISH_APP_TOKEN }}"
     directory: bucket
     homepage: "https://dotenv.cloud"
     description: "Secure environment variable management CLI"
@@ -156,16 +156,16 @@ snapcrafts:
 # docker-publish.yml's rolling main builds).
 dockers:
   - image_templates:
-      - "lostlink/{{ .ProjectName }}:{{ .Version }}-amd64"
-      - "ghcr.io/lostlink/{{ .ProjectName }}:{{ .Version }}-amd64"
+      - "dotenvcloud/cli:{{ .Version }}-amd64"
+      - "ghcr.io/dotenvcloud/cli:{{ .Version }}-amd64"
     use: buildx
     build_flag_templates:
       - "--platform=linux/amd64"
     dockerfile: Dockerfile.goreleaser
 
   - image_templates:
-      - "lostlink/{{ .ProjectName }}:{{ .Version }}-arm64"
-      - "ghcr.io/lostlink/{{ .ProjectName }}:{{ .Version }}-arm64"
+      - "dotenvcloud/cli:{{ .Version }}-arm64"
+      - "ghcr.io/dotenvcloud/cli:{{ .Version }}-arm64"
     use: buildx
     goarch: arm64
     build_flag_templates:
@@ -173,50 +173,50 @@ dockers:
     dockerfile: Dockerfile.goreleaser
 
 docker_manifests:
-  - name_template: "lostlink/{{ .ProjectName }}:{{ .Version }}"
+  - name_template: "dotenvcloud/cli:{{ .Version }}"
     image_templates:
-      - "lostlink/{{ .ProjectName }}:{{ .Version }}-amd64"
-      - "lostlink/{{ .ProjectName }}:{{ .Version }}-arm64"
-  
-  - name_template: "lostlink/{{ .ProjectName }}:latest"
+      - "dotenvcloud/cli:{{ .Version }}-amd64"
+      - "dotenvcloud/cli:{{ .Version }}-arm64"
+
+  - name_template: "dotenvcloud/cli:latest"
     image_templates:
-      - "lostlink/{{ .ProjectName }}:{{ .Version }}-amd64"
-      - "lostlink/{{ .ProjectName }}:{{ .Version }}-arm64"
+      - "dotenvcloud/cli:{{ .Version }}-amd64"
+      - "dotenvcloud/cli:{{ .Version }}-arm64"
     skip_push: "{{ .Prerelease }}"
 
-  - name_template: "ghcr.io/lostlink/{{ .ProjectName }}:{{ .Version }}"
+  - name_template: "ghcr.io/dotenvcloud/cli:{{ .Version }}"
     image_templates:
-      - "ghcr.io/lostlink/{{ .ProjectName }}:{{ .Version }}-amd64"
-      - "ghcr.io/lostlink/{{ .ProjectName }}:{{ .Version }}-arm64"
-  
-  - name_template: "ghcr.io/lostlink/{{ .ProjectName }}:latest"
+      - "ghcr.io/dotenvcloud/cli:{{ .Version }}-amd64"
+      - "ghcr.io/dotenvcloud/cli:{{ .Version }}-arm64"
+
+  - name_template: "ghcr.io/dotenvcloud/cli:latest"
     image_templates:
-      - "ghcr.io/lostlink/{{ .ProjectName }}:{{ .Version }}-amd64"
-      - "ghcr.io/lostlink/{{ .ProjectName }}:{{ .Version }}-arm64"
+      - "ghcr.io/dotenvcloud/cli:{{ .Version }}-amd64"
+      - "ghcr.io/dotenvcloud/cli:{{ .Version }}-arm64"
     skip_push: "{{ .Prerelease }}"
 
 release:
   github:
-    owner: lostlink
-    name: dotenv-cli
+    owner: dotenvcloud
+    name: cli
   draft: false
   prerelease: auto
   name_template: "v{{.Version}}"
   footer: |
     ## Installation
-    
+
     ### Homebrew
     ```bash
-    brew tap lostlink/dotenv
+    brew tap dotenvcloud/dotenv
     brew install dotenv-cli
     ```
-    
+
     ### Scoop
     ```bash
-    scoop bucket add dotenv https://github.com/lostlink/dotenv-scoop-bucket
+    scoop bucket add dotenv https://github.com/dotenvcloud/scoop-bucket
     scoop install dotenv-cli
     ```
-    
+
     ### Direct Download
     ```bash
     curl -sSL https://dotenv.cloud/install.sh | bash
@@ -226,7 +226,7 @@ release:
     ```bash
     curl -sSL https://dotenv.cloud/install.sh | bash -s -- --nightly
     ```
-    Tracks rolling `main` HEAD. See [docs/INSTALLATION.md](https://github.com/lostlink/dotenv-cli/blob/main/docs/INSTALLATION.md#release-channels).
+    Tracks rolling `main` HEAD. See [docs/INSTALLATION.md](https://github.com/dotenvcloud/cli/blob/main/docs/INSTALLATION.md#release-channels).
 
 changelog:
   use: github
