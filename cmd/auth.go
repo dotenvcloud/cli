@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/dotenv/cli/internal/ui"
-	dotenv "github.com/lostlink/dotenv-sdk-go"
+	dotenv "github.com/dotenvcloud/sdk-go"
 )
 
 var authCmd = &cobra.Command{

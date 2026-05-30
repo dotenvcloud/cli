@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"io"
 
-	dotenv "github.com/lostlink/dotenv-sdk-go"
+	dotenv "github.com/dotenvcloud/sdk-go"
 )
 
 const (

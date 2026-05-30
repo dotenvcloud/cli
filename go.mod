@@ -8,9 +8,9 @@ require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/briandowns/spinner v1.23.0
+	github.com/dotenvcloud/sdk-go v0.2.0
 	github.com/fatih/color v1.16.0
 	github.com/google/uuid v1.6.0
-	github.com/lostlink/dotenv-sdk-go v0.1.0
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/olekukonko/tablewriter v1.0.7
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c

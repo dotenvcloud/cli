@@ -14,7 +14,7 @@ import (
 
 	"github.com/dotenv/cli/cmd"
 	"github.com/dotenv/cli/test/helpers"
-	dotenv "github.com/lostlink/dotenv-sdk-go"
+	dotenv "github.com/dotenvcloud/sdk-go"
 )
 
 func TestPullCommand(t *testing.T) {

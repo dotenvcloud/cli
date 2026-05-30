@@ -13,7 +13,7 @@ import (
 	"github.com/dotenv/cli/internal/crypto/key"
 	"github.com/dotenv/cli/internal/formats"
 	"github.com/dotenv/cli/internal/ui"
-	dotenv "github.com/lostlink/dotenv-sdk-go"
+	dotenv "github.com/dotenvcloud/sdk-go"
 )
 
 var (

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	dotenv "github.com/lostlink/dotenv-sdk-go"
+	dotenv "github.com/dotenvcloud/sdk-go"
 )
 
 // NodeType represents the type of node in the hierarchy

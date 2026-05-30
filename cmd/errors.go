@@ -7,7 +7,7 @@ import (
 
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/ui"
-	dotenv "github.com/lostlink/dotenv-sdk-go"
+	dotenv "github.com/dotenvcloud/sdk-go"
 )
 
 // ErrClientManagedKey indicates that the project uses client-managed encryption

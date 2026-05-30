@@ -7,7 +7,7 @@ import (
 
 	"github.com/olekukonko/tablewriter"
 
-	dotenv "github.com/lostlink/dotenv-sdk-go"
+	dotenv "github.com/dotenvcloud/sdk-go"
 )
 
 // currentOrgULIDFromContext returns the ULID of the active organization for

@@ -16,7 +16,7 @@ import (
 	"github.com/dotenv/cli/internal/constants"
 	"github.com/dotenv/cli/internal/ui"
 	"github.com/dotenv/cli/internal/utils"
-	dotenv "github.com/lostlink/dotenv-sdk-go"
+	dotenv "github.com/dotenvcloud/sdk-go"
 )
 
 var accountCmd = &cobra.Command{

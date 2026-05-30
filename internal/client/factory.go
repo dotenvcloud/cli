@@ -6,7 +6,7 @@ import (
 
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/constants"
-	dotenv "github.com/lostlink/dotenv-sdk-go"
+	dotenv "github.com/dotenvcloud/sdk-go"
 )
 
 // Options contains configuration for creating SDK clients
