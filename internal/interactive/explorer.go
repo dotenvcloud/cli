@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"strings"
 
+	dotenv "github.com/dotenvcloud/sdk-go"
+
 	"github.com/dotenv/cli/internal/hierarchy"
 	"github.com/dotenv/cli/internal/ui"
-	dotenv "github.com/dotenvcloud/sdk-go"
 )
 
 // Action represents what to do with the selected resource

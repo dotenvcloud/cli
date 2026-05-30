@@ -6,8 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dotenv/cli/internal/formats"
 	"gopkg.in/yaml.v3"
+
+	"github.com/dotenv/cli/internal/formats"
 )
 
 // Handler implements YAML format handling

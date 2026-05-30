@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	dotenv "github.com/dotenvcloud/sdk-go"
+	"github.com/google/uuid"
 )
 
 // cliVersionKey is a context key for the CLI version, typed to avoid string key collisions.
