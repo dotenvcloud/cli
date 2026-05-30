@@ -7,11 +7,12 @@ import (
 
 	"github.com/spf13/viper"
 
+	dotenv "github.com/dotenvcloud/sdk-go"
+
 	"github.com/dotenv/cli/internal/auth"
 	"github.com/dotenv/cli/internal/client"
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/ui"
-	dotenv "github.com/dotenvcloud/sdk-go"
 )
 
 // apiClientFactory is the indirection seam tests use to swap in a fake

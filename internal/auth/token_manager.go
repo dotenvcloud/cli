@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"time"
 
+	dotenv "github.com/dotenvcloud/sdk-go"
+
 	"github.com/dotenv/cli/internal/client"
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/constants"
 	"github.com/dotenv/cli/internal/errors"
 	"github.com/dotenv/cli/internal/utils"
-	dotenv "github.com/dotenvcloud/sdk-go"
 )
 
 // TokenManager handles OAuth token refresh and validation

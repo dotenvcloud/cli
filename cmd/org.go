@@ -7,10 +7,11 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 
+	dotenv "github.com/dotenvcloud/sdk-go"
+
 	"github.com/dotenv/cli/internal/client"
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/ui"
-	dotenv "github.com/dotenvcloud/sdk-go"
 )
 
 var (

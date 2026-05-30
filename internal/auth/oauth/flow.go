@@ -9,11 +9,12 @@ import (
 
 	"github.com/pkg/browser"
 
+	dotenv "github.com/dotenvcloud/sdk-go"
+
 	"github.com/dotenv/cli/internal/client"
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/constants"
 	"github.com/dotenv/cli/internal/ui"
-	dotenv "github.com/dotenvcloud/sdk-go"
 )
 
 // AuthFlow handles the complete OAuth2 authentication flow

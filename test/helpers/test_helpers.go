@@ -10,10 +10,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dotenv/cli/internal/config"
-	"github.com/dotenv/cli/internal/ui"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
+
+	"github.com/dotenv/cli/internal/config"
+	"github.com/dotenv/cli/internal/ui"
 )
 
 // TestConfig holds test configuration

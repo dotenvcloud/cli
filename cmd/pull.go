@@ -13,6 +13,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	dotenv "github.com/dotenvcloud/sdk-go"
+
 	"github.com/dotenv/cli/internal/crypto"
 	"github.com/dotenv/cli/internal/crypto/key"
 	"github.com/dotenv/cli/internal/formats/env"
@@ -20,7 +22,6 @@ import (
 	jsonformat "github.com/dotenv/cli/internal/formats/json"
 	"github.com/dotenv/cli/internal/formats/yaml"
 	"github.com/dotenv/cli/internal/ui"
-	dotenv "github.com/dotenvcloud/sdk-go"
 )
 
 var (

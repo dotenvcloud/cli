@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	dotenv "github.com/dotenvcloud/sdk-go"
+
 	"github.com/dotenv/cli/internal/config"
 	"github.com/dotenv/cli/internal/ui"
-	dotenv "github.com/dotenvcloud/sdk-go"
 )
 
 // ErrClientManagedKey indicates that the project uses client-managed encryption

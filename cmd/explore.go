@@ -11,10 +11,11 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	dotenv "github.com/dotenvcloud/sdk-go"
+
 	"github.com/dotenv/cli/internal/hierarchy"
 	"github.com/dotenv/cli/internal/interactive"
 	"github.com/dotenv/cli/internal/ui"
-	dotenv "github.com/dotenvcloud/sdk-go"
 )
 
 var (
