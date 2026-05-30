@@ -14,7 +14,7 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# CLI depends on the private module github.com/lostlink/dotenv-sdk-go.
+# CLI depends on the private module github.com/dotenvcloud/sdk-go.
 # Each job mints a short-lived (~1h) GitHub App installation token to fetch
 # it. Repo secrets required:
 #   SDK_ACCESS_APP_ID           — GitHub App ID
