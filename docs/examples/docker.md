@@ -40,10 +40,10 @@ The image runs as the non-root user `dotenv` (UID 1000), with the binary at
 
 ## Architectures
 
-The published tags are multi-arch manifests covering `linux/amd64`,
-`linux/arm64`, and `linux/arm/v7` (Docker Hub). Docker selects the correct image
-for the host automatically — **only the runner's architecture matters**, and you
-never specify it explicitly.
+Stable tags (`:latest`, `:{version}`) are multi-arch manifests covering
+`linux/amd64` and `linux/arm64`. The rolling `:main` tag additionally includes
+`linux/arm/v7`. Docker selects the correct image for the host automatically —
+**only the runner's architecture matters**, and you never specify it explicitly.
 
 ## Quick Start
 
@@ -89,16 +89,17 @@ Supported formats: `env`, `json`, `yaml`, `shell`, `dockerfile`.
 
 ## Client-Managed Encryption Keys
 
-For zero-knowledge (client-managed) projects, provide the key via the
-environment so it is never written to disk:
+For zero-knowledge (client-managed) projects, mount your key file and point
+`--client-key` at it. The flag takes a **file path** that is read inside the
+container — mount it read-only:
 
 ```bash
 docker run --rm \
   -e DOTENV_API_KEY="$DOTENV_API_KEY" \
-  -e DOTENV_CLIENT_KEY="$DOTENV_CLIENT_KEY" \
   -v "$PWD":/work -w /work \
+  -v "$PWD/encryption.key":/key:ro \
   dotenvcloud/cli:latest \
-  pull myproject/production/web --output=.env
+  pull myproject/production/web --client-key=/key --output=.env
 ```
 
 ## The Non-Root User Caveat

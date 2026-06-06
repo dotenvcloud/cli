@@ -195,9 +195,9 @@ docker run --rm \
 ```
 
 - Registries: `dotenvcloud/cli` (Docker Hub) and `ghcr.io/dotenvcloud/cli` (GHCR).
-- Multi-arch: amd64/arm64 (plus arm/v7 on Docker Hub) — the right image is
-  selected automatically by the manifest, so only the runner's architecture
-  matters.
+- Multi-arch: `:latest`/`:{version}` cover amd64/arm64; the rolling `:main` tag
+  also includes arm/v7. The right image is selected automatically by the
+  manifest, so only the runner's architecture matters.
 - The container runs as the non-root user `dotenv` (UID 1000); any host path you
   mount must be writable by it.
 - `:latest` and `:{version}` tags ship with the first **stable** release. Until

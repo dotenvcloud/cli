@@ -196,9 +196,10 @@ pull-secrets:
     expire_in: 1 hour
 ```
 
-The image is multi-arch (amd64/arm64/arm), so it works on any runner
-architecture without changes. It runs as the non-root user `dotenv` (UID 1000);
-GitLab's build directory is writable by the job user, so `--output` works.
+The image is multi-arch (amd64/arm64; the rolling `:main` tag also covers
+arm/v7), so it works on any matching runner architecture without changes. It
+runs as the non-root user `dotenv` (UID 1000); GitLab's build directory is
+writable by the job user, so `--output` works.
 
 > The same image works anywhere a container is the unit of work — a **Jenkins**
 > `docker` agent, **Tekton** task steps, **Argo Workflows**, Drone, etc. Point
