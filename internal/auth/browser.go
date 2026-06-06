@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dotenv/cli/internal/auth/oauth"
-	"github.com/dotenv/cli/internal/config"
+	"github.com/dotenvcloud/cli/internal/auth/oauth"
+	"github.com/dotenvcloud/cli/internal/config"
 )
 
 // BrowserLoginOptions contains options for browser-based login

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dotenv/cli/internal/config"
+	"github.com/dotenvcloud/cli/internal/config"
 )
 
 func TestNewFactory(t *testing.T) {

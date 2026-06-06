@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dotenv/cli/internal/build"
+	"github.com/dotenvcloud/cli/internal/build"
 )
 
 var versionCmd = &cobra.Command{

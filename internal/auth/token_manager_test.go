@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/yaml.v3"
 
-	"github.com/dotenv/cli/internal/config"
-	"github.com/dotenv/cli/internal/constants"
+	"github.com/dotenvcloud/cli/internal/config"
+	"github.com/dotenvcloud/cli/internal/constants"
 )
 
 // setupTestConfig creates a test configuration directory with a default config file

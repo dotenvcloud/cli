@@ -13,9 +13,9 @@ import (
 
 	dotenv "github.com/dotenvcloud/sdk-go"
 
-	"github.com/dotenv/cli/internal/hierarchy"
-	"github.com/dotenv/cli/internal/interactive"
-	"github.com/dotenv/cli/internal/ui"
+	"github.com/dotenvcloud/cli/internal/hierarchy"
+	"github.com/dotenvcloud/cli/internal/interactive"
+	"github.com/dotenvcloud/cli/internal/ui"
 )
 
 var (

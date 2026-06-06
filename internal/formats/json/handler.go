@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dotenv/cli/internal/formats"
+	"github.com/dotenvcloud/cli/internal/formats"
 )
 
 // Handler implements JSON format handling

@@ -9,8 +9,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/dotenv/cli/internal/config/crypto"
-	"github.com/dotenv/cli/internal/constants"
+	"github.com/dotenvcloud/cli/internal/config/crypto"
+	"github.com/dotenvcloud/cli/internal/constants"
 )
 
 // Loader handles configuration loading and saving

@@ -11,10 +11,10 @@ import (
 
 	dotenv "github.com/dotenvcloud/sdk-go"
 
-	"github.com/dotenv/cli/internal/crypto"
-	"github.com/dotenv/cli/internal/crypto/key"
-	"github.com/dotenv/cli/internal/formats"
-	"github.com/dotenv/cli/internal/ui"
+	"github.com/dotenvcloud/cli/internal/crypto"
+	"github.com/dotenvcloud/cli/internal/crypto/key"
+	"github.com/dotenvcloud/cli/internal/formats"
+	"github.com/dotenvcloud/cli/internal/ui"
 )
 
 var (

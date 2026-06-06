@@ -3,7 +3,7 @@ package config
 import (
 	"os"
 
-	"github.com/dotenv/cli/internal/constants"
+	"github.com/dotenvcloud/cli/internal/constants"
 )
 
 // GetAPIURL returns the API URL with proper precedence:

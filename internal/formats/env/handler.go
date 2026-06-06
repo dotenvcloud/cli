@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/dotenv/cli/internal/formats"
+	"github.com/dotenvcloud/cli/internal/formats"
 )
 
 // Handler implements the ENV format handler

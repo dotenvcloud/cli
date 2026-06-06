@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dotenv/cli/internal/crypto"
-	"github.com/dotenv/cli/internal/crypto/key"
+	"github.com/dotenvcloud/cli/internal/crypto"
+	"github.com/dotenvcloud/cli/internal/crypto/key"
 )
 
 // TestVector represents a cross-platform test case

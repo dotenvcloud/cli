@@ -7,7 +7,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/dotenv/cli/internal/crypto"
+	"github.com/dotenvcloud/cli/internal/crypto"
 )
 
 func main() {

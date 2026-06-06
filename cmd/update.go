@@ -14,9 +14,9 @@ import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/spf13/cobra"
 
-	"github.com/dotenv/cli/internal/build"
-	"github.com/dotenv/cli/internal/constants"
-	"github.com/dotenv/cli/internal/ui"
+	"github.com/dotenvcloud/cli/internal/build"
+	"github.com/dotenvcloud/cli/internal/constants"
+	"github.com/dotenvcloud/cli/internal/ui"
 )
 
 var (

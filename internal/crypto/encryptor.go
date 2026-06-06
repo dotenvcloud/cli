@@ -176,7 +176,7 @@ func KeyFromString(s string) ([]byte, error) {
 
 // DeriveKeyFromPassword derives a key from a password using PBKDF2.
 //
-// Deprecated: use github.com/dotenv/cli/internal/crypto/key.DeriveKey instead.
+// Deprecated: use github.com/dotenvcloud/cli/internal/crypto/key.DeriveKey instead.
 func DeriveKeyFromPassword(_ string, _ []byte) ([]byte, error) {
-	return nil, fmt.Errorf("deprecated: use github.com/dotenv/cli/internal/crypto/key.DeriveKey instead")
+	return nil, fmt.Errorf("deprecated: use github.com/dotenvcloud/cli/internal/crypto/key.DeriveKey instead")
 }

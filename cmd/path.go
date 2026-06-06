@@ -12,7 +12,7 @@ import (
 
 	dotenv "github.com/dotenvcloud/sdk-go"
 
-	"github.com/dotenv/cli/internal/ui"
+	"github.com/dotenvcloud/cli/internal/ui"
 )
 
 var (

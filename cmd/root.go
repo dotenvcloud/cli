@@ -10,10 +10,10 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/dotenv/cli/internal/config"
-	"github.com/dotenv/cli/internal/constants"
-	"github.com/dotenv/cli/internal/telemetry"
-	"github.com/dotenv/cli/internal/ui"
+	"github.com/dotenvcloud/cli/internal/config"
+	"github.com/dotenvcloud/cli/internal/constants"
+	"github.com/dotenvcloud/cli/internal/telemetry"
+	"github.com/dotenvcloud/cli/internal/ui"
 )
 
 var (

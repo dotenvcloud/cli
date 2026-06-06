@@ -14,8 +14,8 @@ import (
 
 	dotenv "github.com/dotenvcloud/sdk-go"
 
-	"github.com/dotenv/cli/cmd"
-	"github.com/dotenv/cli/test/helpers"
+	"github.com/dotenvcloud/cli/cmd"
+	"github.com/dotenvcloud/cli/test/helpers"
 )
 
 func TestPullCommand(t *testing.T) {

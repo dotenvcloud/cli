@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/dotenv/cli/internal/constants"
+	"github.com/dotenvcloud/cli/internal/constants"
 )
 
 // Validator validates configuration values
