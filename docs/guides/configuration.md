@@ -360,13 +360,6 @@ export DOTENV_LOG_LEVEL=debug
 ```bash
 # Skip TLS verification (development only!)
 export DOTENV_TLS_SKIP_VERIFY=true
-
-# Custom CA certificate
-export DOTENV_CA_CERT=/path/to/ca.crt
-
-# Client certificate authentication
-export DOTENV_CLIENT_CERT=/path/to/client.crt
-export DOTENV_CLIENT_KEY=/path/to/client.key
 ```
 
 ## Advanced Configuration
