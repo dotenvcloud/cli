@@ -147,8 +147,8 @@ export DOTENV_TLS_SKIP_VERIFY=true
 # Use custom config file
 dotenv --config=/path/to/config.yaml pull myproject
 
-# Set via environment
-export DOTENV_CONFIG_FILE=/path/to/config.yaml
+# Set the config directory via environment (config.yaml is read from it)
+export DOTENV_CONFIG_DIR=/path/to
 ```
 
 ### Multiple Organizations
