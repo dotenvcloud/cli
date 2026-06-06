@@ -184,17 +184,27 @@ choco install dotenv-cli
 
 ### Docker
 
-```dockerfile
-FROM alpine:latest
-RUN apk add --no-cache curl \
-    && curl -sSL https://dotenv.cloud/install.sh | sh
-```
-
-Or use our official image:
+Use the official image — no install step needed. Pass the API key as an env var
+and mount the working directory so the output lands on the host:
 
 ```bash
-docker run --rm -v ~/.dotenv:/root/.dotenv dotenv/cli:latest pull myproject
+docker run --rm \
+  -e DOTENV_API_KEY="$DOTENV_API_KEY" \
+  -v "$PWD":/work -w /work \
+  dotenvcloud/cli:latest pull myproject/production/web --output=.env
 ```
+
+- Registries: `dotenvcloud/cli` (Docker Hub) and `ghcr.io/dotenvcloud/cli` (GHCR).
+- Multi-arch: `:latest`/`:{version}` cover amd64/arm64; the rolling `:main` tag
+  also includes arm/v7. The right image is selected automatically by the
+  manifest, so only the runner's architecture matters.
+- The container runs as the non-root user `dotenv` (UID 1000); any host path you
+  mount must be writable by it.
+- `:latest` and `:{version}` tags ship with the first **stable** release. Until
+  then, use the rolling `:main` tag (rebuilt on every successful CI on `main`).
+
+For full `docker run` recipes and container-native CI usage, see
+[Docker Integration](examples/docker.md).
 
 ## Installation from Source
 

@@ -3,11 +3,11 @@
 <div align="center">
   <img src="https://dotenv.cloud/logo.svg" alt="DotEnv Logo" width="200">
   
-  [![Version](https://img.shields.io/github/v/release/dotenv/cli)](https://github.com/dotenv/cli/releases)
-  [![Build Status](https://img.shields.io/github/workflow/status/dotenv/cli/test)](https://github.com/dotenv/cli/actions)
-  [![Coverage](https://img.shields.io/codecov/c/github/dotenv/cli)](https://codecov.io/gh/dotenv/cli)
-  [![Go Report Card](https://goreportcard.com/badge/github.com/dotenv/cli)](https://goreportcard.com/report/github.com/dotenv/cli)
-  [![License](https://img.shields.io/github/license/dotenv/cli)](LICENSE)
+  [![Version](https://img.shields.io/github/v/release/dotenvcloud/cli)](https://github.com/dotenvcloud/cli/releases)
+  [![Build Status](https://img.shields.io/github/workflow/status/dotenvcloud/cli/test)](https://github.com/dotenvcloud/cli/actions)
+  [![Coverage](https://img.shields.io/codecov/c/github/dotenvcloud/cli)](https://codecov.io/gh/dotenvcloud/cli)
+  [![Go Report Card](https://goreportcard.com/badge/github.com/dotenvcloud/cli)](https://goreportcard.com/report/github.com/dotenvcloud/cli)
+  [![License](https://img.shields.io/github/license/dotenvcloud/cli)](LICENSE)
 </div>
 
 <p align="center">
@@ -30,7 +30,7 @@
 
 Using Homebrew:
 ```bash
-brew tap dotenv/tap
+brew tap dotenvcloud/tap
 brew install dotenv
 ```
 
@@ -57,7 +57,7 @@ repositories — those carry stable releases only.
 
 Using Scoop:
 ```powershell
-scoop bucket add dotenv https://github.com/dotenv/scoop-bucket
+scoop bucket add dotenv https://github.com/dotenvcloud/scoop-bucket
 scoop install dotenv
 ```
 
@@ -69,8 +69,25 @@ iwr -useb https://dotenv.cloud/install.ps1 | iex
 ### From Source
 
 ```bash
-go install github.com/dotenv/cli@latest
+go install github.com/dotenvcloud/cli@latest
 ```
+
+### Docker
+
+Run the CLI straight from the official image — no install step, ideal for
+container-native CI:
+
+```bash
+docker run --rm \
+  -e DOTENV_API_KEY="$DOTENV_API_KEY" \
+  -v "$PWD":/work -w /work \
+  dotenvcloud/cli:latest pull myproject/production/web --output=.env
+```
+
+Images: `dotenvcloud/cli` (Docker Hub) and `ghcr.io/dotenvcloud/cli` (GHCR),
+multi-arch (amd64/arm64). `:latest` and `:{version}` tags arrive with the first
+stable release; until then use the rolling `:main` tag. See
+[Docker Integration](docs/examples/docker.md).
 
 See [Installation Guide](docs/INSTALLATION.md) for more options.
 
@@ -256,7 +273,7 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ```bash
 # Clone the repository
-git clone https://github.com/dotenv/cli.git
+git clone https://github.com/dotenvcloud/cli.git
 cd cli
 
 # Install dependencies
@@ -296,7 +313,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - 📧 Email: support@dotenv.cloud
 - 💬 Discord: [Join our community](https://discord.gg/dotenv)
-- 🐛 Issues: [GitHub Issues](https://github.com/dotenv/cli/issues)
+- 🐛 Issues: [GitHub Issues](https://github.com/dotenvcloud/cli/issues)
 - 📖 Docs: [Documentation](https://dotenv.cloud/docs/cli)
 
 ---

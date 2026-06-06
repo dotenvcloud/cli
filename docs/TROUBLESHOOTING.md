@@ -471,8 +471,8 @@ Check logs:
 # macOS/Linux
 tail -f ~/.dotenv/logs/dotenv.log
 
-# Enable logging
-export DOTENV_LOG_LEVEL=debug
+# Enable debug output
+export DOTENV_DEBUG=true
 ```
 
 ### Support Channels

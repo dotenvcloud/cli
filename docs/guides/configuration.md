@@ -23,7 +23,7 @@ DotEnv CLI uses a layered configuration system:
 ### Configuration Location
 
 - **Default**: `~/.dotenv/config.yaml`
-- **Custom**: Set with `--config` flag or `DOTENV_CONFIG_FILE` env var
+- **Custom**: Set with the `--config` flag (file path) or the `DOTENV_CONFIG_DIR` env var (a directory; `config.yaml` is read from it)
 - **Permissions**: 0600 (read/write by owner only)
 
 ## Config File Structure
@@ -331,12 +331,6 @@ export DOTENV_CONTEXT="staging"
 ```bash
 # API endpoint
 export DOTENV_API_URL="https://api.staging.dotenv.cloud"
-
-# Request timeout (seconds)
-export DOTENV_TIMEOUT=30
-
-# Retry attempts
-export DOTENV_RETRY_ATTEMPTS=3
 ```
 
 ### Display Settings
@@ -350,9 +344,6 @@ export DOTENV_DEBUG=true
 
 # Suppress all output
 export DOTENV_QUIET=true
-
-# Set log level (debug, info, warn, error)
-export DOTENV_LOG_LEVEL=debug
 ```
 
 ### Security Settings
@@ -360,13 +351,6 @@ export DOTENV_LOG_LEVEL=debug
 ```bash
 # Skip TLS verification (development only!)
 export DOTENV_TLS_SKIP_VERIFY=true
-
-# Custom CA certificate
-export DOTENV_CA_CERT=/path/to/ca.crt
-
-# Client certificate authentication
-export DOTENV_CLIENT_CERT=/path/to/client.crt
-export DOTENV_CLIENT_KEY=/path/to/client.key
 ```
 
 ## Advanced Configuration
@@ -374,10 +358,10 @@ export DOTENV_CLIENT_KEY=/path/to/client.key
 ### Custom Config Location
 
 ```bash
-# Via environment variable
-export DOTENV_CONFIG_FILE=/custom/path/config.yaml
+# Via environment variable (a directory; config.yaml is read from it)
+export DOTENV_CONFIG_DIR=/custom/path
 
-# Via command flag
+# Via command flag (explicit file path)
 dotenv --config=/custom/path/config.yaml pull myproject
 ```
 

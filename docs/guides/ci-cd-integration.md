@@ -179,7 +179,39 @@ steps:
 
 ## GitLab CI
 
-### Basic Setup
+### Container image (recommended)
+
+GitLab runs each job inside a container, so the simplest integration is to use
+the official CLI image directly as the job image — no install step:
+
+```yaml
+pull-secrets:
+  image: dotenvcloud/cli:latest   # use :main until the first stable release
+  variables:
+    DOTENV_API_KEY: $DOTENV_API_KEY   # set in Settings > CI/CD > Variables (masked)
+  script:
+    - dotenv pull "$CI_PROJECT_NAME/$CI_COMMIT_REF_NAME" --output=.env
+  artifacts:
+    paths: [.env]
+    expire_in: 1 hour
+```
+
+The image is multi-arch (amd64/arm64; the rolling `:main` tag also covers
+arm/v7), so it works on any matching runner architecture without changes. It
+runs as the non-root user `dotenv` (UID 1000); GitLab's build directory is
+writable by the job user, so `--output` works.
+
+> The same image works anywhere a container is the unit of work — a **Jenkins**
+> `docker` agent, **Tekton** task steps, **Argo Workflows**, Drone, etc. Point
+> the step at `dotenvcloud/cli` and run `dotenv pull …`. See the
+> [Docker Integration](../examples/docker.md) guide.
+>
+> **GitHub Actions is the exception:** its action installs the CLI **binary** so
+> it runs on Linux, macOS, and Windows. A Docker container action would be
+> Linux-only, so there is none by design — use the
+> [GitHub Action](https://github.com/dotenvcloud/action-github).
+
+### Basic Setup (binary install)
 
 `.gitlab-ci.yml`:
 

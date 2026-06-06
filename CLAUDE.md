@@ -136,8 +136,10 @@ contexts:
 DOTENV_API_KEY=xxx         # API key
 DOTENV_API_URL=xxx         # API base URL
 DOTENV_CONTEXT=production  # Active context
-DOTENV_CLIENT_KEY=xxx      # Client encryption key
 ```
+
+Client-managed encryption keys are supplied per command via
+`dotenv pull --client-key=<file>` (a file path), not an environment variable.
 
 ## Encryption Implementation
 
