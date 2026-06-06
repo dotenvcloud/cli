@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/dotenv/cli/internal/constants"
+	"github.com/dotenvcloud/cli/internal/constants"
 )
 
 // Config represents the complete CLI configuration

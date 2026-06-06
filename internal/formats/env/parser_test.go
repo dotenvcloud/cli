@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dotenv/cli/internal/formats"
+	"github.com/dotenvcloud/cli/internal/formats"
 )
 
 //nolint:funlen // table-driven test covers many .env parse variants; splitting hurts readability

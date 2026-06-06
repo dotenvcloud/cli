@@ -8,7 +8,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/dotenv/cli/internal/formats"
+	"github.com/dotenvcloud/cli/internal/formats"
 )
 
 // Handler implements YAML format handling

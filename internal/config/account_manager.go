@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dotenv/cli/internal/constants"
+	"github.com/dotenvcloud/cli/internal/constants"
 )
 
 // AccountManager manages accounts in the configuration

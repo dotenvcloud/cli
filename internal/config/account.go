@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dotenv/cli/internal/constants"
+	"github.com/dotenvcloud/cli/internal/constants"
 )
 
 // Account represents an authentication account (OAuth or API Key)

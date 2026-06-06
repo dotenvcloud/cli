@@ -12,12 +12,12 @@ import (
 
 	dotenv "github.com/dotenvcloud/sdk-go"
 
-	"github.com/dotenv/cli/internal/auth"
-	"github.com/dotenv/cli/internal/client"
-	"github.com/dotenv/cli/internal/config"
-	"github.com/dotenv/cli/internal/constants"
-	"github.com/dotenv/cli/internal/ui"
-	"github.com/dotenv/cli/internal/utils"
+	"github.com/dotenvcloud/cli/internal/auth"
+	"github.com/dotenvcloud/cli/internal/client"
+	"github.com/dotenvcloud/cli/internal/config"
+	"github.com/dotenvcloud/cli/internal/constants"
+	"github.com/dotenvcloud/cli/internal/ui"
+	"github.com/dotenvcloud/cli/internal/utils"
 )
 
 var accountCmd = &cobra.Command{

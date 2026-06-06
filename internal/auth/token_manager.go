@@ -7,11 +7,11 @@ import (
 
 	dotenv "github.com/dotenvcloud/sdk-go"
 
-	"github.com/dotenv/cli/internal/client"
-	"github.com/dotenv/cli/internal/config"
-	"github.com/dotenv/cli/internal/constants"
-	"github.com/dotenv/cli/internal/errors"
-	"github.com/dotenv/cli/internal/utils"
+	"github.com/dotenvcloud/cli/internal/client"
+	"github.com/dotenvcloud/cli/internal/config"
+	"github.com/dotenvcloud/cli/internal/constants"
+	"github.com/dotenvcloud/cli/internal/errors"
+	"github.com/dotenvcloud/cli/internal/utils"
 )
 
 // TokenManager handles OAuth token refresh and validation

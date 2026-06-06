@@ -11,10 +11,10 @@ import (
 
 	dotenv "github.com/dotenvcloud/sdk-go"
 
-	"github.com/dotenv/cli/internal/client"
-	"github.com/dotenv/cli/internal/config"
-	"github.com/dotenv/cli/internal/constants"
-	"github.com/dotenv/cli/internal/ui"
+	"github.com/dotenvcloud/cli/internal/client"
+	"github.com/dotenvcloud/cli/internal/config"
+	"github.com/dotenvcloud/cli/internal/constants"
+	"github.com/dotenvcloud/cli/internal/ui"
 )
 
 // AuthFlow handles the complete OAuth2 authentication flow

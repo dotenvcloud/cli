@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dotenv/cli/internal/formats"
+	"github.com/dotenvcloud/cli/internal/formats"
 )
 
 // Generator implements ENV format generation

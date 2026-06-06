@@ -3,8 +3,8 @@ package main
 import (
 	"os"
 
-	"github.com/dotenv/cli/cmd"
-	"github.com/dotenv/cli/internal/build"
+	"github.com/dotenvcloud/cli/cmd"
+	"github.com/dotenvcloud/cli/internal/build"
 )
 
 // Build variables set by ldflags

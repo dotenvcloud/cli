@@ -1,4 +1,4 @@
-module github.com/dotenv/cli
+module github.com/dotenvcloud/cli
 
 go 1.24.0
 

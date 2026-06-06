@@ -15,13 +15,13 @@ import (
 
 	dotenv "github.com/dotenvcloud/sdk-go"
 
-	"github.com/dotenv/cli/internal/crypto"
-	"github.com/dotenv/cli/internal/crypto/key"
-	"github.com/dotenv/cli/internal/formats/env"
-	"github.com/dotenv/cli/internal/formats/interpolation"
-	jsonformat "github.com/dotenv/cli/internal/formats/json"
-	"github.com/dotenv/cli/internal/formats/yaml"
-	"github.com/dotenv/cli/internal/ui"
+	"github.com/dotenvcloud/cli/internal/crypto"
+	"github.com/dotenvcloud/cli/internal/crypto/key"
+	"github.com/dotenvcloud/cli/internal/formats/env"
+	"github.com/dotenvcloud/cli/internal/formats/interpolation"
+	jsonformat "github.com/dotenvcloud/cli/internal/formats/json"
+	"github.com/dotenvcloud/cli/internal/formats/yaml"
+	"github.com/dotenvcloud/cli/internal/ui"
 )
 
 var (
