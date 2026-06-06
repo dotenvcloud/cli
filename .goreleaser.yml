@@ -72,7 +72,11 @@ sboms:
   - artifacts: archive
 
 snapshot:
-  version_template: "{{ incpatch .Version }}-next"
+  # Nightly runs `release --snapshot` off a floating `nightly` git tag, so
+  # `git describe` yields a non-semver version. `incpatch` requires semver
+  # and fails. Derive the snapshot version from the commit instead — no tag
+  # dependency. Only affects --snapshot (nightly); real releases use v* tags.
+  version_template: "0.0.0-nightly-{{ .ShortCommit }}"
 
 brews:
   - name: dotenv-cli
