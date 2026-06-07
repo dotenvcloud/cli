@@ -3,13 +3,11 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	dotenv "github.com/dotenvcloud/sdk-go"
 
@@ -51,11 +49,7 @@ func init() {
 }
 
 func runExplore(cmd *cobra.Command, args []string) error {
-	if viper.GetString("api_key") == "" && os.Getenv("DOTENV_API_KEY") == "" {
-		if err := displayAccountInfo(); err != nil {
-			ui.PrintWarningf("Could not display account info: %v", err)
-		}
-	}
+	printActiveIdentity()
 
 	if len(args) > 0 {
 		exploreStartPath = args[0]

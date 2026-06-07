@@ -86,14 +86,15 @@ func TestPullCommand_OutputFile(t *testing.T) {
 func TestPullCommand_Encryption(t *testing.T) {
 	tc := helpers.NewTestConfig(t)
 
-	// Generate test encryption key
-	encKey, err := dotenv.GenerateKey()
-	require.NoError(t, err)
-	encodedKey := dotenv.EncodeKey(encKey)
+	// The server returns the project key as a RAW STRING, and the level blob is
+	// encrypted with that key string per the platform contract
+	// (dotenv.EncryptWithProjectKey — never hex/base64-decoded). Use a 64-char
+	// hex key like the real server generates.
+	keyStr := "52c7e8f043e61267076c35827d6c4be454c70ecac00bf10e79a56d703e32e123"
 
 	// Encrypt the full env content (server stores the level as one encrypted
 	// blob, not per-key).
-	encrypted, err := dotenv.Encrypt("ENCRYPTED_VAR=decrypted-value", encKey)
+	encrypted, err := dotenv.EncryptWithProjectKey("ENCRYPTED_VAR=decrypted-value", keyStr)
 	require.NoError(t, err)
 
 	// Create mock server
@@ -102,7 +103,7 @@ func TestPullCommand_Encryption(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			content, _ := json.Marshal(map[string]interface{}{
 				"key": map[string]interface{}{
-					"key":     encodedKey,
+					"key":     keyStr,
 					"version": 1,
 				},
 			})

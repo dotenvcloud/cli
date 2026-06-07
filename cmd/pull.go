@@ -11,12 +11,9 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	dotenv "github.com/dotenvcloud/sdk-go"
 
-	"github.com/dotenvcloud/cli/internal/crypto"
-	"github.com/dotenvcloud/cli/internal/crypto/key"
 	"github.com/dotenvcloud/cli/internal/formats/env"
 	"github.com/dotenvcloud/cli/internal/formats/interpolation"
 	jsonformat "github.com/dotenvcloud/cli/internal/formats/json"
@@ -102,11 +99,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 		pullMerge = false
 	}
 
-	if viper.GetString("api_key") == "" && os.Getenv("DOTENV_API_KEY") == "" {
-		if err := displayAccountInfo(); err != nil {
-			ui.PrintWarningf("Could not display account info: %v", err)
-		}
-	}
+	printActiveIdentity()
 
 	projectSlug, targetSlug, environmentSlug, err := parsePullPath(args[0])
 	if err != nil {
@@ -265,7 +258,7 @@ func processHierarchicalSecrets(
 		}
 	}
 
-	var encKey []byte
+	var encKey string
 	if decrypt && needsKey {
 		var err error
 		encKey, err = getEncryptionKey(ctx, clientKeyPath, projectSlug, client)
@@ -293,20 +286,21 @@ func processHierarchicalSecrets(
 	return processSecretLevels(resp, merge, decrypt, encKey, targetLevel)
 }
 
-// getEncryptionKey retrieves the encryption key from client file or server
-func getEncryptionKey(ctx context.Context, clientKeyPath, projectSlug string, client *dotenv.Client) ([]byte, error) {
+// getEncryptionKey retrieves the project encryption key from a client file or
+// the server. The key is returned as a RAW STRING — never hex/base64-decoded —
+// because the platform contract derives the AES key from the key string's bytes
+// (see dotenv.DeriveProjectKey). Decoding it here would break decryption of data
+// written by the web app and JS SDK.
+func getEncryptionKey(ctx context.Context, clientKeyPath, projectSlug string, client *dotenv.Client) (string, error) {
 	if clientKeyPath != "" {
 		// Use client-provided key
 		keyData, err := os.ReadFile(clientKeyPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read client key from %s: %w", clientKeyPath, err)
+			return "", fmt.Errorf("failed to read client key from %s: %w", clientKeyPath, err)
 		}
-
-		encKey, err := key.ParseKey(string(keyData))
-		if err != nil {
-			return nil, fmt.Errorf("invalid client key format in %s: %w", clientKeyPath, err)
-		}
-		return encKey, nil
+		// Trim a trailing newline so a key file written with `echo` still
+		// matches the bytes the web/JS would use.
+		return strings.TrimSpace(string(keyData)), nil
 	}
 
 	// Get encryption key from server
@@ -318,22 +312,18 @@ func getEncryptionKey(ctx context.Context, clientKeyPath, projectSlug string, cl
 		// SDK now exposes a typed sentinel for the client-managed envelope
 		// (F-19); prefer that over HTTP-400 sniffing.
 		if errors.Is(err, dotenv.ErrClientManagedEncryption) {
-			return nil, ErrClientManagedKey
+			return "", ErrClientManagedKey
 		}
 
 		// Provide specific error for encryption key failures
 		if dotenv.IsNotFound(err) {
-			return nil, fmt.Errorf("encryption key not found for project '%s'. The project may not have encryption enabled", projectSlug)
+			return "", fmt.Errorf("encryption key not found for project '%s'. The project may not have encryption enabled", projectSlug)
 		}
 		account := accountForErrorContext()
-		return nil, HandleAPIError(err, account)
+		return "", HandleAPIError(err, account)
 	}
 
-	encKey, err := key.ParseKey(encKeyResp.Key)
-	if err != nil {
-		return nil, fmt.Errorf("server provided invalid encryption key format: %w", err)
-	}
-	return encKey, nil
+	return encKeyResp.Key, nil
 }
 
 // determineTargetLevel determines which level to use when not merging
@@ -355,7 +345,7 @@ func determineTargetLevel(hierarchy struct {
 func processSecretLevels(
 	resp *dotenv.SecretsHierarchyResponse,
 	merge, decrypt bool,
-	encKey []byte,
+	encKey string,
 	targetLevel string,
 ) (map[string]string, error) {
 	allSecrets := make(map[string]string)
@@ -397,16 +387,16 @@ func processSecretLevels(
 }
 
 // processLevel processes a single level and returns its secrets
-func processLevel(levelName string, level dotenv.SecretLevel, decrypt bool, encKey []byte, format string) (map[string]string, error) {
+func processLevel(levelName string, level dotenv.SecretLevel, decrypt bool, encKey, format string) (map[string]string, error) {
 	content := level.Content
 
 	// Decrypt if necessary
 	if decrypt && level.Encrypted {
-		if len(encKey) == 0 {
+		if encKey == "" {
 			return nil, fmt.Errorf("cannot decrypt %s level: encryption key not provided", levelName)
 		}
 
-		decrypted, err := crypto.DecryptString(content, encKey)
+		decrypted, err := dotenv.DecryptWithProjectKey(content, encKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decrypt %s level secrets: %w", levelName, err)
 		}
@@ -437,22 +427,17 @@ func parseSecretContent(content, format string) (map[string]string, error) {
 }
 
 // promptForClientKey prompts the user to enter their encryption key
-func promptForClientKey() ([]byte, error) {
+func promptForClientKey() (string, error) {
 	keyStr, err := ui.Password("Enter encryption key")
 	if err != nil {
-		return nil, fmt.Errorf("failed to read encryption key: %w", err)
+		return "", fmt.Errorf("failed to read encryption key: %w", err)
 	}
 
 	if keyStr == "" {
-		return nil, fmt.Errorf("encryption key cannot be empty")
+		return "", fmt.Errorf("encryption key cannot be empty")
 	}
 
-	encKey, err := key.ParseKey(keyStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid key format: %w", err)
-	}
-
-	return encKey, nil
+	return strings.TrimSpace(keyStr), nil
 }
 
 func formatSecrets(secrets map[string]string, format string) (string, error) {
