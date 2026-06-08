@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -83,7 +82,7 @@ func init() {
 	pullCmd.Flags().StringVarP(&pullFormat, "format", "f", "env",
 		"output format (env, json, yaml, shell, dockerfile)")
 	pullCmd.Flags().StringVar(&pullClientKey, "client-key", "",
-		"path to client encryption key file")
+		"path to a client encryption key file, or the key value itself")
 	pullCmd.Flags().BoolVar(&pullDecrypt, "decrypt", true,
 		"decrypt secrets (disable for raw encrypted values)")
 	pullCmd.Flags().BoolVarP(&pullQuiet, "quiet", "q", false,
@@ -261,18 +260,9 @@ func processHierarchicalSecrets(
 	var encKey string
 	if decrypt && needsKey {
 		var err error
-		encKey, err = getEncryptionKey(ctx, clientKeyPath, projectSlug, client)
+		encKey, err = resolveEncryptionKey(ctx, client, projectSlug, clientKeyPath, promptForClientKey)
 		if err != nil {
-			// If this is a client-managed key project and no key was provided, prompt for it
-			if err == ErrClientManagedKey && clientKeyPath == "" {
-				ui.PrintInfof("This project uses client-managed encryption. Please provide your encryption key.")
-				encKey, err = promptForClientKey()
-				if err != nil {
-					return nil, err
-				}
-			} else {
-				return nil, err
-			}
+			return nil, err
 		}
 	}
 
@@ -284,46 +274,6 @@ func processHierarchicalSecrets(
 
 	// Process levels and merge secrets
 	return processSecretLevels(resp, merge, decrypt, encKey, targetLevel)
-}
-
-// getEncryptionKey retrieves the project encryption key from a client file or
-// the server. The key is returned as a RAW STRING — never hex/base64-decoded —
-// because the platform contract derives the AES key from the key string's bytes
-// (see dotenv.DeriveProjectKey). Decoding it here would break decryption of data
-// written by the web app and JS SDK.
-func getEncryptionKey(ctx context.Context, clientKeyPath, projectSlug string, client *dotenv.Client) (string, error) {
-	if clientKeyPath != "" {
-		// Use client-provided key
-		keyData, err := os.ReadFile(clientKeyPath)
-		if err != nil {
-			return "", fmt.Errorf("failed to read client key from %s: %w", clientKeyPath, err)
-		}
-		// Trim a trailing newline so a key file written with `echo` still
-		// matches the bytes the web/JS would use.
-		return strings.TrimSpace(string(keyData)), nil
-	}
-
-	// Get encryption key from server
-	encKeyResp, encResp, err := client.Encryption.GetEncryptionKey(ctx, projectSlug)
-	if encResp != nil {
-		defer encResp.Body.Close()
-	}
-	if err != nil {
-		// SDK now exposes a typed sentinel for the client-managed envelope
-		// (F-19); prefer that over HTTP-400 sniffing.
-		if errors.Is(err, dotenv.ErrClientManagedEncryption) {
-			return "", ErrClientManagedKey
-		}
-
-		// Provide specific error for encryption key failures
-		if dotenv.IsNotFound(err) {
-			return "", fmt.Errorf("encryption key not found for project '%s'. The project may not have encryption enabled", projectSlug)
-		}
-		account := accountForErrorContext()
-		return "", HandleAPIError(err, account)
-	}
-
-	return encKeyResp.Key, nil
 }
 
 // determineTargetLevel determines which level to use when not merging
@@ -424,20 +374,6 @@ func parseSecretContent(content, format string) (map[string]string, error) {
 	default:
 		return nil, fmt.Errorf("unsupported secret format '%s': expected 'env' or 'json'", format)
 	}
-}
-
-// promptForClientKey prompts the user to enter their encryption key
-func promptForClientKey() (string, error) {
-	keyStr, err := ui.Password("Enter encryption key")
-	if err != nil {
-		return "", fmt.Errorf("failed to read encryption key: %w", err)
-	}
-
-	if keyStr == "" {
-		return "", fmt.Errorf("encryption key cannot be empty")
-	}
-
-	return strings.TrimSpace(keyStr), nil
 }
 
 func formatSecrets(secrets map[string]string, format string) (string, error) {

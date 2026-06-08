@@ -167,3 +167,64 @@ func TestPullCommand_Encryption(t *testing.T) {
 	// Check decrypted value appears
 	assert.Contains(t, stdout.String(), "ENCRYPTED_VAR=decrypted-value")
 }
+
+func TestPullCommand_ClientKeyLiteralValue(t *testing.T) {
+	tc := helpers.NewTestConfig(t)
+
+	// A literal --client-key value is used directly as the key string; the
+	// encryption-key endpoint must NOT be consulted.
+	keyStr := "myliteralclientkey"
+	encrypted, err := dotenv.EncryptWithProjectKey("LITERAL_VAR=ok", keyStr)
+	require.NoError(t, err)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/test-org/test-project/encryption-key" {
+			t.Errorf("encryption-key endpoint must not be called when --client-key is provided")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": map[string]interface{}{
+				"type": "secrets",
+				"attributes": map[string]interface{}{
+					"encrypted": true,
+					"format":    "env",
+					"levels": map[string]interface{}{
+						"project": map[string]interface{}{
+							"encrypted": true,
+							"content":   encrypted,
+							"source":    "test-project",
+						},
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	config := map[string]interface{}{
+		"version":         "1.0",
+		"current_context": "test",
+		"contexts": map[string]interface{}{
+			"test": map[string]interface{}{
+				"api_url":      server.URL,
+				"api_key":      tc.APIKey,
+				"organization": "test-org",
+			},
+		},
+	}
+	tc.WriteConfig(t, config)
+
+	rootCmd := cmd.NewRootCommand()
+	rootCmd.SetArgs([]string{"pull", "test-project", "--decrypt", "--client-key", keyStr, "--config", tc.ConfigPath})
+
+	// The root PersistentPreRun mirrors ui.Stdout onto cmd.OutOrStdout(), so the
+	// literal-key warning lands in this same buffer as the decrypted output.
+	var stdout bytes.Buffer
+	rootCmd.SetOut(&stdout)
+
+	err = rootCmd.Execute()
+	require.NoError(t, err)
+
+	assert.Contains(t, stdout.String(), "LITERAL_VAR=ok")
+	assert.Contains(t, stdout.String(), "literal argument")
+}

@@ -277,6 +277,13 @@ func resetCommandState() {
 	pullQuiet = false
 	pullMerge = true
 	pullLevelOnly = false
+
+	pushProject = ""
+	pushTarget = ""
+	pushEnvironment = ""
+	pushForce = false
+	pushClientKey = ""
+	pushEncrypt = true
 }
 
 // generateAnalyticsID generates a new anonymous analytics ID

@@ -73,7 +73,7 @@ func init() {
 	pushCmd.Flags().BoolVarP(&pushForce, "force", "f", false,
 		"overwrite existing secrets")
 	pushCmd.Flags().StringVar(&pushClientKey, "client-key", "",
-		"path to client encryption key file")
+		"path to a client encryption key file, or the key value itself")
 	pushCmd.Flags().BoolVar(&pushEncrypt, "encrypt", true,
 		"encrypt secrets before pushing")
 }
@@ -147,26 +147,24 @@ func parsePushArgs(args []string) (projectSlug, targetSlug, environmentSlug, sin
 
 // resolvePushEncryptionKey returns the project key as a RAW STRING (see
 // dotenv.DeriveProjectKey) — never hex/base64-decoded. An empty string means
-// "do not encrypt".
+// "do not encrypt". Key resolution (file/value/env/prompt) is shared with pull
+// via resolveEncryptionKey; this wrapper adds push's --encrypt=false handling
+// plus a guard against silently uploading plaintext to a client-managed project.
 func resolvePushEncryptionKey(ctx context.Context, client *dotenv.Client, projectSlug string) (string, error) {
 	if !pushEncrypt {
+		if projectIsClientManaged(ctx, client, projectSlug) {
+			ui.PrintWarningf("--encrypt=false on a client-managed project would upload PLAINTEXT secrets, defeating client-side encryption.")
+			ok, err := ui.Confirm("Push plaintext anyway?", false)
+			if err != nil {
+				return "", fmt.Errorf("refusing to push plaintext to a client-managed project; remove --encrypt=false (or run interactively to confirm)")
+			}
+			if !ok {
+				return "", fmt.Errorf("push canceled")
+			}
+		}
 		return "", nil
 	}
-	if pushClientKey != "" {
-		keyData, err := os.ReadFile(pushClientKey)
-		if err != nil {
-			return "", fmt.Errorf("failed to read client key: %w", err)
-		}
-		return strings.TrimSpace(string(keyData)), nil
-	}
-	encKeyResp, encResp, err := client.Encryption.GetEncryptionKey(ctx, projectSlug)
-	if encResp != nil {
-		defer encResp.Body.Close()
-	}
-	if err != nil {
-		return "", fmt.Errorf("failed to get encryption key: %w", err)
-	}
-	return encKeyResp.Key, nil
+	return resolveEncryptionKey(ctx, client, projectSlug, pushClientKey, promptForClientKey)
 }
 
 // slugForLabel looks up the slug for the label the user picked. Exact-match
