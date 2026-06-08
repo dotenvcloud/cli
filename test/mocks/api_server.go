@@ -260,14 +260,23 @@ func (m *MockAPIServer) handleGetEncryptionKey(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Mirror the real API: a content-wrapped "managed" descriptor that the SDK
+	// parses. These mock keys are server-managed (the raw key is returned).
+	content, _ := json.Marshal(map[string]interface{}{
+		"key": map[string]interface{}{
+			"managed": "server",
+			"key":     key,
+			"version": 1,
+		},
+	})
+
 	resp := dotenv.JSONAPIResponse{
 		Data: map[string]interface{}{
 			"type": "encryption_keys",
 			"id":   "key-123",
 			"attributes": map[string]interface{}{
-				"project_id": projectSlug,
-				"key":        key,
-				"is_active":  true,
+				"content": string(content),
+				"format":  "json",
 			},
 		},
 	}

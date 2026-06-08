@@ -31,6 +31,8 @@ var (
 	projectNewSlug     string
 	projectFormat      string
 	projectForce       bool
+	projectStorage     string
+	projectClientKey   string
 )
 
 //nolint:gochecknoinits // cobra subcommand registration is idiomatic in init
@@ -43,6 +45,9 @@ func init() {
 	}
 	projectCreateCmd.Flags().StringVar(&projectDescription, "description", "", "project description")
 	projectCreateCmd.Flags().StringVar(&projectFormat, "format", "", "secret format (env, json, yaml, text)")
+	projectCreateCmd.Flags().StringVar(&projectStorage, "storage", "", "encryption storage mode: client (default) or server")
+	projectCreateCmd.Flags().StringVar(&projectClientKey, "client-key", "",
+		"client encryption key file or value (client-managed); prompted if omitted")
 
 	projectUpdateCmd = &cobra.Command{
 		Use:   "update [project]",
@@ -72,11 +77,16 @@ func runProjectCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	opts, err := buildProjectCreateOptions()
+	if err != nil {
+		return err
+	}
+
 	project, resp, err := client.Projects.Create(cmd.Context(), &dotenv.Project{
 		Name:         args[0],
 		Description:  projectDescription,
 		SecretFormat: projectFormat,
-	})
+	}, opts)
 	if resp != nil {
 		defer resp.Body.Close()
 	}
@@ -85,7 +95,46 @@ func runProjectCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	ui.PrintSuccessf("Created project %s (%s)", project.Name, project.Slug)
+	if opts.StorageMode == "client" {
+		ui.PrintInfof("Client-managed encryption established. Keep your key safe — it is required to push and pull and is never stored on the server.")
+	}
 	return nil
+}
+
+// buildProjectCreateOptions resolves the encryption setup for project creation.
+// The default is client-managed (the server holds no key): the CLI resolves a
+// key (flag/env/prompt), derives a PBKDF2 proof, and registers only the proof —
+// never the key. --storage server defers to a server-generated key (no proof).
+func buildProjectCreateOptions() (*dotenv.ProjectCreateOptions, error) {
+	storage := projectStorage
+	if storage == "" {
+		storage = "client"
+	}
+	if storage != "client" && storage != "server" {
+		return nil, fmt.Errorf("invalid --storage %q: use 'client' or 'server'", storage)
+	}
+
+	opts := &dotenv.ProjectCreateOptions{StorageMode: storage}
+	if storage != "client" {
+		return opts, nil
+	}
+
+	key, err := resolveClientKeyValue(
+		projectClientKey, promptForClientKey,
+		"This project will use client-managed encryption. Choose an encryption key to use for it.",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	salt, proof, iters, err := dotenv.GenerateKeyProof(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive key proof: %w", err)
+	}
+	opts.KeyCheck = proof
+	opts.KeyCheckSalt = salt
+	opts.KeyCheckIterations = iters
+	return opts, nil
 }
 
 func runProjectUpdate(cmd *cobra.Command, args []string) error {

@@ -178,10 +178,27 @@ func TestPullCommand_ClientKeyLiteralValue(t *testing.T) {
 	require.NoError(t, err)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v1/test-org/test-project/encryption-key" {
-			t.Errorf("encryption-key endpoint must not be called when --client-key is provided")
-		}
 		w.Header().Set("Content-Type", "application/json")
+		// The descriptor is now always fetched (to learn the storage mode); for a
+		// client-managed project it returns proof params, never a key. The literal
+		// --client-key value is what actually decrypts.
+		if r.URL.Path == "/api/v1/test-org/test-project/encryption-key" {
+			content, _ := json.Marshal(map[string]interface{}{
+				"key": map[string]interface{}{
+					"managed":              "client",
+					"version":              1,
+					"key_check_salt":       "AAAAAAAAAAAAAAAAAAAAAA==",
+					"key_check_iterations": 600000,
+				},
+			})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": map[string]interface{}{
+					"type":       "encryption_keys",
+					"attributes": map[string]interface{}{"content": string(content), "format": "json"},
+				},
+			})
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": map[string]interface{}{
 				"type": "secrets",

@@ -20,11 +20,17 @@ import (
 	"github.com/dotenvcloud/cli/internal/ui"
 )
 
+// encKeyTestSalt / encKeyTestIters are the fixed client-managed proof params the
+// mock server returns, so tests can derive the expected proof deterministically.
+const (
+	encKeyTestSalt  = "AAAAAAAAAAAAAAAAAAAAAA==" // 16 zero bytes, base64
+	encKeyTestIters = 600000
+)
+
 // newEncKeyServer returns a dotenv client pointed at a server whose
-// encryption-key endpoint either serves a server-managed key (content-wrapped,
-// matching the real API shape the SDK parses) or returns the
-// client_managed_encryption 400 envelope that the SDK maps to
-// dotenv.ErrClientManagedEncryption.
+// encryption-key endpoint serves the 200 "managed" descriptor: a server-managed
+// key (with the raw key) or a client-managed descriptor (proof params only, no
+// key), matching the real API shape the SDK parses.
 func newEncKeyServer(t *testing.T, clientManaged bool, key string) *dotenv.Client {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -33,17 +39,18 @@ func newEncKeyServer(t *testing.T, clientManaged bool, key string) *dotenv.Clien
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		var keyObj map[string]interface{}
 		if clientManaged {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"error":   "client_managed_encryption",
-				"message": "This project uses client-side encryption.",
-			})
-			return
+			keyObj = map[string]interface{}{
+				"managed":              "client",
+				"version":              1,
+				"key_check_salt":       encKeyTestSalt,
+				"key_check_iterations": encKeyTestIters,
+			}
+		} else {
+			keyObj = map[string]interface{}{"managed": "server", "key": key, "version": 1}
 		}
-		content, _ := json.Marshal(map[string]interface{}{
-			"key": map[string]interface{}{"key": key, "version": 1},
-		})
+		content, _ := json.Marshal(map[string]interface{}{"key": keyObj})
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": map[string]interface{}{
 				"type":       "encryption_keys",
@@ -132,16 +139,20 @@ func TestResolveEncryptionKey(t *testing.T) {
 		client := newEncKeyServer(t, false, "serverkey123")
 		got, err := resolveEncryptionKey(ctx, client, "test-project", "", noPromptT(t))
 		require.NoError(t, err)
-		require.Equal(t, "serverkey123", got)
+		require.Equal(t, "serverkey123", got.key)
+		require.Equal(t, "server", got.managed)
 	})
 
-	t.Run("flag file path bypasses the server", func(t *testing.T) {
+	t.Run("client-managed flag file supplies the key and carries the proof params", func(t *testing.T) {
 		p := filepath.Join(t.TempDir(), "k.key")
 		require.NoError(t, os.WriteFile(p, []byte("flagfilekey\n"), 0o600))
-		client := newEncKeyServer(t, true, "") // client-managed; must NOT be consulted
+		client := newEncKeyServer(t, true, "")
 		got, err := resolveEncryptionKey(ctx, client, "test-project", p, noPromptT(t))
 		require.NoError(t, err)
-		require.Equal(t, "flagfilekey", got)
+		require.Equal(t, "flagfilekey", got.key)
+		require.Equal(t, "client", got.managed)
+		require.Equal(t, encKeyTestSalt, got.proofSalt)
+		require.Equal(t, encKeyTestIters, got.proofIters)
 	})
 
 	t.Run("client-managed uses DOTENV_CLIENT_KEY with a warning", func(t *testing.T) {
@@ -150,7 +161,7 @@ func TestResolveEncryptionKey(t *testing.T) {
 		client := newEncKeyServer(t, true, "")
 		got, err := resolveEncryptionKey(ctx, client, "test-project", "", noPromptT(t))
 		require.NoError(t, err)
-		require.Equal(t, "envkeyvalue", got)
+		require.Equal(t, "envkeyvalue", got.key)
 		require.Contains(t, buf.String(), config.EnvClientKey)
 	})
 
@@ -161,7 +172,7 @@ func TestResolveEncryptionKey(t *testing.T) {
 		got, err := resolveEncryptionKey(ctx, client, "test-project", "",
 			func() (string, error) { return "promptedkey", nil })
 		require.NoError(t, err)
-		require.Equal(t, "promptedkey", got)
+		require.Equal(t, "promptedkey", got.key)
 	})
 
 	t.Run("client-managed prompt error surfaces the client-managed message", func(t *testing.T) {
@@ -185,7 +196,7 @@ func TestResolvePushEncryptionKeyPlaintextGuard(t *testing.T) {
 		pushClientKey = ""
 		_ = captureUI(t)
 		client := newEncKeyServer(t, true, "")
-		_, err := resolvePushEncryptionKey(ctx, client, "test-project")
+		_, _, err := resolvePushEncryptionKey(ctx, client, "test-project")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "plaintext")
 	})
@@ -195,8 +206,26 @@ func TestResolvePushEncryptionKeyPlaintextGuard(t *testing.T) {
 		t.Cleanup(func() { pushEncrypt = origEnc })
 		pushEncrypt = false
 		client := newEncKeyServer(t, false, "serverkey")
-		got, err := resolvePushEncryptionKey(ctx, client, "test-project")
+		got, proof, err := resolvePushEncryptionKey(ctx, client, "test-project")
 		require.NoError(t, err)
 		require.Equal(t, "", got)
+		require.Equal(t, "", proof)
+	})
+
+	t.Run("client-managed push derives the key proof from the descriptor params", func(t *testing.T) {
+		origEnc, origKey := pushEncrypt, pushClientKey
+		t.Cleanup(func() { pushEncrypt, pushClientKey = origEnc, origKey })
+		pushEncrypt = true
+		pushClientKey = "myclientkey" // literal value
+		_ = captureUI(t)
+		client := newEncKeyServer(t, true, "")
+
+		encKey, proof, err := resolvePushEncryptionKey(ctx, client, "test-project")
+		require.NoError(t, err)
+		require.Equal(t, "myclientkey", encKey)
+
+		want, derr := dotenv.DeriveKeyProof("myclientkey", encKeyTestSalt, encKeyTestIters)
+		require.NoError(t, derr)
+		require.Equal(t, want, proof)
 	})
 }

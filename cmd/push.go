@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -102,17 +103,17 @@ func runPush(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to verify project '%s' exists: %w", projectSlug, err)
 	}
 
-	encKey, err := resolvePushEncryptionKey(cmd.Context(), client, projectSlug)
+	encKey, keyProof, err := resolvePushEncryptionKey(cmd.Context(), client, projectSlug)
 	if err != nil {
 		return err
 	}
 
 	if singleFile != "" {
 		return pushSingleFile(cmd.Context(), client, project, targetSlug, environmentSlug,
-			singleFile, encKey, pushForce)
+			singleFile, encKey, keyProof, pushForce)
 	}
 	return pushMultipleFiles(cmd.Context(), client, project, pushProject, pushTarget,
-		pushEnvironment, encKey, pushForce)
+		pushEnvironment, encKey, keyProof, pushForce)
 }
 
 func parsePushArgs(args []string) (projectSlug, targetSlug, environmentSlug, singleFile string, err error) {
@@ -146,25 +147,48 @@ func parsePushArgs(args []string) (projectSlug, targetSlug, environmentSlug, sin
 }
 
 // resolvePushEncryptionKey returns the project key as a RAW STRING (see
-// dotenv.DeriveProjectKey) — never hex/base64-decoded. An empty string means
+// dotenv.DeriveProjectKey) — never hex/base64-decoded — and, for client-managed
+// projects, the base64 key proof to send with the write. An empty encKey means
 // "do not encrypt". Key resolution (file/value/env/prompt) is shared with pull
-// via resolveEncryptionKey; this wrapper adds push's --encrypt=false handling
-// plus a guard against silently uploading plaintext to a client-managed project.
-func resolvePushEncryptionKey(ctx context.Context, client *dotenv.Client, projectSlug string) (string, error) {
+// via resolveEncryptionKey; this wrapper adds push's --encrypt=false handling,
+// the proof derivation, and a guard against silently uploading plaintext to a
+// client-managed project.
+func resolvePushEncryptionKey(ctx context.Context, client *dotenv.Client, projectSlug string) (encKey, keyProof string, err error) {
 	if !pushEncrypt {
 		if projectIsClientManaged(ctx, client, projectSlug) {
 			ui.PrintWarningf("--encrypt=false on a client-managed project would upload PLAINTEXT secrets, defeating client-side encryption.")
-			ok, err := ui.Confirm("Push plaintext anyway?", false)
-			if err != nil {
-				return "", fmt.Errorf("refusing to push plaintext to a client-managed project; remove --encrypt=false (or run interactively to confirm)")
+			ok, confirmErr := ui.Confirm("Push plaintext anyway?", false)
+			if confirmErr != nil {
+				return "", "", fmt.Errorf("refusing to push plaintext to a client-managed project; remove --encrypt=false (or run interactively to confirm)")
 			}
 			if !ok {
-				return "", fmt.Errorf("push canceled")
+				return "", "", fmt.Errorf("push canceled")
 			}
 		}
-		return "", nil
+		return "", "", nil
 	}
-	return resolveEncryptionKey(ctx, client, projectSlug, pushClientKey, promptForClientKey)
+
+	rk, rerr := resolveEncryptionKey(ctx, client, projectSlug, pushClientKey, promptForClientKey)
+	if rerr != nil {
+		return "", "", rerr
+	}
+
+	// Client-managed: derive the proof the server verifies against its stored
+	// proof. Without proof params the server has no verification configured.
+	if rk.managed == "client" {
+		if rk.proofSalt == "" {
+			return "", "", fmt.Errorf(
+				"this project's client-managed key has no verification configured; re-establish its encryption key (web key setup) or recreate it with `dotenv project create --storage client`",
+			)
+		}
+		proof, perr := dotenv.DeriveKeyProof(rk.key, rk.proofSalt, rk.proofIters)
+		if perr != nil {
+			return "", "", fmt.Errorf("failed to derive key proof: %w", perr)
+		}
+		keyProof = proof
+	}
+
+	return rk.key, keyProof, nil
 }
 
 // slugForLabel looks up the slug for the label the user picked. Exact-match
@@ -179,9 +203,9 @@ func slugForLabel(selected string, labels []string, slugAt func(int) string) (st
 }
 
 func pushSingleFile(ctx context.Context, client *dotenv.Client, project *dotenv.Project,
-	targetSlug, environmentSlug, filename string, encKey string, force bool,
+	targetSlug, environmentSlug, filename string, encKey, keyProof string, force bool,
 ) error {
-	return storeSecretLevel(ctx, client, project.Slug, targetSlug, environmentSlug, filename, encKey, force)
+	return storeSecretLevel(ctx, client, project.Slug, targetSlug, environmentSlug, filename, encKey, keyProof, force)
 }
 
 type secretSet struct {
@@ -193,7 +217,7 @@ type secretSet struct {
 }
 
 func pushMultipleFiles(ctx context.Context, client *dotenv.Client, project *dotenv.Project,
-	projectFile, targetFile, envFile string, encKey string, force bool,
+	projectFile, targetFile, envFile string, encKey, keyProof string, force bool,
 ) error {
 	sets, err := buildSecretSets(ctx, client, project, projectFile, targetFile, envFile)
 	if err != nil {
@@ -202,7 +226,7 @@ func pushMultipleFiles(ctx context.Context, client *dotenv.Client, project *dote
 
 	for i := range sets {
 		set := &sets[i]
-		if err := storeSecretLevel(ctx, client, set.slug, set.target, set.env, set.file, encKey, force); err != nil {
+		if err := storeSecretLevel(ctx, client, set.slug, set.target, set.env, set.file, encKey, keyProof, force); err != nil {
 			return err
 		}
 	}
@@ -299,7 +323,7 @@ func promptForEnvironment(ctx context.Context, client *dotenv.Client, projectSlu
 // whole file content is encrypted as one blob, mirroring how the web stores
 // secrets and how pull reads them back.
 func storeSecretLevel(ctx context.Context, client *dotenv.Client,
-	projectSlug, targetSlug, environmentSlug, filename, encKey string, force bool,
+	projectSlug, targetSlug, environmentSlug, filename, encKey, keyProof string, force bool,
 ) error {
 	level := deepestLevel(targetSlug, environmentSlug)
 	ui.PrintInfof("Reading %s-level secrets from %s...", level, filename)
@@ -334,11 +358,17 @@ func storeSecretLevel(ctx context.Context, client *dotenv.Client,
 	}
 
 	ui.PrintInfof("Pushing secrets...")
-	resp, err := client.Secrets.StoreSecrets(ctx, projectSlug, targetSlug, environmentSlug, blob)
+	resp, err := client.Secrets.StoreSecrets(ctx, projectSlug, targetSlug, environmentSlug, blob, keyProof)
 	if resp != nil {
 		defer resp.Body.Close()
 	}
 	if err != nil {
+		if errors.Is(err, dotenv.ErrKeyProofMismatch) {
+			return fmt.Errorf("the encryption key does not match project '%s' — refusing to push secrets encrypted with a different key (a mistyped or wrong key would orphan this level). Use the project's established key", projectSlug)
+		}
+		if errors.Is(err, dotenv.ErrKeyProofRequired) {
+			return fmt.Errorf("project '%s' has no client-key verification configured; re-establish its encryption key before pushing", projectSlug)
+		}
 		return fmt.Errorf("failed to push secrets: %w", err)
 	}
 

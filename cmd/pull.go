@@ -259,11 +259,11 @@ func processHierarchicalSecrets(
 
 	var encKey string
 	if decrypt && needsKey {
-		var err error
-		encKey, err = resolveEncryptionKey(ctx, client, projectSlug, clientKeyPath, promptForClientKey)
+		rk, err := resolveEncryptionKey(ctx, client, projectSlug, clientKeyPath, promptForClientKey)
 		if err != nil {
 			return nil, err
 		}
+		encKey = rk.key
 	}
 
 	// Determine target level for non-merge operations

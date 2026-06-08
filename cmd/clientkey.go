@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,18 +13,27 @@ import (
 	"github.com/dotenvcloud/cli/internal/ui"
 )
 
+// resolvedKey is the outcome of resolving a project's encryption key. For
+// client-managed projects it also carries the PBKDF2 proof parameters the
+// caller needs to prove (server-side) that it holds the right key.
+type resolvedKey struct {
+	key        string // RAW key string (never hex/base64-decoded)
+	managed    string // "server" | "client"
+	proofSalt  string // client-managed: base64 PBKDF2 salt
+	proofIters int    // client-managed: PBKDF2 iterations
+}
+
 // resolveEncryptionKey returns the project encryption key as a RAW STRING — it
 // is never hex/base64-decoded, because the platform contract derives the AES
 // key from the key string's bytes (see dotenv.DeriveProjectKey). Decoding it
 // here would break decryption of data written by the web app and JS SDK.
 //
-// Resolution order (shared by push and pull):
+// It first fetches the key descriptor to learn the storage mode:
 //
-//  1. clientKeyFlag set   -> treat as a file path or a literal key value
-//     (interpretClientKeyFlag) and use it unconditionally.
-//  2. clientKeyFlag empty -> fetch the server-managed key. If the project is
-//     client-managed (the server holds no retrievable key) fall back to the
-//     DOTENV_CLIENT_KEY env var, then to the interactive prompt.
+//   - server-managed: the server hands back the key; any --client-key is ignored.
+//   - client-managed: the server returns only the proof params (no key), so the
+//     key is resolved from --client-key (file or value), then the
+//     DOTENV_CLIENT_KEY env var, then the interactive prompt.
 //
 // prompt is injected so the client-managed branch can be exercised in tests
 // without a TTY.
@@ -34,44 +42,74 @@ func resolveEncryptionKey(
 	client *dotenv.Client,
 	projectSlug, clientKeyFlag string,
 	prompt func() (string, error),
+) (resolvedKey, error) {
+	desc, resp, err := client.Encryption.GetEncryptionKey(ctx, projectSlug)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+	if err != nil {
+		if dotenv.IsNotFound(err) {
+			return resolvedKey{}, fmt.Errorf("encryption key not found for project '%s'. The project may not have encryption enabled", projectSlug)
+		}
+		return resolvedKey{}, HandleAPIError(err, accountForErrorContext())
+	}
+
+	// Server-managed: the server holds the authoritative key.
+	if !desc.IsClientManaged && desc.Managed != "client" {
+		if clientKeyFlag != "" {
+			ui.PrintWarningf("project '%s' is server-managed; ignoring --client-key and using the server key.", projectSlug)
+		}
+		return resolvedKey{key: desc.Key, managed: "server"}, nil
+	}
+
+	// Client-managed: resolve the key locally and carry the proof params.
+	key, kerr := resolveClientKeyValue(
+		clientKeyFlag, prompt,
+		"This project uses client-managed encryption. Please provide your encryption key.",
+	)
+	if kerr != nil {
+		return resolvedKey{}, kerr
+	}
+	return resolvedKey{
+		key:        key,
+		managed:    "client",
+		proofSalt:  desc.KeyCheckSalt,
+		proofIters: desc.KeyCheckIterations,
+	}, nil
+}
+
+// resolveClientKeyValue resolves a client-managed key from (in order) the
+// --client-key flag (file or literal value), the DOTENV_CLIENT_KEY env var, or
+// the interactive prompt. promptIntro, when non-empty, is printed just before
+// prompting so the user understands why they are being asked.
+func resolveClientKeyValue(
+	clientKeyFlag string,
+	prompt func() (string, error),
+	promptIntro string,
 ) (string, error) {
 	if clientKeyFlag != "" {
 		return interpretClientKeyFlag(clientKeyFlag)
 	}
 
-	encKeyResp, encResp, err := client.Encryption.GetEncryptionKey(ctx, projectSlug)
-	if encResp != nil {
-		defer encResp.Body.Close()
-	}
-	if err == nil {
-		return encKeyResp.Key, nil
-	}
-
-	// Client-managed: the server cannot hand us a key. Try the env var, then
-	// prompt interactively.
-	if errors.Is(err, dotenv.ErrClientManagedEncryption) {
-		if envKey := strings.TrimSpace(os.Getenv(config.EnvClientKey)); envKey != "" {
-			ui.PrintWarningf(
-				"client key read from %s — less safe than a file (it can leak via the process environment). Prefer --client-key=<file>.",
-				config.EnvClientKey,
-			)
-			return envKey, nil
-		}
-		ui.PrintInfof("This project uses client-managed encryption. Please provide your encryption key.")
-		key, perr := prompt()
-		if perr != nil {
-			return "", fmt.Errorf(
-				"this project uses client-managed encryption; provide a key via --client-key=<file>, the %s env var, or the interactive prompt: %w",
-				config.EnvClientKey, perr,
-			)
-		}
-		return key, nil
+	if envKey := strings.TrimSpace(os.Getenv(config.EnvClientKey)); envKey != "" {
+		ui.PrintWarningf(
+			"client key read from %s — less safe than a file (it can leak via the process environment). Prefer --client-key=<file>.",
+			config.EnvClientKey,
+		)
+		return envKey, nil
 	}
 
-	if dotenv.IsNotFound(err) {
-		return "", fmt.Errorf("encryption key not found for project '%s'. The project may not have encryption enabled", projectSlug)
+	if promptIntro != "" {
+		ui.PrintInfof("%s", promptIntro)
 	}
-	return "", HandleAPIError(err, accountForErrorContext())
+	key, perr := prompt()
+	if perr != nil {
+		return "", fmt.Errorf(
+			"client-managed encryption requires a key; provide one via --client-key=<file>, the %s env var, or the interactive prompt: %w",
+			config.EnvClientKey, perr,
+		)
+	}
+	return key, nil
 }
 
 // interpretClientKeyFlag resolves a --client-key value that may be either a
@@ -128,12 +166,14 @@ func promptForClientKey() (string, error) {
 }
 
 // projectIsClientManaged reports whether the project uses client-managed
-// encryption (the server returns the client_managed_encryption sentinel rather
-// than a retrievable key).
+// encryption (the key descriptor's managed field is "client").
 func projectIsClientManaged(ctx context.Context, client *dotenv.Client, projectSlug string) bool {
-	_, resp, err := client.Encryption.GetEncryptionKey(ctx, projectSlug)
+	desc, resp, err := client.Encryption.GetEncryptionKey(ctx, projectSlug)
 	if resp != nil {
 		defer resp.Body.Close()
 	}
-	return errors.Is(err, dotenv.ErrClientManagedEncryption)
+	if err != nil {
+		return false
+	}
+	return desc.IsClientManaged || desc.Managed == "client"
 }
