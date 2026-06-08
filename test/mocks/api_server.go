@@ -227,13 +227,13 @@ func (m *MockAPIServer) handleGetSecrets(w http.ResponseWriter, r *http.Request)
 }
 
 func (m *MockAPIServer) handleRetrieveSecrets(w http.ResponseWriter, r *http.Request) {
-	var req dotenv.BulkSecretsRequest
+	var req dotenv.RetrieveParams
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 
-	secrets, ok := m.secrets[req.ProjectSlug]
+	secrets, ok := m.secrets[req.Project]
 	if !ok {
 		http.NotFound(w, r)
 		return

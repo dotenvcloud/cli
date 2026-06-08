@@ -52,6 +52,7 @@ var (
 	apiKeyName      string
 	apiKeyAbilities []string
 	apiKeyExpires   string
+	apiKeyForce     bool
 )
 
 //nolint:gochecknoinits // cobra subcommand registration is idiomatic in init
@@ -126,6 +127,9 @@ permissions and configuration. The old token will be immediately invalidated.`,
 		Args: cobra.ExactArgs(1),
 		RunE: runAPIKeysRotate,
 	}
+
+	apikeysDeleteCmd.Flags().BoolVarP(&apiKeyForce, "force", "f", false, "skip the confirmation prompt")
+	apikeysRotateCmd.Flags().BoolVarP(&apiKeyForce, "force", "f", false, "skip the confirmation prompt")
 
 	// Add subcommands
 	apikeysCmd.AddCommand(apikeysListCmd)
@@ -241,7 +245,8 @@ func runAPIKeysCreate(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	ui.PrintWarningf("IMPORTANT: Save this token - it will not be shown again!")
 	fmt.Println()
-	fmt.Printf("ID:    %s\n", resp.ID)
+	// Note: the create endpoint does not return the key's id; run
+	// `dotenv apikeys list` to see it (and the ULID used for delete/rotate).
 	fmt.Printf("Name:  %s\n", resp.Name)
 	fmt.Printf("Token: %s\n", resp.Token)
 	fmt.Println()
@@ -307,13 +312,15 @@ func runAPIKeysDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	// Confirm deletion
-	confirmed, err := ui.Confirm(fmt.Sprintf("Are you sure you want to delete API key %s? This action cannot be undone.", keyID), false)
-	if err != nil {
-		return err
-	}
-	if !confirmed {
-		ui.PrintInfof("Deletion canceled")
-		return nil
+	if !apiKeyForce {
+		confirmed, confirmErr := ui.Confirm(fmt.Sprintf("Are you sure you want to delete API key %s? This action cannot be undone.", keyID), false)
+		if confirmErr != nil {
+			return confirmErr
+		}
+		if !confirmed {
+			ui.PrintInfof("Deletion canceled")
+			return nil
+		}
 	}
 
 	ui.PrintInfof("Deleting API key %s...", keyID)
@@ -348,16 +355,18 @@ func runAPIKeysRotate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Confirm rotation
-	confirmed, err := ui.Confirm(
-		fmt.Sprintf("Are you sure you want to rotate API key %s? The old token will be immediately invalidated.", keyID),
-		false,
-	)
-	if err != nil {
-		return err
-	}
-	if !confirmed {
-		ui.PrintInfof("Rotation canceled")
-		return nil
+	if !apiKeyForce {
+		confirmed, confirmErr := ui.Confirm(
+			fmt.Sprintf("Are you sure you want to rotate API key %s? The old token will be immediately invalidated.", keyID),
+			false,
+		)
+		if confirmErr != nil {
+			return confirmErr
+		}
+		if !confirmed {
+			ui.PrintInfof("Rotation canceled")
+			return nil
+		}
 	}
 
 	ui.PrintInfof("Rotating API key %s...", keyID)

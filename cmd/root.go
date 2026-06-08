@@ -46,6 +46,11 @@ across projects, targets, and environments with client-side encryption support.
 
 For more information, visit: https://dotenv.cloud/docs/cli`,
 
+		// Runtime errors are rendered once by main.go via ShowErrorWithHelp;
+		// don't let cobra also dump the usage block or a duplicate "Error:" line.
+		SilenceUsage:  true,
+		SilenceErrors: true,
+
 		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
 			// Disable color if requested
 			if noColor {
@@ -115,12 +120,16 @@ For more information, visit: https://dotenv.cloud/docs/cli`,
 		refreshCmd,
 		updateCmd,
 		versionCmd,
-		treeCmd,       // New tree command
-		exploreCmd,    // New explore command
-		pathCmd,       // New path command
-		apikeysCmd,    // API key management
-		authCmd,       // Auth info and management
-		completionCmd, // Shell completion support
+		treeCmd,        // New tree command
+		exploreCmd,     // New explore command
+		pathCmd,        // New path command
+		apikeysCmd,     // API key management
+		authCmd,        // Auth info and management
+		projectCmd,     // Project create/update/delete
+		targetCmd,      // Target create/update/delete
+		environmentCmd, // Environment create/update/delete
+		secretCmd,      // Secret delete-level
+		completionCmd,  // Shell completion support
 	)
 
 	// Register shell completion functions after all commands are added
