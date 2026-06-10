@@ -61,7 +61,11 @@ func (l *Loader) Load() (*Config, error) {
 		return nil, fmt.Errorf("old configuration format detected. Please run 'dotenv init' to set up the new account system")
 	}
 
-	// Decrypt API keys in accounts
+	// Decrypt sensitive credentials in accounts. OAuth tokens are at least as
+	// sensitive as API keys (a refresh token grants 60 days of access) so they
+	// are encrypted at rest too. Token decryption is tolerant of plaintext
+	// values left by configs written before tokens were encrypted, so upgrading
+	// the CLI never bricks an existing login.
 	for name := range config.Accounts {
 		account := config.Accounts[name]
 		if account.Auth.APIKey != "" {
@@ -70,8 +74,10 @@ func (l *Loader) Load() (*Config, error) {
 				return nil, fmt.Errorf("failed to decrypt API key for account %s: %w", name, err)
 			}
 			account.Auth.APIKey = decrypted
-			config.Accounts[name] = account
 		}
+		account.Auth.AccessToken = l.tryDecrypt(account.Auth.AccessToken)
+		account.Auth.RefreshToken = l.tryDecrypt(account.Auth.RefreshToken)
+		config.Accounts[name] = account
 	}
 
 	// Validate configuration
@@ -102,7 +108,7 @@ func (l *Loader) Save(config *Config) error {
 	configCopy := *config
 	configCopy.Accounts = make(map[string]Account)
 
-	// Encrypt API keys in accounts
+	// Encrypt sensitive credentials in accounts (API key + OAuth tokens).
 	for name := range config.Accounts {
 		account := config.Accounts[name]
 		accountCopy := account
@@ -112,6 +118,20 @@ func (l *Loader) Save(config *Config) error {
 				return fmt.Errorf("failed to encrypt API key for account %s: %w", name, encErr)
 			}
 			accountCopy.Auth.APIKey = encrypted
+		}
+		if account.Auth.AccessToken != "" {
+			encrypted, encErr := l.crypto.Encrypt(account.Auth.AccessToken)
+			if encErr != nil {
+				return fmt.Errorf("failed to encrypt access token for account %s: %w", name, encErr)
+			}
+			accountCopy.Auth.AccessToken = encrypted
+		}
+		if account.Auth.RefreshToken != "" {
+			encrypted, encErr := l.crypto.Encrypt(account.Auth.RefreshToken)
+			if encErr != nil {
+				return fmt.Errorf("failed to encrypt refresh token for account %s: %w", name, encErr)
+			}
+			accountCopy.Auth.RefreshToken = encrypted
 		}
 		configCopy.Accounts[name] = accountCopy
 	}
@@ -219,7 +239,9 @@ func (l *Loader) Backup() error {
 	defer source.Close()
 
 	backupPath := l.path + ".backup"
-	dest, err := os.Create(backupPath)
+	// 0600: the backup is a full copy of the config (encrypted credentials and
+	// all) and must not be world-readable like os.Create's umask default.
+	dest, err := os.OpenFile(backupPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}
@@ -237,6 +259,20 @@ func (l *Loader) RestoreBackup() error {
 	}
 
 	return os.Rename(backupPath, l.path)
+}
+
+// tryDecrypt decrypts a stored credential, returning the original value
+// unchanged when it cannot be decrypted (e.g. a plaintext value written by a
+// config from before OAuth tokens were encrypted). This makes the move to
+// encrypting tokens backward-compatible without a migration step.
+func (l *Loader) tryDecrypt(value string) string {
+	if value == "" {
+		return value
+	}
+	if decrypted, err := l.crypto.Decrypt(value); err == nil {
+		return decrypted
+	}
+	return value
 }
 
 // Path returns the configuration file path

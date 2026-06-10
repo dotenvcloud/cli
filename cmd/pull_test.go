@@ -171,10 +171,13 @@ func TestPullCommand_Encryption(t *testing.T) {
 func TestPullCommand_ClientKeyLiteralValue(t *testing.T) {
 	tc := helpers.NewTestConfig(t)
 
-	// A literal --client-key value is used directly as the key string; the
-	// encryption-key endpoint must NOT be consulted.
+	// A literal --client-key value is the passphrase. Client-managed secrets are
+	// encrypted under the PBKDF2-derived AES key (salt + iterations from the
+	// descriptor served below), which is exactly what pull derives to decrypt.
 	keyStr := "myliteralclientkey"
-	encrypted, err := dotenv.EncryptWithProjectKey("LITERAL_VAR=ok", keyStr)
+	derivedKey, err := dotenv.DeriveDataKey(keyStr, "AAAAAAAAAAAAAAAAAAAAAA==", 600000)
+	require.NoError(t, err)
+	encrypted, err := dotenv.EncryptWithProjectKey("LITERAL_VAR=ok", string(derivedKey))
 	require.NoError(t, err)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

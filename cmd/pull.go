@@ -263,7 +263,12 @@ func processHierarchicalSecrets(
 		if err != nil {
 			return nil, err
 		}
-		encKey = rk.key
+		// For client-managed projects this is the PBKDF2-derived AES key (not
+		// the raw passphrase); server-managed returns the server key unchanged.
+		encKey, err = rk.dataKey()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Determine target level for non-merge operations

@@ -188,7 +188,15 @@ func resolvePushEncryptionKey(ctx context.Context, client *dotenv.Client, projec
 		keyProof = proof
 	}
 
-	return rk.key, keyProof, nil
+	// For client-managed projects this returns the PBKDF2-derived AES key (not
+	// the raw passphrase) so secrets are encrypted under a salted, stretched
+	// key; server-managed projects return the server key unchanged.
+	dk, derr := rk.dataKey()
+	if derr != nil {
+		return "", "", derr
+	}
+
+	return dk, keyProof, nil
 }
 
 // slugForLabel looks up the slug for the label the user picked. Exact-match
