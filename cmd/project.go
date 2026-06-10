@@ -95,8 +95,11 @@ func runProjectCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	ui.PrintSuccessf("Created project %s (%s)", project.Name, project.Slug)
-	if opts.StorageMode == "client" {
-		ui.PrintInfof("Client-managed encryption established. Keep your key safe — it is required to push and pull and is never stored on the server.")
+	if opts.StorageMode == managedClient {
+		ui.PrintInfof(
+			"Client-managed encryption established. Keep your key safe — it is " +
+				"required to push and pull and is never stored on the server.",
+		)
 	}
 	return nil
 }
@@ -108,14 +111,14 @@ func runProjectCreate(cmd *cobra.Command, args []string) error {
 func buildProjectCreateOptions() (*dotenv.ProjectCreateOptions, error) {
 	storage := projectStorage
 	if storage == "" {
-		storage = "client"
+		storage = managedClient
 	}
-	if storage != "client" && storage != "server" {
+	if storage != managedClient && storage != managedServer {
 		return nil, fmt.Errorf("invalid --storage %q: use 'client' or 'server'", storage)
 	}
 
 	opts := &dotenv.ProjectCreateOptions{StorageMode: storage}
-	if storage != "client" {
+	if storage != managedClient {
 		return opts, nil
 	}
 

@@ -18,6 +18,8 @@ import (
 	"github.com/dotenvcloud/cli/test/helpers"
 )
 
+const testEncKeyPath = "/api/v1/test-org/test-project/encryption-key"
+
 func TestPullCommand(t *testing.T) {
 	t.Skip("legacy — mock response shape predates hierarchy refactor; Wave 5 F-09 backfill")
 }
@@ -99,7 +101,7 @@ func TestPullCommand_Encryption(t *testing.T) {
 
 	// Create mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v1/test-org/test-project/encryption-key" {
+		if r.URL.Path == testEncKeyPath {
 			w.Header().Set("Content-Type", "application/json")
 			content, _ := json.Marshal(map[string]interface{}{
 				"key": map[string]interface{}{
@@ -185,7 +187,7 @@ func TestPullCommand_ClientKeyLiteralValue(t *testing.T) {
 		// The descriptor is now always fetched (to learn the storage mode); for a
 		// client-managed project it returns proof params, never a key. The literal
 		// --client-key value is what actually decrypts.
-		if r.URL.Path == "/api/v1/test-org/test-project/encryption-key" {
+		if r.URL.Path == testEncKeyPath {
 			content, _ := json.Marshal(map[string]interface{}{
 				"key": map[string]interface{}{
 					"managed":              "client",

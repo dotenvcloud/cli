@@ -288,12 +288,12 @@ func determineTargetLevel(hierarchy struct {
 	Environment *string `json:"environment"`
 }) string {
 	if hierarchy.Environment != nil && *hierarchy.Environment != "" {
-		return "environment"
+		return resourceEnvironment
 	}
 	if hierarchy.Target != nil && *hierarchy.Target != "" {
-		return "target"
+		return resourceTarget
 	}
-	return "project"
+	return resourceProject
 }
 
 // processSecretLevels processes each level and returns merged or single-level secrets

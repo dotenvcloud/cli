@@ -159,7 +159,10 @@ func resolvePushEncryptionKey(ctx context.Context, client *dotenv.Client, projec
 			ui.PrintWarningf("--encrypt=false on a client-managed project would upload PLAINTEXT secrets, defeating client-side encryption.")
 			ok, confirmErr := ui.Confirm("Push plaintext anyway?", false)
 			if confirmErr != nil {
-				return "", "", fmt.Errorf("refusing to push plaintext to a client-managed project; remove --encrypt=false (or run interactively to confirm)")
+				return "", "", fmt.Errorf(
+					"refusing to push plaintext to a client-managed project; " +
+						"remove --encrypt=false (or run interactively to confirm)",
+				)
 			}
 			if !ok {
 				return "", "", fmt.Errorf("push canceled")
@@ -175,10 +178,12 @@ func resolvePushEncryptionKey(ctx context.Context, client *dotenv.Client, projec
 
 	// Client-managed: derive the proof the server verifies against its stored
 	// proof. Without proof params the server has no verification configured.
-	if rk.managed == "client" {
+	if rk.managed == managedClient {
 		if rk.proofSalt == "" {
 			return "", "", fmt.Errorf(
-				"this project's client-managed key has no verification configured; re-establish its encryption key (web key setup) or recreate it with `dotenv project create --storage client`",
+				"this project's client-managed key has no verification configured; " +
+					"re-establish its encryption key (web key setup) or recreate it " +
+					"with `dotenv project create --storage client`",
 			)
 		}
 		proof, perr := dotenv.DeriveKeyProof(rk.key, rk.proofSalt, rk.proofIters)
@@ -372,7 +377,12 @@ func storeSecretLevel(ctx context.Context, client *dotenv.Client,
 	}
 	if err != nil {
 		if errors.Is(err, dotenv.ErrKeyProofMismatch) {
-			return fmt.Errorf("the encryption key does not match project '%s' — refusing to push secrets encrypted with a different key (a mistyped or wrong key would orphan this level). Use the project's established key", projectSlug)
+			return fmt.Errorf(
+				"the encryption key does not match project '%s' — refusing to push "+
+					"secrets encrypted with a different key (a mistyped or wrong key "+
+					"would orphan this level). Use the project's established key",
+				projectSlug,
+			)
 		}
 		if errors.Is(err, dotenv.ErrKeyProofRequired) {
 			return fmt.Errorf("project '%s' has no client-key verification configured; re-establish its encryption key before pushing", projectSlug)

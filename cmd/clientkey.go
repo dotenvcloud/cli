@@ -44,9 +44,11 @@ func (rk resolvedKey) dataKey() (string, error) {
 	}
 
 	// No salt configured.
-	if rk.managed == "client" {
+	if rk.managed == managedClient {
 		return "", fmt.Errorf(
-			"this project's client-managed key has no salt configured; re-establish its encryption key (web key setup) or recreate it with `dotenv project create --storage client`",
+			"this project's client-managed key has no salt configured; re-establish " +
+				"its encryption key (web key setup) or recreate it with " +
+				"`dotenv project create --storage client`",
 		)
 	}
 	// Server-managed legacy key without a salt: use the raw key (padKey no-op).
@@ -86,13 +88,13 @@ func resolveEncryptionKey(
 
 	// Server-managed: the server hands back the key value AND the data-key
 	// salt/iterations so we derive the same unified PBKDF2 AES key as the browser.
-	if !desc.IsClientManaged && desc.Managed != "client" {
+	if !desc.IsClientManaged && desc.Managed != managedClient {
 		if clientKeyFlag != "" {
 			ui.PrintWarningf("project '%s' is server-managed; ignoring --client-key and using the server key.", projectSlug)
 		}
 		return resolvedKey{
 			key:        desc.Key,
-			managed:    "server",
+			managed:    managedServer,
 			proofSalt:  desc.KeyCheckSalt,
 			proofIters: desc.KeyCheckIterations,
 		}, nil
@@ -108,7 +110,7 @@ func resolveEncryptionKey(
 	}
 	return resolvedKey{
 		key:        key,
-		managed:    "client",
+		managed:    managedClient,
 		proofSalt:  desc.KeyCheckSalt,
 		proofIters: desc.KeyCheckIterations,
 	}, nil
@@ -169,7 +171,10 @@ func interpretClientKeyFlag(value string) (string, error) {
 		return "", fmt.Errorf("client key file not found: %s", value)
 	}
 
-	ui.PrintWarningf("client key passed as a literal argument — it can leak via shell history and the process list. Prefer --client-key=<file>.")
+	ui.PrintWarningf(
+		"client key passed as a literal argument — it can leak via shell history " +
+			"and the process list. Prefer --client-key=<file>.",
+	)
 	return strings.TrimSpace(value), nil
 }
 
@@ -211,5 +216,5 @@ func projectIsClientManaged(ctx context.Context, client *dotenv.Client, projectS
 	if err != nil {
 		return false
 	}
-	return desc.IsClientManaged || desc.Managed == "client"
+	return desc.IsClientManaged || desc.Managed == managedClient
 }

@@ -20,7 +20,7 @@ const (
 	EnvConfigDir     = "DOTENV_CONFIG_DIR"
 	// EnvClientKey is the env var name holding a client-managed encryption key
 	// VALUE (not a path). Consulted only when a client key is actually needed.
-	EnvClientKey = "DOTENV_CLIENT_KEY" //nolint:gosec // env var name, not a credential
+	EnvClientKey = "DOTENV_CLIENT_KEY"
 )
 
 // EnvConfig provides environment variable overrides

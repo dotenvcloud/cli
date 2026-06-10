@@ -313,7 +313,8 @@ func runAPIKeysDelete(cmd *cobra.Command, args []string) error {
 
 	// Confirm deletion
 	if !apiKeyForce {
-		confirmed, confirmErr := ui.Confirm(fmt.Sprintf("Are you sure you want to delete API key %s? This action cannot be undone.", keyID), false)
+		msg := fmt.Sprintf("Are you sure you want to delete API key %s? This action cannot be undone.", keyID)
+		confirmed, confirmErr := ui.Confirm(msg, false)
 		if confirmErr != nil {
 			return confirmErr
 		}
