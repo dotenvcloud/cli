@@ -129,7 +129,7 @@ func (s *CallbackServer) GetCallbackURL() string {
 
 // showSuccessPage displays a success page to the user
 func (s *CallbackServer) showSuccessPage(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "text/html")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprintf(w, `<!DOCTYPE html>
 <html>
 <head>
@@ -181,7 +181,7 @@ func (s *CallbackServer) showSuccessPage(w http.ResponseWriter) {
 
 // showErrorPage displays an error page to the user
 func (s *CallbackServer) showErrorPage(w http.ResponseWriter, errCode, description string) {
-	w.Header().Set("Content-Type", "text/html")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprintf(w, `<!DOCTYPE html>
 <html>
 <head>

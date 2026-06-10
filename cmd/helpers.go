@@ -33,27 +33,28 @@ func getAPIClientWithoutOrgContext() (*dotenv.Client, error) {
 }
 
 func buildAPIClient(withOrg bool) (*dotenv.Client, error) {
-	factory := client.NewFactory(config.GetAPIURL(""))
+	env := config.LoadEnvConfig()
+	flagAPIKey := viper.GetString("api_key")
 
-	apiKey := viper.GetString("api_key")
-	if apiKey == "" {
-		apiKey = os.Getenv(config.EnvAPIKey)
-	}
-
-	// API key path bypasses account system (CI/CD).
-	if apiKey != "" {
-		apiURL := config.GetAPIURL("")
+	// Environment / --api-key credentials take precedence and bypass the
+	// account store entirely (CI/CD).
+	if config.UsingEnvCredential(flagAPIKey) {
+		auth := config.ResolveAuth(flagAPIKey, env, nil)
+		factory := client.NewFactory(auth.APIURL)
 		org := ""
 		if withOrg {
-			org = os.Getenv(config.EnvOrganization)
+			org = auth.Organization
 		}
-		return factory.NewClientFromAPIKey(apiKey, apiURL, org), nil
+		return factory.NewClientFromAPIKey(auth.APIKey, auth.APIURL, org), nil
 	}
 
+	// Otherwise use the current stored account.
 	account, err := getCurrentAccount()
 	if err != nil {
 		return nil, err
 	}
+	auth := config.ResolveAuth(flagAPIKey, env, account)
+	factory := client.NewFactory(auth.APIURL)
 
 	if withOrg {
 		if account.GetCurrentOrganizationULID() == "" {
@@ -81,6 +82,13 @@ func buildAPIClient(withOrg bool) (*dotenv.Client, error) {
 // RefreshOrganizationsIfNeeded checks if organizations need refresh and refreshes them
 // This should be called explicitly when needed, not in a background goroutine
 func RefreshOrganizationsIfNeeded(ctx context.Context) error {
+	// Environment / --api-key credentials bypass the account store; there is no
+	// stored account to refresh, and consulting one would surface stale-account
+	// warnings during CI/CD runs.
+	if config.UsingEnvCredential(viper.GetString("api_key")) {
+		return nil
+	}
+
 	account, err := getCurrentAccount()
 	if err != nil {
 		return err
@@ -169,6 +177,25 @@ func displayAccountInfo() error {
 	}
 
 	return nil
+}
+
+// printActiveIdentity shows which credentials a command is using so it is always
+// clear who you are and which organization you are acting on. Environment /
+// --api-key credentials are announced explicitly (CI/CD); otherwise the current
+// stored account is shown. This is the single place commands report identity.
+func printActiveIdentity() {
+	if config.UsingEnvCredential(viper.GetString("api_key")) {
+		if org := os.Getenv(config.EnvOrganization); org != "" {
+			ui.PrintInfof("[Using environment credentials | Organization: %s]", org)
+		} else {
+			ui.PrintInfof("[Using environment credentials]")
+		}
+		return
+	}
+
+	if err := displayAccountInfo(); err != nil {
+		ui.PrintWarningf("Could not display account info: %v", err)
+	}
 }
 
 // getUnauthenticatedSDKClient returns an SDK client without authentication

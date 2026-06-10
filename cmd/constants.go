@@ -19,5 +19,12 @@ const (
 	resourceAll          = "all"
 )
 
+// Key custody modes: who holds the encryption key. Both modes encrypt with the
+// same unified PBKDF2 data key; the difference is only where the key lives.
+const (
+	managedServer = "server"
+	managedClient = "client"
+)
+
 // Platform identifiers used by update / explore commands.
 const platformWindows = "windows"

@@ -64,7 +64,10 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 		return fmt.Errorf("failed to start callback server: %w", err)
 	}
 
-	authURL := af.buildAuthorizationURL(callbackServer.GetCallbackURL(), state, pkce.Challenge, pkce.Method)
+	// The redirect_uri must be identical at /oauth/authorize and at the token
+	// exchange, so capture it once and reuse it for both.
+	redirectURI := callbackServer.GetCallbackURL()
+	authURL := af.buildAuthorizationURL(redirectURI, state, pkce.Challenge, pkce.Method)
 	af.presentAuthURL(authURL)
 	ui.PrintInfof("Waiting for authentication...")
 
@@ -73,7 +76,7 @@ func (af *AuthFlow) Run(ctx context.Context, am *config.AccountManager) error {
 
 	select {
 	case code := <-callbackServer.AuthCode:
-		return af.handleAuthCode(timeoutCtx, am, code, pkce.Verifier)
+		return af.handleAuthCode(timeoutCtx, am, code, pkce.Verifier, redirectURI)
 	case err := <-callbackServer.AuthError:
 		return fmt.Errorf("authentication failed: %w", err)
 	case <-timeoutCtx.Done():
@@ -99,12 +102,13 @@ func (af *AuthFlow) presentAuthURL(authURL string) {
 	}
 }
 
-func (af *AuthFlow) handleAuthCode(ctx context.Context, am *config.AccountManager, code, verifier string) error {
+func (af *AuthFlow) handleAuthCode(ctx context.Context, am *config.AccountManager, code, verifier, redirectURI string) error {
 	ui.PrintInfof("Exchanging authorization code for tokens...")
 
 	sdkClient := af.clientFactory.NewUnauthenticatedClient(af.BaseURL, config.ShouldSkipTLSVerify())
 	req := dotenv.OAuthTokenAuthCodeRequest{
 		Code:         code,
+		RedirectURI:  redirectURI,
 		CodeVerifier: verifier,
 		ClientID:     constants.OAuthClientID,
 	}

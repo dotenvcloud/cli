@@ -8,13 +8,11 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 
 	dotenv "github.com/dotenvcloud/sdk-go"
 
 	"github.com/dotenvcloud/cli/internal/hierarchy"
-	"github.com/dotenvcloud/cli/internal/ui"
 )
 
 var (
@@ -70,11 +68,7 @@ func init() {
 
 func runTree(cmd *cobra.Command, args []string) error {
 	// Display account/org info
-	if viper.GetString("api_key") == "" && os.Getenv("DOTENV_API_KEY") == "" {
-		if err := displayAccountInfo(); err != nil {
-			ui.PrintWarningf("Could not display account info: %v", err)
-		}
-	}
+	printActiveIdentity()
 
 	// Get API client
 	client, err := getAPIClient()

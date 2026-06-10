@@ -1,7 +1,9 @@
 package config
 
 import (
+	"net/url"
 	"os"
+	"strings"
 
 	"github.com/dotenvcloud/cli/internal/constants"
 )
@@ -31,8 +33,36 @@ func GetDefaultAPIURL() string {
 	return GetAPIURL("")
 }
 
-// ShouldSkipTLSVerify returns true if TLS verification should be skipped
-// This should only be used in development environments
+// ShouldSkipTLSVerify returns true if TLS verification should be skipped.
+//
+// The DOTENV_TLS_SKIP_VERIFY override is only honored when the effective API
+// URL points at a local development host. This prevents a stray or injected
+// environment variable from silently disabling certificate verification
+// against a real endpoint (e.g. api.dotenv.cloud) and enabling a
+// man-in-the-middle that would expose bearer tokens and secrets in transit.
 func ShouldSkipTLSVerify() bool {
-	return os.Getenv(EnvTLSSkipVerify) != ""
+	if os.Getenv(EnvTLSSkipVerify) == "" {
+		return false
+	}
+
+	return isLocalAPIHost(GetDefaultAPIURL())
+}
+
+// isLocalAPIHost reports whether the given URL targets a loopback or local
+// development host where skipping TLS verification is acceptable.
+func isLocalAPIHost(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+
+	host := parsed.Hostname()
+	switch host {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	}
+
+	return strings.HasSuffix(host, ".test") ||
+		strings.HasSuffix(host, ".local") ||
+		strings.HasSuffix(host, ".localhost")
 }

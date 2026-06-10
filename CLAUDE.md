@@ -138,8 +138,23 @@ DOTENV_API_URL=xxx         # API base URL
 DOTENV_CONTEXT=production  # Active context
 ```
 
-Client-managed encryption keys are supplied per command via
-`dotenv pull --client-key=<file>` (a file path), not an environment variable.
+Client-managed encryption keys are resolved per command (shared by `pull` and
+`push` via `resolveEncryptionKey` in `cmd/clientkey.go`), in this order of
+preference — safest first:
+
+1. `--client-key=<file>` — a file path (recommended; no warning).
+2. `--client-key=<value>` — the key value itself (warned: leaks via shell
+   history / process list). A value that looks like a path but doesn't exist is
+   an error, not a silent key, to catch typos.
+3. `DOTENV_CLIENT_KEY=<value>` — env var holding the key value (warned: leaks
+   via the process environment). Consulted only when a client key is actually
+   needed (client-managed project), so a stray global value can't override a
+   server-managed project.
+4. Interactive prompt — when none of the above is provided on a client-managed
+   project.
+
+Keys are used as raw strings (never hex/base64-decoded) per the platform
+crypto contract.
 
 ## Encryption Implementation
 

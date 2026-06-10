@@ -33,7 +33,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        go: ['1.24', '1.25', '1.26']
+        # go.mod requires go 1.26 (crypto/pbkdf2 + workspace toolchain), so older
+        # toolchains can't build the module under GOTOOLCHAIN=local.
+        go: ['1.26']
     steps:
       - name: Mint GitHub App token (SDK access)
         id: app-token

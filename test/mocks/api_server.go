@@ -227,13 +227,13 @@ func (m *MockAPIServer) handleGetSecrets(w http.ResponseWriter, r *http.Request)
 }
 
 func (m *MockAPIServer) handleRetrieveSecrets(w http.ResponseWriter, r *http.Request) {
-	var req dotenv.BulkSecretsRequest
+	var req dotenv.RetrieveParams
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 
-	secrets, ok := m.secrets[req.ProjectSlug]
+	secrets, ok := m.secrets[req.Project]
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -260,14 +260,23 @@ func (m *MockAPIServer) handleGetEncryptionKey(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Mirror the real API: a content-wrapped "managed" descriptor that the SDK
+	// parses. These mock keys are server-managed (the raw key is returned).
+	content, _ := json.Marshal(map[string]interface{}{
+		"key": map[string]interface{}{
+			"managed": "server",
+			"key":     key,
+			"version": 1,
+		},
+	})
+
 	resp := dotenv.JSONAPIResponse{
 		Data: map[string]interface{}{
 			"type": "encryption_keys",
 			"id":   "key-123",
 			"attributes": map[string]interface{}{
-				"project_id": projectSlug,
-				"key":        key,
-				"is_active":  true,
+				"content": string(content),
+				"format":  "json",
 			},
 		},
 	}

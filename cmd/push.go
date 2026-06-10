@@ -2,17 +2,15 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	dotenv "github.com/dotenvcloud/sdk-go"
 
-	"github.com/dotenvcloud/cli/internal/crypto"
-	"github.com/dotenvcloud/cli/internal/crypto/key"
 	"github.com/dotenvcloud/cli/internal/formats"
 	"github.com/dotenvcloud/cli/internal/ui"
 )
@@ -35,6 +33,7 @@ client-side encryption.
 The hierarchy follows the pattern:
   project -> target -> environment
 
+Secrets are stored as one encrypted .env blob per level (the inverse of pull).
 You can push to any level of the hierarchy.`,
 
 	Example: `  # Push .env file to specific environment
@@ -64,22 +63,6 @@ You can push to any level of the hierarchy.`,
 	RunE: runPush,
 }
 
-// encryptSecretsMap encrypts each value in a map
-func encryptSecretsMap(secrets map[string]string, key []byte) (map[string]string, error) {
-	encryptor := crypto.NewGCMEncryptor()
-	encrypted := make(map[string]string)
-
-	for k, v := range secrets {
-		enc, err := encryptor.Encrypt([]byte(v), key)
-		if err != nil {
-			return nil, fmt.Errorf("failed to encrypt %s: %w", k, err)
-		}
-		encrypted[k] = enc
-	}
-
-	return encrypted, nil
-}
-
 //nolint:gochecknoinits // cobra subcommand flag registration is idiomatic in init
 func init() {
 	pushCmd.Flags().StringVar(&pushProject, "project", "",
@@ -91,17 +74,13 @@ func init() {
 	pushCmd.Flags().BoolVarP(&pushForce, "force", "f", false,
 		"overwrite existing secrets")
 	pushCmd.Flags().StringVar(&pushClientKey, "client-key", "",
-		"path to client encryption key file")
+		"path to a client encryption key file, or the key value itself")
 	pushCmd.Flags().BoolVar(&pushEncrypt, "encrypt", true,
 		"encrypt secrets before pushing")
 }
 
 func runPush(cmd *cobra.Command, args []string) error {
-	if viper.GetString("api_key") == "" && os.Getenv("DOTENV_API_KEY") == "" {
-		if err := displayAccountInfo(); err != nil {
-			ui.PrintWarningf("Could not display account info: %v", err)
-		}
-	}
+	printActiveIdentity()
 
 	projectSlug, targetSlug, environmentSlug, singleFile, err := parsePushArgs(args)
 	if err != nil {
@@ -124,17 +103,17 @@ func runPush(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to verify project '%s' exists: %w", projectSlug, err)
 	}
 
-	encKey, err := resolvePushEncryptionKey(cmd.Context(), client, projectSlug)
+	encKey, keyProof, err := resolvePushEncryptionKey(cmd.Context(), client, projectSlug)
 	if err != nil {
 		return err
 	}
 
 	if singleFile != "" {
 		return pushSingleFile(cmd.Context(), client, project, targetSlug, environmentSlug,
-			singleFile, encKey, pushForce)
+			singleFile, encKey, keyProof, pushForce)
 	}
 	return pushMultipleFiles(cmd.Context(), client, project, pushProject, pushTarget,
-		pushEnvironment, encKey, pushForce)
+		pushEnvironment, encKey, keyProof, pushForce)
 }
 
 func parsePushArgs(args []string) (projectSlug, targetSlug, environmentSlug, singleFile string, err error) {
@@ -167,33 +146,62 @@ func parsePushArgs(args []string) (projectSlug, targetSlug, environmentSlug, sin
 	return
 }
 
-func resolvePushEncryptionKey(ctx context.Context, client *dotenv.Client, projectSlug string) ([]byte, error) {
+// resolvePushEncryptionKey returns the project key as a RAW STRING (see
+// dotenv.DeriveProjectKey) — never hex/base64-decoded — and, for client-managed
+// projects, the base64 key proof to send with the write. An empty encKey means
+// "do not encrypt". Key resolution (file/value/env/prompt) is shared with pull
+// via resolveEncryptionKey; this wrapper adds push's --encrypt=false handling,
+// the proof derivation, and a guard against silently uploading plaintext to a
+// client-managed project.
+func resolvePushEncryptionKey(ctx context.Context, client *dotenv.Client, projectSlug string) (encKey, keyProof string, err error) {
 	if !pushEncrypt {
-		return nil, nil
-	}
-	if pushClientKey != "" {
-		keyData, err := os.ReadFile(pushClientKey)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read client key: %w", err)
+		if projectIsClientManaged(ctx, client, projectSlug) {
+			ui.PrintWarningf("--encrypt=false on a client-managed project would upload PLAINTEXT secrets, defeating client-side encryption.")
+			ok, confirmErr := ui.Confirm("Push plaintext anyway?", false)
+			if confirmErr != nil {
+				return "", "", fmt.Errorf(
+					"refusing to push plaintext to a client-managed project; " +
+						"remove --encrypt=false (or run interactively to confirm)",
+				)
+			}
+			if !ok {
+				return "", "", fmt.Errorf("push canceled")
+			}
 		}
-		encKey, err := key.ParseKey(string(keyData))
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse client key: %w", err)
+		return "", "", nil
+	}
+
+	rk, rerr := resolveEncryptionKey(ctx, client, projectSlug, pushClientKey, promptForClientKey)
+	if rerr != nil {
+		return "", "", rerr
+	}
+
+	// Client-managed: derive the proof the server verifies against its stored
+	// proof. Without proof params the server has no verification configured.
+	if rk.managed == managedClient {
+		if rk.proofSalt == "" {
+			return "", "", fmt.Errorf(
+				"this project's client-managed key has no verification configured; " +
+					"re-establish its encryption key (web key setup) or recreate it " +
+					"with `dotenv project create --storage client`",
+			)
 		}
-		return encKey, nil
+		proof, perr := dotenv.DeriveKeyProof(rk.key, rk.proofSalt, rk.proofIters)
+		if perr != nil {
+			return "", "", fmt.Errorf("failed to derive key proof: %w", perr)
+		}
+		keyProof = proof
 	}
-	encKeyResp, encResp, err := client.Encryption.GetEncryptionKey(ctx, projectSlug)
-	if encResp != nil {
-		defer encResp.Body.Close()
+
+	// For client-managed projects this returns the PBKDF2-derived AES key (not
+	// the raw passphrase) so secrets are encrypted under a salted, stretched
+	// key; server-managed projects return the server key unchanged.
+	dk, derr := rk.dataKey()
+	if derr != nil {
+		return "", "", derr
 	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get encryption key: %w", err)
-	}
-	encKey, err := key.ParseKey(encKeyResp.Key)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse encryption key: %w", err)
-	}
-	return encKey, nil
+
+	return dk, keyProof, nil
 }
 
 // slugForLabel looks up the slug for the label the user picked. Exact-match
@@ -208,83 +216,9 @@ func slugForLabel(selected string, labels []string, slugAt func(int) string) (st
 }
 
 func pushSingleFile(ctx context.Context, client *dotenv.Client, project *dotenv.Project,
-	targetSlug, environmentSlug, filename string, encKey []byte, force bool) error {
-	ui.PrintInfof("Reading secrets from %s...", filename)
-
-	// Detect format and parse
-	secrets, err := parseSecretsFile(filename)
-	if err != nil {
-		return fmt.Errorf("failed to parse file: %w", err)
-	}
-
-	ui.PrintInfof("Found %d secrets", len(secrets))
-
-	// Encrypt if requested
-	if encKey != nil {
-		encrypted, encErr := encryptSecretsMap(secrets, encKey)
-		if encErr != nil {
-			return fmt.Errorf("failed to encrypt secrets: %w", encErr)
-		}
-		secrets = encrypted
-	}
-
-	// Build request - convert map to slice of BulkSecretItem
-	bulkSecrets := make([]dotenv.BulkSecretItem, 0, len(secrets))
-	for key, value := range secrets {
-		item := dotenv.BulkSecretItem{
-			Key:         key,
-			Value:       value,
-			IsEncrypted: encKey != nil,
-		}
-		if targetSlug != "" {
-			item.TargetSlug = &targetSlug
-		}
-		if environmentSlug != "" {
-			item.EnvironmentSlug = &environmentSlug
-		}
-		bulkSecrets = append(bulkSecrets, item)
-	}
-
-	req := &dotenv.BulkSecretsRequest{
-		ProjectSlug: project.Slug,
-		Secrets:     bulkSecrets,
-	}
-
-	// Check existing secrets if not forcing
-	if !force {
-		existing, existResp, listErr := client.Secrets.List(ctx, project.Slug, nil)
-		if existResp != nil {
-			defer existResp.Body.Close()
-		}
-		if listErr == nil && len(existing) > 0 {
-			ui.PrintWarningf("Project already has %d secrets", len(existing))
-
-			overwrite, confirmErr := ui.Confirm("Overwrite existing secrets?", false)
-			if confirmErr != nil {
-				return confirmErr
-			}
-
-			if !overwrite {
-				ui.PrintInfof("Push canceled")
-				return nil
-			}
-		}
-	}
-
-	// Push secrets
-	ui.PrintInfof("Pushing secrets...")
-
-	created, bulkResp, err := client.Secrets.BulkCreate(ctx, req)
-	if bulkResp != nil {
-		defer bulkResp.Body.Close()
-	}
-	if err != nil {
-		return fmt.Errorf("failed to push secrets: %w", err)
-	}
-
-	ui.PrintSuccessf("Successfully pushed %d secrets", len(created))
-
-	return nil
+	targetSlug, environmentSlug, filename string, encKey, keyProof string, force bool,
+) error {
+	return storeSecretLevel(ctx, client, project.Slug, targetSlug, environmentSlug, filename, encKey, keyProof, force)
 }
 
 type secretSet struct {
@@ -296,27 +230,27 @@ type secretSet struct {
 }
 
 func pushMultipleFiles(ctx context.Context, client *dotenv.Client, project *dotenv.Project,
-	projectFile, targetFile, envFile string, encKey []byte, _ bool) error {
+	projectFile, targetFile, envFile string, encKey, keyProof string, force bool,
+) error {
 	sets, err := buildSecretSets(ctx, client, project, projectFile, targetFile, envFile)
 	if err != nil {
 		return err
 	}
 
-	totalSecrets := 0
 	for i := range sets {
-		count, err := processSecretSet(ctx, client, &sets[i], encKey)
-		if err != nil {
+		set := &sets[i]
+		if err := storeSecretLevel(ctx, client, set.slug, set.target, set.env, set.file, encKey, keyProof, force); err != nil {
 			return err
 		}
-		totalSecrets += count
 	}
 
-	ui.PrintSuccessf("Successfully pushed %d total secrets", totalSecrets)
+	ui.PrintSuccessf("Successfully pushed %d level(s)", len(sets))
 	return nil
 }
 
 func buildSecretSets(ctx context.Context, client *dotenv.Client, project *dotenv.Project,
-	projectFile, targetFile, envFile string) ([]secretSet, error) {
+	projectFile, targetFile, envFile string,
+) ([]secretSet, error) {
 	var sets []secretSet
 
 	if projectFile != "" {
@@ -397,55 +331,105 @@ func promptForEnvironment(ctx context.Context, client *dotenv.Client, projectSlu
 	return slugForLabel(selected, names, func(i int) string { return envs[i].Slug })
 }
 
-func processSecretSet(ctx context.Context, client *dotenv.Client, set *secretSet, encKey []byte) (int, error) {
-	ui.PrintInfof("Processing %s-level secrets from %s...", set.level, set.file)
+// storeSecretLevel pushes one file as the encrypted .env blob for a single
+// level (project, target or environment — the deepest non-empty slug). The
+// whole file content is encrypted as one blob, mirroring how the web stores
+// secrets and how pull reads them back.
+func storeSecretLevel(ctx context.Context, client *dotenv.Client,
+	projectSlug, targetSlug, environmentSlug, filename, encKey, keyProof string, force bool,
+) error {
+	level := deepestLevel(targetSlug, environmentSlug)
+	ui.PrintInfof("Reading %s-level secrets from %s...", level, filename)
 
-	secrets, err := parseSecretsFile(set.file)
+	content, count, err := readFileBlob(filename)
 	if err != nil {
-		return 0, fmt.Errorf("failed to parse %s: %w", set.file, err)
+		return err
 	}
-	ui.PrintInfof("Found %d secrets", len(secrets))
+	ui.PrintInfof("Found %d secrets", count)
 
-	if encKey != nil {
-		encrypted, encErr := encryptSecretsMap(secrets, encKey)
-		if encErr != nil {
-			return 0, fmt.Errorf("failed to encrypt secrets: %w", encErr)
+	if !force {
+		exists, existErr := levelHasSecrets(ctx, client, projectSlug, targetSlug, environmentSlug)
+		if existErr == nil && exists {
+			ui.PrintWarningf("%s level already has secrets", level)
+			overwrite, confirmErr := ui.Confirm("Overwrite existing secrets?", false)
+			if confirmErr != nil {
+				return confirmErr
+			}
+			if !overwrite {
+				ui.PrintInfof("Push canceled")
+				return nil
+			}
 		}
-		secrets = encrypted
 	}
 
-	bulkSecrets := buildBulkSecrets(secrets, set, encKey != nil)
-	req := &dotenv.BulkSecretsRequest{ProjectSlug: set.slug, Secrets: bulkSecrets}
+	blob := content
+	if encKey != "" {
+		blob, err = dotenv.EncryptWithProjectKey(content, encKey)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt secrets: %w", err)
+		}
+	}
 
-	created, bulkResp, err := client.Secrets.BulkCreate(ctx, req)
-	if bulkResp != nil {
-		defer bulkResp.Body.Close()
+	ui.PrintInfof("Pushing secrets...")
+	resp, err := client.Secrets.StoreSecrets(ctx, projectSlug, targetSlug, environmentSlug, blob, keyProof)
+	if resp != nil {
+		defer resp.Body.Close()
 	}
 	if err != nil {
-		return 0, fmt.Errorf("failed to push %s-level secrets: %w", set.level, err)
+		if errors.Is(err, dotenv.ErrKeyProofMismatch) {
+			return fmt.Errorf(
+				"the encryption key does not match project '%s' — refusing to push "+
+					"secrets encrypted with a different key (a mistyped or wrong key "+
+					"would orphan this level). Use the project's established key",
+				projectSlug,
+			)
+		}
+		if errors.Is(err, dotenv.ErrKeyProofRequired) {
+			return fmt.Errorf("project '%s' has no client-key verification configured; re-establish its encryption key before pushing", projectSlug)
+		}
+		return fmt.Errorf("failed to push secrets: %w", err)
 	}
-	return len(created), nil
+
+	ui.PrintSuccessf("Successfully pushed %d secrets to %s level", count, level)
+	return nil
 }
 
-func buildBulkSecrets(secrets map[string]string, set *secretSet, encrypted bool) []dotenv.BulkSecretItem {
-	bulkSecrets := make([]dotenv.BulkSecretItem, 0, len(secrets))
-	for k, value := range secrets {
-		item := dotenv.BulkSecretItem{
-			Key:         k,
-			Value:       value,
-			IsEncrypted: encrypted,
-		}
-		if set.target != "" {
-			tgt := set.target
-			item.TargetSlug = &tgt
-		}
-		if set.env != "" {
-			env := set.env
-			item.EnvironmentSlug = &env
-		}
-		bulkSecrets = append(bulkSecrets, item)
+// deepestLevel returns the level name implied by the provided slugs.
+func deepestLevel(targetSlug, environmentSlug string) string {
+	if environmentSlug != "" {
+		return "environment"
 	}
-	return bulkSecrets
+	if targetSlug != "" {
+		return "target"
+	}
+	return "project"
+}
+
+// levelHasSecrets reports whether the deepest provided level already has a
+// secrets blob stored.
+func levelHasSecrets(ctx context.Context, client *dotenv.Client, projectSlug, targetSlug, environmentSlug string) (bool, error) {
+	resp, hResp, err := client.Secrets.GetProjectSecrets(ctx, projectSlug, targetSlug, environmentSlug)
+	if hResp != nil {
+		defer hResp.Body.Close()
+	}
+	if err != nil || resp == nil {
+		return false, err
+	}
+	lvl, ok := resp.Data.Attributes.Levels[deepestLevel(targetSlug, environmentSlug)]
+	return ok && lvl.Content != "", nil
+}
+
+// readFileBlob reads the raw file content (the blob to store) and best-effort
+// counts the keys for the progress message.
+func readFileBlob(filename string) (content string, keyCount int, err error) {
+	data, readErr := os.ReadFile(filename)
+	if readErr != nil {
+		return "", 0, fmt.Errorf("failed to read file %s: %w", filename, readErr)
+	}
+	if parsed, parseErr := parseSecretsFile(filename); parseErr == nil {
+		keyCount = len(parsed)
+	}
+	return string(data), keyCount, nil
 }
 
 func parseSecretsFile(filename string) (map[string]string, error) {

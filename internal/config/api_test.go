@@ -109,39 +109,57 @@ func TestGetDefaultAPIURL(t *testing.T) {
 }
 
 func TestShouldSkipTLSVerify(t *testing.T) {
-	// Save original env value
-	originalEnv := os.Getenv(EnvTLSSkipVerify)
+	// Save original env values
+	originalSkip := os.Getenv(EnvTLSSkipVerify)
+	originalURL := os.Getenv(EnvAPIURL)
 	defer func() {
-		if originalEnv != "" {
-			os.Setenv(EnvTLSSkipVerify, originalEnv)
-		} else {
-			os.Unsetenv(EnvTLSSkipVerify)
-		}
+		restoreEnv(EnvTLSSkipVerify, originalSkip)
+		restoreEnv(EnvAPIURL, originalURL)
 	}()
 
+	// The override is only honored for local development hosts so a stray or
+	// injected env var cannot silently disable TLS verification against a real
+	// endpoint and enable a man-in-the-middle.
 	tests := []struct {
 		name     string
 		envValue string
+		apiURL   string
 		expected bool
 	}{
 		{
-			name:     "returns true when set to 1",
+			name:     "honored for localhost",
 			envValue: "1",
+			apiURL:   "http://localhost:8000",
 			expected: true,
 		},
 		{
-			name:     "returns true when set to true",
+			name:     "honored for 127.0.0.1",
 			envValue: "true",
+			apiURL:   "https://127.0.0.1:8443",
 			expected: true,
 		},
 		{
-			name:     "returns true when set to any value",
+			name:     "honored for .test host",
 			envValue: "yes",
+			apiURL:   "https://api.dotenv.test",
 			expected: true,
+		},
+		{
+			name:     "ignored for production host even when set",
+			envValue: "1",
+			apiURL:   "https://api.dotenv.cloud",
+			expected: false,
+		},
+		{
+			name:     "ignored for arbitrary remote host even when set",
+			envValue: "true",
+			apiURL:   "https://evil.example.com",
+			expected: false,
 		},
 		{
 			name:     "returns false when not set",
 			envValue: "",
+			apiURL:   "http://localhost:8000",
 			expected: false,
 		},
 	}
@@ -153,9 +171,18 @@ func TestShouldSkipTLSVerify(t *testing.T) {
 			} else {
 				os.Unsetenv(EnvTLSSkipVerify)
 			}
+			os.Setenv(EnvAPIURL, tt.apiURL)
 
 			result := ShouldSkipTLSVerify()
 			assert.Equal(t, tt.expected, result)
 		})
+	}
+}
+
+func restoreEnv(key, value string) {
+	if value != "" {
+		os.Setenv(key, value)
+	} else {
+		os.Unsetenv(key)
 	}
 }

@@ -1,14 +1,14 @@
 module github.com/dotenvcloud/cli
 
-go 1.24.0
+go 1.26.0
 
-toolchain go1.26.3
+toolchain go1.26.4
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/briandowns/spinner v1.23.0
-	github.com/dotenvcloud/sdk-go v0.1.0
+	github.com/dotenvcloud/sdk-go v1.0.0
 	github.com/fatih/color v1.16.0
 	github.com/google/uuid v1.6.0
 	github.com/oklog/ulid/v2 v2.1.1
@@ -17,7 +17,6 @@ require (
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/viper v1.18.2
 	github.com/stretchr/testify v1.8.4
-	golang.org/x/crypto v0.39.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

@@ -24,7 +24,7 @@ func HandleAPIError(err error, account *config.Account) error {
 	// typed sentinel exposed by F-19.
 	if errors.Is(err, ErrClientManagedKey) || errors.Is(err, dotenv.ErrClientManagedEncryption) {
 		return fmt.Errorf("this project uses client-managed encryption. " +
-			"Please provide your encryption key using --client-key flag or you will be prompted for it")
+			"Provide your key via --client-key (a file path or the key value), the DOTENV_CLIENT_KEY env var, or you will be prompted for it")
 	}
 
 	// Check for specific error types
@@ -142,9 +142,10 @@ func ShowErrorWithHelp(err error) {
 
 	case strings.Contains(msg, "client-managed encryption"):
 		ui.PrintInfof("\nThis project uses client-managed encryption keys.")
-		ui.PrintInfof("To provide your key:")
-		ui.PrintInfof("1. Use the --client-key flag: dotenv pull <project> --client-key=path/to/key")
-		ui.PrintInfof("2. Or wait to be prompted for the key")
-		ui.PrintInfof("3. The key should be in base64, hex, or raw format")
+		ui.PrintInfof("Provide your key in any of these ways:")
+		ui.PrintInfof("1. --client-key=<file> (recommended): dotenv pull <project> --client-key=path/to/key")
+		ui.PrintInfof("2. --client-key=<value> (the key itself; less safe — shell history/process list)")
+		ui.PrintInfof("3. DOTENV_CLIENT_KEY=<value> environment variable (less safe)")
+		ui.PrintInfof("4. Or wait to be prompted for the key")
 	}
 }

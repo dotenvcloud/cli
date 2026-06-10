@@ -8,7 +8,6 @@ import (
 
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	dotenv "github.com/dotenvcloud/sdk-go"
 
@@ -101,13 +100,10 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	resource := args[0]
 
-	// Display account/org info for resources that use API
-	// (not for "accounts" since that's local config)
-	if resource != resourceAccounts && viper.GetString("api_key") == "" && os.Getenv("DOTENV_API_KEY") == "" {
-		if err := displayAccountInfo(); err != nil {
-			// Don't fail if we can't display account info
-			ui.PrintWarningf("Could not display account info: %v", err)
-		}
+	// Show the active identity for resources that use the API (not for
+	// "accounts", which is local config).
+	if resource != resourceAccounts {
+		printActiveIdentity()
 	}
 
 	return dispatchListResource(cmd, resource, args)
