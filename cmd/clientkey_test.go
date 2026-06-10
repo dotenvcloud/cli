@@ -48,7 +48,15 @@ func newEncKeyServer(t *testing.T, clientManaged bool, key string) *dotenv.Clien
 				"key_check_iterations": encKeyTestIters,
 			}
 		} else {
-			keyObj = map[string]interface{}{"managed": "server", "key": key, "version": 1}
+			// Server-managed now also returns the data-key salt/iterations (unified
+			// PBKDF2 derivation) alongside the key value.
+			keyObj = map[string]interface{}{
+				"managed":              "server",
+				"key":                  key,
+				"version":              1,
+				"key_check_salt":       encKeyTestSalt,
+				"key_check_iterations": encKeyTestIters,
+			}
 		}
 		content, _ := json.Marshal(map[string]interface{}{"key": keyObj})
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -143,6 +151,25 @@ func TestResolveEncryptionKey(t *testing.T) {
 		require.Equal(t, "server", got.managed)
 	})
 
+	t.Run("server-managed carries the data-key salt and derives via PBKDF2", func(t *testing.T) {
+		t.Setenv(config.EnvClientKey, "")
+		client := newEncKeyServer(t, false, "serverkey123")
+		got, err := resolveEncryptionKey(ctx, client, "test-project", "", noPromptT(t))
+		require.NoError(t, err)
+		require.Equal(t, "server", got.managed)
+		require.Equal(t, encKeyTestSalt, got.proofSalt)
+		require.Equal(t, encKeyTestIters, got.proofIters)
+
+		// Unified derivation: the AES key is PBKDF2(key, salt, iters) — identical to
+		// the browser — NOT the raw server key.
+		dk, err := got.dataKey()
+		require.NoError(t, err)
+		want, err := dotenv.DeriveDataKey("serverkey123", encKeyTestSalt, encKeyTestIters)
+		require.NoError(t, err)
+		require.Equal(t, string(want), dk)
+		require.NotEqual(t, "serverkey123", dk)
+	})
+
 	t.Run("client-managed flag file supplies the key and carries the proof params", func(t *testing.T) {
 		p := filepath.Join(t.TempDir(), "k.key")
 		require.NoError(t, os.WriteFile(p, []byte("flagfilekey\n"), 0o600))
@@ -222,7 +249,12 @@ func TestResolvePushEncryptionKeyPlaintextGuard(t *testing.T) {
 
 		encKey, proof, err := resolvePushEncryptionKey(ctx, client, "test-project")
 		require.NoError(t, err)
-		require.Equal(t, "myclientkey", encKey)
+
+		// Client-managed encryption now uses the PBKDF2-derived AES key, not the
+		// raw passphrase, so a weak passphrase is salted and stretched.
+		wantKey, kerr := dotenv.DeriveDataKey("myclientkey", encKeyTestSalt, encKeyTestIters)
+		require.NoError(t, kerr)
+		require.Equal(t, string(wantKey), encKey)
 
 		want, derr := dotenv.DeriveKeyProof("myclientkey", encKeyTestSalt, encKeyTestIters)
 		require.NoError(t, derr)

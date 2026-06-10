@@ -13,14 +13,44 @@ import (
 	"github.com/dotenvcloud/cli/internal/ui"
 )
 
-// resolvedKey is the outcome of resolving a project's encryption key. For
-// client-managed projects it also carries the PBKDF2 proof parameters the
-// caller needs to prove (server-side) that it holds the right key.
+// resolvedKey is the outcome of resolving a project's encryption key. It carries
+// the (non-secret) PBKDF2 data-key parameters for BOTH custody modes — server-
+// managed projects now derive the AES key the same way as client-managed.
 type resolvedKey struct {
 	key        string // RAW key string (never hex/base64-decoded)
 	managed    string // "server" | "client"
-	proofSalt  string // client-managed: base64 PBKDF2 salt
-	proofIters int    // client-managed: PBKDF2 iterations
+	proofSalt  string // base64 PBKDF2 data-key salt (sent for both modes)
+	proofIters int    // PBKDF2 iterations
+}
+
+// dataKey returns the actual key bytes to feed the AES-256-GCM layer, as a
+// string (the crypto layer treats the key as raw bytes; padKey is a no-op on a
+// 32-byte input).
+//
+// UNIFIED: both server- and client-managed projects derive the AES key via
+// dotenv.DeriveDataKey(key, salt, iterations). The only difference is custody —
+// for server-managed the server sent us the key; for client-managed the user
+// supplied it. Either way decryption happens here, on the client. A
+// server-managed key with no salt (legacy/pre-unification) falls back to the raw
+// key. Both the CLI and the browser MUST derive this way or they cannot decrypt
+// each other's data.
+func (rk resolvedKey) dataKey() (string, error) {
+	if rk.proofSalt != "" {
+		aesKey, err := dotenv.DeriveDataKey(rk.key, rk.proofSalt, rk.proofIters)
+		if err != nil {
+			return "", fmt.Errorf("failed to derive data key: %w", err)
+		}
+		return string(aesKey), nil
+	}
+
+	// No salt configured.
+	if rk.managed == "client" {
+		return "", fmt.Errorf(
+			"this project's client-managed key has no salt configured; re-establish its encryption key (web key setup) or recreate it with `dotenv project create --storage client`",
+		)
+	}
+	// Server-managed legacy key without a salt: use the raw key (padKey no-op).
+	return rk.key, nil
 }
 
 // resolveEncryptionKey returns the project encryption key as a RAW STRING — it
@@ -54,12 +84,18 @@ func resolveEncryptionKey(
 		return resolvedKey{}, HandleAPIError(err, accountForErrorContext())
 	}
 
-	// Server-managed: the server holds the authoritative key.
+	// Server-managed: the server hands back the key value AND the data-key
+	// salt/iterations so we derive the same unified PBKDF2 AES key as the browser.
 	if !desc.IsClientManaged && desc.Managed != "client" {
 		if clientKeyFlag != "" {
 			ui.PrintWarningf("project '%s' is server-managed; ignoring --client-key and using the server key.", projectSlug)
 		}
-		return resolvedKey{key: desc.Key, managed: "server"}, nil
+		return resolvedKey{
+			key:        desc.Key,
+			managed:    "server",
+			proofSalt:  desc.KeyCheckSalt,
+			proofIters: desc.KeyCheckIterations,
+		}, nil
 	}
 
 	// Client-managed: resolve the key locally and carry the proof params.
