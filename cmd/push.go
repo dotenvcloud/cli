@@ -22,6 +22,7 @@ var (
 	pushForce       bool
 	pushClientKey   string
 	pushEncrypt     bool
+	pushNoBackup    bool
 )
 
 var pushCmd = &cobra.Command{
@@ -77,6 +78,8 @@ func init() {
 		"path to a client encryption key file, or the key value itself")
 	pushCmd.Flags().BoolVar(&pushEncrypt, "encrypt", true,
 		"encrypt secrets before pushing")
+	pushCmd.Flags().BoolVar(&pushNoBackup, "no-backup", false,
+		"do not record a backup version for this push")
 }
 
 func runPush(cmd *cobra.Command, args []string) error {
@@ -371,7 +374,7 @@ func storeSecretLevel(ctx context.Context, client *dotenv.Client,
 	}
 
 	ui.PrintInfof("Pushing secrets...")
-	resp, err := client.Secrets.StoreSecrets(ctx, projectSlug, targetSlug, environmentSlug, blob, keyProof)
+	resp, err := client.Secrets.StoreSecretsWithOptions(ctx, projectSlug, targetSlug, environmentSlug, blob, keyProof, pushNoBackup)
 	if resp != nil {
 		defer resp.Body.Close()
 	}

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -19,7 +20,10 @@ delete' clears the encrypted blob stored at a level.`,
 	Example: `  dotenv secret delete my-app/production/api`,
 }
 
-var secretForce bool
+var (
+	secretForce    bool
+	secretNoBackup bool
+)
 
 //nolint:gochecknoinits // cobra subcommand registration is idiomatic in init
 func init() {
@@ -30,6 +34,8 @@ func init() {
 		RunE:  runSecretDelete,
 	}
 	secretDeleteCmd.Flags().BoolVarP(&secretForce, "force", "f", false, "skip the confirmation prompt")
+	secretDeleteCmd.Flags().BoolVar(&secretNoBackup, "no-backup", false,
+		"leave no trace: also purge version history and hard-delete")
 
 	secretCmd.AddCommand(secretDeleteCmd)
 }
@@ -74,7 +80,12 @@ func runSecretDelete(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	resp, err := client.Secrets.DeleteSecretLevel(cmd.Context(), project, target, environment)
+	var resp *http.Response
+	if secretNoBackup {
+		resp, err = client.Secrets.DeleteSecretLevelWithOptions(cmd.Context(), project, target, environment, true)
+	} else {
+		resp, err = client.Secrets.DeleteSecretLevel(cmd.Context(), project, target, environment)
+	}
 	if resp != nil {
 		defer resp.Body.Close()
 	}
