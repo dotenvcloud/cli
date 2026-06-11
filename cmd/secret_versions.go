@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"os"
+	"sort"
 	"strings"
 	"text/tabwriter"
 
@@ -14,10 +17,16 @@ import (
 )
 
 var (
-	versionsLimit   int
-	versionsPage    int
-	purgeProjectAll bool
-	purgeForce      bool
+	versionsLimit    int
+	versionsPage     int
+	purgeProjectAll  bool
+	purgeForce       bool
+	restoreForce     bool
+	showVersionID    string
+	showOutput       string
+	versionClientKey string
+	versionOldKeys   []string
+	diffShowValues   bool
 )
 
 // parseSecretPath splits a "project[/target[/environment]]" argument.
@@ -41,10 +50,19 @@ func parseSecretPath(arg string) (project, target, environment string, err error
 	return project, target, environment, nil
 }
 
+// versionsNotFoundHint maps a 404 from the version endpoints to a friendlier
+// message: the ID may be wrong, or the server predates secret versioning.
+func versionsNotFoundHint(err error) error {
+	if dotenv.IsNotFound(err) {
+		return fmt.Errorf("not found — check the version ID, and note that servers older than secret versioning return 404 for these endpoints")
+	}
+	return HandleAPIError(err, accountForErrorContext())
+}
+
 //nolint:gochecknoinits // cobra subcommand registration is idiomatic in init
 func init() {
 	versionsCmd := &cobra.Command{
-		Use:   "versions [project]/[target]/[environment]",
+		Use:   "versions <project>[/<target>[/<environment>]]",
 		Short: "List the backup version history for a level",
 		Args:  cobra.ExactArgs(1),
 		RunE:  runSecretVersions,
@@ -52,8 +70,37 @@ func init() {
 	versionsCmd.Flags().IntVar(&versionsLimit, "limit", 50, "versions per page (max 100)")
 	versionsCmd.Flags().IntVar(&versionsPage, "page", 1, "page number")
 
+	showCmd := &cobra.Command{
+		Use:   "show <project>[/<target>[/<environment>]] --version <id>",
+		Short: "Decrypt and print a backup version locally",
+		Long: `Fetch a backup version and decrypt it locally (plaintext never leaves this
+machine). Versions under an OLD client-managed key need that key — pass it with
+--old-key (file or value, repeatable) or enter it at the prompt; it is verified
+against the stored proof before use.`,
+		Args: cobra.ExactArgs(1),
+		RunE: runSecretShow,
+	}
+	showCmd.Flags().StringVar(&showVersionID, "version", "", "version ID (required; see 'dotenv secret versions')")
+	showCmd.Flags().StringVarP(&showOutput, "output", "o", "", "write plaintext to a file instead of stdout")
+	showCmd.Flags().StringVar(&versionClientKey, "client-key", "", "path to the CURRENT client encryption key file, or the key value itself")
+	showCmd.Flags().StringArrayVar(&versionOldKeys, "old-key", nil, "old encryption key (file or value; repeatable) for versions under rotated keys")
+	_ = showCmd.MarkFlagRequired("version")
+
+	diffCmd := &cobra.Command{
+		Use:   "diff <project>[/<target>[/<environment>]] <version-a> [version-b]",
+		Short: "Diff two backup versions locally (defaults to newest as the base)",
+		Long: `Decrypt two versions locally and show which keys were added, removed or
+changed. Values are masked unless --show-values is passed. Plaintext never
+leaves this machine.`,
+		Args: cobra.RangeArgs(2, 3),
+		RunE: runSecretDiff,
+	}
+	diffCmd.Flags().StringVar(&versionClientKey, "client-key", "", "path to the CURRENT client encryption key file, or the key value itself")
+	diffCmd.Flags().StringArrayVar(&versionOldKeys, "old-key", nil, "old encryption key (file or value; repeatable) for versions under rotated keys")
+	diffCmd.Flags().BoolVar(&diffShowValues, "show-values", false, "show plaintext values in the diff output")
+
 	restoreCmd := &cobra.Command{
-		Use:   "restore [version-id]",
+		Use:   "restore <version-id>",
 		Short: "Restore a secret to a previous version (append-only)",
 		Long: `Restore a secret to a previous version. A new version is recorded; nothing
 is lost. List version IDs with 'dotenv secret versions <path>'.
@@ -64,17 +111,18 @@ that case (CLI support is coming).`,
 		Args: cobra.ExactArgs(1),
 		RunE: runSecretRestore,
 	}
+	restoreCmd.Flags().BoolVarP(&restoreForce, "force", "f", false, "skip the confirmation prompt")
 
 	purgeCmd := &cobra.Command{
-		Use:   "purge [project]/[target]/[environment]",
+		Use:   "purge <project>[/<target>[/<environment>]]",
 		Short: "Permanently delete backup version history",
 		Args:  cobra.ExactArgs(1),
 		RunE:  runSecretPurge,
 	}
 	purgeCmd.Flags().BoolVar(&purgeProjectAll, "project-wide", false, "purge history for the whole project, not just this level")
-	purgeCmd.Flags().BoolVarP(&purgeForce, "force", "f", false, "skip the confirmation prompt")
+	purgeCmd.Flags().BoolVarP(&purgeForce, "force", "f", false, "skip the confirmation prompt(s)")
 
-	secretCmd.AddCommand(versionsCmd, restoreCmd, purgeCmd)
+	secretCmd.AddCommand(versionsCmd, showCmd, diffCmd, restoreCmd, purgeCmd)
 }
 
 func runSecretVersions(cmd *cobra.Command, args []string) error {
@@ -98,7 +146,7 @@ func runSecretVersions(cmd *cobra.Command, args []string) error {
 		defer resp.Body.Close()
 	}
 	if err != nil {
-		return HandleAPIError(err, accountForErrorContext())
+		return versionsNotFoundHint(err)
 	}
 
 	if len(versions) == 0 {
@@ -128,10 +176,222 @@ func runSecretVersions(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// fetchAndDecryptVersion fetches a version and decrypts it locally, resolving
+// the current key (active versions) or a rotated old key (proof-verified).
+func fetchAndDecryptVersion(
+	ctx context.Context,
+	client *dotenv.Client,
+	projectSlug, versionID, clientKeyFlag string,
+	oldKeys []string,
+) (string, error) {
+	version, resp, err := client.SecretVersions.Get(ctx, versionID)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+	if err != nil {
+		return "", versionsNotFoundHint(err)
+	}
+	if version.Content == "" {
+		return "", fmt.Errorf("version %s has no content (delete snapshot of an empty level?)", versionID)
+	}
+
+	// Active key descriptor: tells us whether the version is under the current key.
+	activeDesc, descResp, err := client.Encryption.GetEncryptionKey(ctx, projectSlug)
+	if descResp != nil {
+		defer descResp.Body.Close()
+	}
+	if err != nil {
+		return "", HandleAPIError(err, accountForErrorContext())
+	}
+
+	underActiveKey := version.Key == nil ||
+		version.Key.IsActive ||
+		version.Key.Version == fmt.Sprintf("%d", activeDesc.Version)
+
+	if underActiveKey {
+		rk, rkErr := resolveEncryptionKey(ctx, client, projectSlug, clientKeyFlag, promptForClientKey)
+		if rkErr != nil {
+			return "", rkErr
+		}
+		dataKey, dkErr := rk.dataKey()
+		if dkErr != nil {
+			return "", dkErr
+		}
+		return dotenv.Decrypt(version.Content, []byte(dataKey))
+	}
+
+	// Version under a rotated key.
+	if version.Key.Managed == managedServer {
+		return "", fmt.Errorf(
+			"version %s is encrypted under an old SERVER-managed key, which the API never exposes; "+
+				"use 'dotenv secret restore %s' instead — the server re-encrypts it onto the current key",
+			versionID, versionID,
+		)
+	}
+
+	oldKey, err := resolveOldClientKey(version.Key.Version, version.Key, oldKeys, promptForClientKey)
+	if err != nil {
+		return "", err
+	}
+
+	if version.Key.KeyCheckSalt != "" {
+		dataKey, dkErr := dotenv.DeriveDataKey(oldKey, version.Key.KeyCheckSalt, version.Key.KeyCheckIterations)
+		if dkErr != nil {
+			return "", fmt.Errorf("failed to derive old data key: %w", dkErr)
+		}
+		return dotenv.Decrypt(version.Content, dataKey)
+	}
+
+	// Legacy old key without a salt: padKey fallback.
+	return dotenv.Decrypt(version.Content, []byte(oldKey))
+}
+
+func runSecretShow(cmd *cobra.Command, args []string) error {
+	printActiveIdentity()
+
+	project, _, _, err := parseSecretPath(args[0])
+	if err != nil {
+		return err
+	}
+
+	client, err := getAPIClient()
+	if err != nil {
+		return err
+	}
+
+	plaintext, err := fetchAndDecryptVersion(cmd.Context(), client, project, showVersionID, versionClientKey, versionOldKeys)
+	if err != nil {
+		return err
+	}
+
+	if showOutput != "" {
+		if werr := os.WriteFile(showOutput, []byte(plaintext), 0o600); werr != nil {
+			return fmt.Errorf("failed to write %s: %w", showOutput, werr)
+		}
+		ui.PrintSuccessf("Wrote version %s to %s", showVersionID, showOutput)
+		return nil
+	}
+
+	fmt.Fprintln(ui.Stdout, plaintext)
+	return nil
+}
+
+func runSecretDiff(cmd *cobra.Command, args []string) error {
+	printActiveIdentity()
+
+	project, target, environment, err := parseSecretPath(args[0])
+	if err != nil {
+		return err
+	}
+
+	client, err := getAPIClient()
+	if err != nil {
+		return err
+	}
+
+	versionA := args[1]
+	versionB := ""
+	if len(args) == 3 {
+		versionB = args[2]
+	} else {
+		// Default base: the newest version (the latest snapshot of the blob).
+		versions, _, resp, lerr := client.SecretVersions.List(cmd.Context(), project, target, environment, &dotenv.VersionListOptions{PerPage: 1})
+		if resp != nil {
+			defer resp.Body.Close()
+		}
+		if lerr != nil {
+			return versionsNotFoundHint(lerr)
+		}
+		if len(versions) == 0 {
+			return fmt.Errorf("no versions found at %s", args[0])
+		}
+		versionB = versions[0].ID
+	}
+
+	plainA, err := fetchAndDecryptVersion(cmd.Context(), client, project, versionA, versionClientKey, versionOldKeys)
+	if err != nil {
+		return fmt.Errorf("version %s: %w", versionA, err)
+	}
+	plainB, err := fetchAndDecryptVersion(cmd.Context(), client, project, versionB, versionClientKey, versionOldKeys)
+	if err != nil {
+		return fmt.Errorf("version %s: %w", versionB, err)
+	}
+
+	mapA, err := parseSecretContent(plainA, formatENV)
+	if err != nil {
+		return fmt.Errorf("version %s: %w", versionA, err)
+	}
+	mapB, err := parseSecretContent(plainB, formatENV)
+	if err != nil {
+		return fmt.Errorf("version %s: %w", versionB, err)
+	}
+
+	printSecretDiff(versionA, versionB, mapA, mapB, diffShowValues)
+	return nil
+}
+
+// printSecretDiff prints key-level changes between version A and base B.
+func printSecretDiff(labelA, labelB string, a, b map[string]string, showValues bool) {
+	mask := func(v string) string {
+		if showValues {
+			return v
+		}
+		return "********"
+	}
+
+	keys := map[string]struct{}{}
+	for k := range a {
+		keys[k] = struct{}{}
+	}
+	for k := range b {
+		keys[k] = struct{}{}
+	}
+	sorted := make([]string, 0, len(keys))
+	for k := range keys {
+		sorted = append(sorted, k)
+	}
+	sort.Strings(sorted)
+
+	ui.PrintInfof("Diff of version %s against %s:", labelA, labelB)
+	changes := 0
+	for _, k := range sorted {
+		va, inA := a[k]
+		vb, inB := b[k]
+		switch {
+		case inA && !inB:
+			fmt.Fprintf(ui.Stdout, "+ %s=%s\n", k, mask(va))
+			changes++
+		case !inA && inB:
+			fmt.Fprintf(ui.Stdout, "- %s=%s\n", k, mask(vb))
+			changes++
+		case va != vb:
+			fmt.Fprintf(ui.Stdout, "~ %s: %s -> %s\n", k, mask(vb), mask(va))
+			changes++
+		}
+	}
+	if changes == 0 {
+		ui.PrintInfof("No differences.")
+	}
+}
+
 func runSecretRestore(cmd *cobra.Command, args []string) error {
 	printActiveIdentity()
 
 	versionID := args[0]
+
+	if !restoreForce {
+		confirmed, confirmErr := ui.Confirm(
+			fmt.Sprintf("Restore version %s? The current value is preserved as a new version, then overwritten.", versionID),
+			false,
+		)
+		if confirmErr != nil {
+			return confirmErr
+		}
+		if !confirmed {
+			ui.PrintInfof("Restore canceled")
+			return nil
+		}
+	}
 
 	client, err := getAPIClient()
 	if err != nil {
@@ -146,7 +406,7 @@ func runSecretRestore(cmd *cobra.Command, args []string) error {
 		if errors.Is(err, dotenv.ErrContentRequiredForOldKey) {
 			return fmt.Errorf("this version is encrypted under an old client-managed key and must be re-encrypted under the current key before restoring; use the web dashboard for now")
 		}
-		return HandleAPIError(err, accountForErrorContext())
+		return versionsNotFoundHint(err)
 	}
 
 	ui.PrintSuccessf("Restored version %s", versionID)
@@ -169,7 +429,7 @@ func runSecretPurge(cmd *cobra.Command, args []string) error {
 	}
 
 	if !purgeForce {
-		what := fmt.Sprintf("the %s history at %q", scope, args[0])
+		what := fmt.Sprintf("the version history at %q", args[0])
 		if purgeProjectAll {
 			what = fmt.Sprintf("ALL version history for project %q", project)
 		}
@@ -183,6 +443,19 @@ func runSecretPurge(cmd *cobra.Command, args []string) error {
 		if !confirmed {
 			ui.PrintInfof("Purge canceled")
 			return nil
+		}
+
+		// Project-wide purge is the most destructive operation here: require the
+		// project name to be typed back, mirroring the web's typed confirmation.
+		if purgeProjectAll {
+			typed, terr := ui.Input(fmt.Sprintf("Type the project name (%s) to confirm", project), "", nil)
+			if terr != nil {
+				return terr
+			}
+			if typed != project {
+				ui.PrintInfof("Purge canceled (name did not match)")
+				return nil
+			}
 		}
 	}
 
@@ -202,7 +475,7 @@ func runSecretPurge(cmd *cobra.Command, args []string) error {
 		defer resp.Body.Close()
 	}
 	if err != nil {
-		return HandleAPIError(err, accountForErrorContext())
+		return versionsNotFoundHint(err)
 	}
 
 	ui.PrintSuccessf("Purged %d version(s)", count)
