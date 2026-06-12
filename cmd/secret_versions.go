@@ -54,7 +54,8 @@ func parseSecretPath(arg string) (project, target, environment string, err error
 // 404 (wrong ID or a server predating versioning), or a plan-retention lock.
 func versionsNotFoundHint(err error) error {
 	if errors.Is(err, dotenv.ErrVersionLocked) {
-		return fmt.Errorf("this version is outside your plan's history window — upgrade your plan to access it (dotenv secret versions shows which versions are locked)")
+		return fmt.Errorf("this version is outside your plan's history window — upgrade your plan " +
+			"to access it (dotenv secret versions shows which versions are locked)")
 	}
 	if dotenv.IsNotFound(err) {
 		return fmt.Errorf("not found — check the version ID, and note that servers older than secret versioning return 404 for these endpoints")
