@@ -50,9 +50,13 @@ func parseSecretPath(arg string) (project, target, environment string, err error
 	return project, target, environment, nil
 }
 
-// versionsNotFoundHint maps a 404 from the version endpoints to a friendlier
-// message: the ID may be wrong, or the server predates secret versioning.
+// versionsNotFoundHint maps version-endpoint errors to friendlier messages: a
+// 404 (wrong ID or a server predating versioning), or a plan-retention lock.
 func versionsNotFoundHint(err error) error {
+	if errors.Is(err, dotenv.ErrVersionLocked) {
+		return fmt.Errorf("this version is outside your plan's history window — upgrade your plan " +
+			"to access it (dotenv secret versions shows which versions are locked)")
+	}
 	if dotenv.IsNotFound(err) {
 		return fmt.Errorf("not found — check the version ID, and note that servers older than secret versioning return 404 for these endpoints")
 	}
@@ -159,8 +163,9 @@ func runSecretVersions(cmd *cobra.Command, args []string) error {
 	}
 
 	w := tabwriter.NewWriter(ui.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "VERSION\tACTION\tSIZE\tKEY\tCREATED\tBY")
-	fmt.Fprintln(w, "───────\t──────\t────\t───\t───────\t──")
+	fmt.Fprintln(w, "VERSION\tACTION\tSIZE\tKEY\tCREATED\tBY\tSTATUS")
+	fmt.Fprintln(w, "───────\t──────\t────\t───\t───────\t──\t──────")
+	anyLocked := false
 	for _, v := range versions {
 		by := "system"
 		if v.CreatedBy != nil && v.CreatedBy.Name != "" {
@@ -170,12 +175,20 @@ func runSecretVersions(cmd *cobra.Command, args []string) error {
 		if keyVer == "" {
 			keyVer = v.EncryptionKeyVersion
 		}
-		fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\n", v.ID, v.Action, v.SizeBytes, keyVer, v.CreatedAt, by)
+		status := ""
+		if v.Locked {
+			status = "🔒 locked"
+			anyLocked = true
+		}
+		fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%s\n", v.ID, v.Action, v.SizeBytes, keyVer, v.CreatedAt, by, status)
 	}
 	w.Flush()
 
 	if meta != nil && meta.LastPage > 1 {
 		ui.PrintInfof("Page %d of %d (%d total)", meta.CurrentPage, meta.LastPage, meta.Total)
+	}
+	if anyLocked {
+		ui.PrintInfof("Locked versions are outside your plan's history window — upgrade your plan to view or restore them.")
 	}
 	return nil
 }
