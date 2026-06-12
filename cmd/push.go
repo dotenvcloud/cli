@@ -400,12 +400,12 @@ func storeSecretLevel(ctx context.Context, client *dotenv.Client,
 // deepestLevel returns the level name implied by the provided slugs.
 func deepestLevel(targetSlug, environmentSlug string) string {
 	if environmentSlug != "" {
-		return "environment"
+		return resourceEnvironment
 	}
 	if targetSlug != "" {
-		return "target"
+		return resourceTarget
 	}
-	return "project"
+	return resourceProject
 }
 
 // levelHasSecrets reports whether the deepest provided level already has a

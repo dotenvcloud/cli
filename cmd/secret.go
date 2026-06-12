@@ -56,7 +56,8 @@ func runSecretDelete(cmd *cobra.Command, args []string) error {
 		message := fmt.Sprintf("Delete the secrets stored at %q? A backup version is kept; the secret can be restored.", args[0])
 		if secretNoBackup {
 			message = fmt.Sprintf(
-				"Delete the secrets stored at %q WITHOUT backup? This PURGES the entire version history and hard-deletes the secret — nothing can be recovered.",
+				"Delete the secrets stored at %q WITHOUT backup? This PURGES the entire "+
+					"version history and hard-deletes the secret — nothing can be recovered.",
 				args[0],
 			)
 		}

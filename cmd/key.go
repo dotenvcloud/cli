@@ -49,7 +49,8 @@ not expose. Use the web dashboard's rotation flow instead.`,
 		Args: cobra.ExactArgs(1),
 		RunE: runKeyRotate,
 	}
-	keyRotateCmd.Flags().StringVar(&keyRotatePolicy, "history-policy", "", "what happens to backup versions: keep | re_encrypt (default: project setting)")
+	keyRotateCmd.Flags().StringVar(&keyRotatePolicy, "history-policy", "",
+		"what happens to backup versions: keep | re_encrypt (default: project setting)")
 	keyRotateCmd.Flags().BoolVarP(&keyRotateForce, "force", "f", false, "skip the confirmation prompt")
 
 	keyReencryptCmd := &cobra.Command{
@@ -69,7 +70,8 @@ history itself when a rotation runs with --history-policy=re_encrypt.`,
 		RunE: runKeyReencryptHistory,
 	}
 	keyReencryptCmd.Flags().StringArrayVar(&keyOldKeys, "old-key", nil, "old encryption key (file or value; repeatable)")
-	keyReencryptCmd.Flags().StringVar(&keyCurrentClient, "client-key", "", "path to the CURRENT client encryption key file, or the key value itself")
+	keyReencryptCmd.Flags().StringVar(&keyCurrentClient, "client-key", "",
+		"path to the CURRENT client encryption key file, or the key value itself")
 
 	keyCmd.AddCommand(keyHistoryCmd, keyRotateCmd, keyReencryptCmd)
 }
@@ -121,7 +123,7 @@ func runKeyRotate(cmd *cobra.Command, args []string) error {
 
 	project := args[0]
 
-	if keyRotatePolicy != "" && keyRotatePolicy != "keep" && keyRotatePolicy != "re_encrypt" {
+	if keyRotatePolicy != "" && keyRotatePolicy != policyKeep && keyRotatePolicy != policyReencrypt {
 		return fmt.Errorf("invalid --history-policy %q: use keep or re_encrypt", keyRotatePolicy)
 	}
 
@@ -140,7 +142,7 @@ func runKeyRotate(cmd *cobra.Command, args []string) error {
 
 	if !keyRotateForce {
 		warning := fmt.Sprintf("Rotate the encryption key for %q? The server generates a new key and re-encrypts the current secrets.", project)
-		if keyRotatePolicy == "re_encrypt" {
+		if keyRotatePolicy == policyReencrypt {
 			warning += " Backup versions will also be re-encrypted — recovering them with the OLD key will no longer be possible."
 		}
 		confirmed, confirmErr := ui.Confirm(warning, false)
@@ -170,6 +172,42 @@ func runKeyRotate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// reencryptVersion decrypts one historical blob with its old key and re-encrypts
+// it under the current data key. Returns (cipher, true, nil) on success,
+// ("", false, nil) when it cannot be decrypted with the supplied key (the caller
+// should skip it), or an error for unrecoverable failures. Plaintext stays local.
+func reencryptVersion(
+	content, oldKeyValue, currentDataKey string,
+	hist *dotenv.EncryptionKeyVersion,
+) (cipher string, decrypted bool, err error) {
+	var plaintext string
+	var derr error
+	if hist != nil && hist.KeyCheckSalt != "" {
+		oldData, e := dotenv.DeriveDataKey(oldKeyValue, hist.KeyCheckSalt, hist.KeyCheckIterations)
+		if e != nil {
+			return "", false, fmt.Errorf("failed to derive the old data key: %w", e)
+		}
+		plaintext, derr = dotenv.Decrypt(content, oldData)
+	} else {
+		plaintext, derr = dotenv.Decrypt(content, []byte(oldKeyValue))
+	}
+	if derr != nil {
+		return "", false, nil // undecryptable with the supplied key — caller skips
+	}
+
+	cipher, eerr := dotenv.Encrypt(plaintext, []byte(currentDataKey))
+	if eerr != nil {
+		return "", false, fmt.Errorf("failed to re-encrypt: %w", eerr)
+	}
+	return cipher, true, nil
+}
+
+// runKeyReencryptHistory walks the paginated list of backup versions still under
+// old client-managed keys and re-encrypts each onto the current key locally. The
+// per-version key resolution, salt/legacy decrypt paths and batch submission make
+// it inherently branchy and long.
+//
+//nolint:gocyclo,funlen // inherently branchy paginated crypto orchestration
 func runKeyReencryptHistory(cmd *cobra.Command, args []string) error {
 	printActiveIdentity()
 
@@ -243,36 +281,22 @@ func runKeyReencryptHistory(cmd *cobra.Command, args []string) error {
 				resolvedOld[p.KeyVersion] = oldKeyValue
 			}
 
-			hist := byVersion[p.KeyVersion]
-			var plaintext string
-			if hist != nil && hist.KeyCheckSalt != "" {
-				oldData, derr := dotenv.DeriveDataKey(oldKeyValue, hist.KeyCheckSalt, hist.KeyCheckIterations)
-				if derr != nil {
-					return fmt.Errorf("failed to derive old data key v%s: %w", p.KeyVersion, derr)
-				}
-				plaintext, derr = dotenv.Decrypt(p.Content, oldData)
-				if derr != nil {
-					ui.PrintWarningf("version %d could not be decrypted with key v%s — skipping", p.ID, p.KeyVersion)
-					continue
-				}
-			} else {
-				var derr error
-				plaintext, derr = dotenv.Decrypt(p.Content, []byte(oldKeyValue))
-				if derr != nil {
-					ui.PrintWarningf("version %d could not be decrypted with key v%s — skipping", p.ID, p.KeyVersion)
-					continue
-				}
+			cipher, decrypted, rerr := reencryptVersion(p.Content, oldKeyValue, currentDataKey, byVersion[p.KeyVersion])
+			if rerr != nil {
+				return fmt.Errorf("version %d (key v%s): %w", p.ID, p.KeyVersion, rerr)
 			}
-
-			cipher, eerr := dotenv.Encrypt(plaintext, []byte(currentDataKey))
-			if eerr != nil {
-				return fmt.Errorf("failed to re-encrypt version %d: %w", p.ID, eerr)
+			if !decrypted {
+				ui.PrintWarningf("version %d could not be decrypted with key v%s — skipping", p.ID, p.KeyVersion)
+				continue
 			}
 			batch = append(batch, dotenv.ReencryptedVersion{ID: p.ID, Content: cipher})
 		}
 
 		if len(batch) == 0 {
-			return fmt.Errorf("%d version(s) remain but none could be decrypted with the supplied keys; provide the right --old-key values", remaining)
+			return fmt.Errorf(
+				"%d version(s) remain but none could be decrypted with the supplied "+
+					"keys; provide the right --old-key values", remaining,
+			)
 		}
 
 		updated, left, subResp, serr := client.Encryption.SubmitReencryptedHistory(ctx, project, batch, currentProof)

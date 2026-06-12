@@ -83,7 +83,8 @@ against the stored proof before use.`,
 	showCmd.Flags().StringVar(&showVersionID, "version", "", "version ID (required; see 'dotenv secret versions')")
 	showCmd.Flags().StringVarP(&showOutput, "output", "o", "", "write plaintext to a file instead of stdout")
 	showCmd.Flags().StringVar(&versionClientKey, "client-key", "", "path to the CURRENT client encryption key file, or the key value itself")
-	showCmd.Flags().StringArrayVar(&versionOldKeys, "old-key", nil, "old encryption key (file or value; repeatable) for versions under rotated keys")
+	showCmd.Flags().StringArrayVar(&versionOldKeys, "old-key", nil,
+		"old encryption key (file or value; repeatable) for versions under rotated keys")
 	_ = showCmd.MarkFlagRequired("version")
 
 	diffCmd := &cobra.Command{
@@ -98,7 +99,8 @@ diff reads from the first (older) state to the second. Values are masked unless
 		RunE: runSecretDiff,
 	}
 	diffCmd.Flags().StringVar(&versionClientKey, "client-key", "", "path to the CURRENT client encryption key file, or the key value itself")
-	diffCmd.Flags().StringArrayVar(&versionOldKeys, "old-key", nil, "old encryption key (file or value; repeatable) for versions under rotated keys")
+	diffCmd.Flags().StringArrayVar(&versionOldKeys, "old-key", nil,
+		"old encryption key (file or value; repeatable) for versions under rotated keys")
 	diffCmd.Flags().BoolVar(&diffShowValues, "show-values", false, "show plaintext values in the diff output")
 
 	restoreCmd := &cobra.Command{
@@ -271,12 +273,12 @@ func fetchAndDecryptCurrentLevel(
 
 	// A version is per-level, so compare against that same level's own live blob
 	// (the deepest requested level), not the parent-merged view.
-	levelName := "project"
+	levelName := resourceProject
 	switch {
 	case environment != "":
-		levelName = "environment"
+		levelName = resourceEnvironment
 	case target != "":
-		levelName = "target"
+		levelName = resourceTarget
 	}
 
 	level, ok := resp.Data.Attributes.Levels[levelName]
@@ -456,7 +458,9 @@ func runSecretRestore(cmd *cobra.Command, args []string) error {
 	}
 	if err != nil {
 		if errors.Is(err, dotenv.ErrContentRequiredForOldKey) {
-			return fmt.Errorf("this version is encrypted under an old client-managed key and must be re-encrypted under the current key before restoring; use the web dashboard for now")
+			return fmt.Errorf("this version is encrypted under an old client-managed " +
+				"key and must be re-encrypted under the current key before restoring; " +
+				"use the web dashboard for now")
 		}
 		return versionsNotFoundHint(err)
 	}
