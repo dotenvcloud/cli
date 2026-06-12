@@ -87,11 +87,13 @@ against the stored proof before use.`,
 	_ = showCmd.MarkFlagRequired("version")
 
 	diffCmd := &cobra.Command{
-		Use:   "diff <project>[/<target>[/<environment>]] <version-a> [version-b]",
-		Short: "Diff two backup versions locally (defaults to newest as the base)",
-		Long: `Decrypt two versions locally and show which keys were added, removed or
-changed. Values are masked unless --show-values is passed. Plaintext never
-leaves this machine.`,
+		Use:   "diff <project>[/<target>[/<environment>]] <version> [version-b]",
+		Short: "Diff a backup version against the current secret (or another version)",
+		Long: `Decrypt a backup version locally and show which keys were added, removed or
+changed relative to it. With one version the diff is taken against the LIVE
+current secret; pass a second version to diff one version against another. The
+diff reads from the first (older) state to the second. Values are masked unless
+--show-values is passed. Plaintext never leaves this machine.`,
 		Args: cobra.RangeArgs(2, 3),
 		RunE: runSecretDiff,
 	}
@@ -246,6 +248,56 @@ func fetchAndDecryptVersion(
 	return dotenv.Decrypt(version.Content, []byte(oldKey))
 }
 
+// fetchAndDecryptCurrentLevel fetches the LIVE current secret for the deepest
+// requested level and decrypts it under the CURRENT key — the counterpart to
+// fetchAndDecryptVersion, used as the default "to" side of a diff. Versions hold
+// PRIOR states, so the live secret (not the newest snapshot) is "current".
+// Returns an empty string when the level has no live content.
+func fetchAndDecryptCurrentLevel(
+	ctx context.Context,
+	client *dotenv.Client,
+	project, target, environment, clientKeyFlag string,
+) (string, error) {
+	resp, hResp, err := client.Secrets.GetProjectSecrets(ctx, project, target, environment)
+	if hResp != nil {
+		defer hResp.Body.Close()
+	}
+	if err != nil {
+		return "", HandleAPIError(err, accountForErrorContext())
+	}
+	if resp == nil {
+		return "", nil
+	}
+
+	// A version is per-level, so compare against that same level's own live blob
+	// (the deepest requested level), not the parent-merged view.
+	levelName := "project"
+	switch {
+	case environment != "":
+		levelName = "environment"
+	case target != "":
+		levelName = "target"
+	}
+
+	level, ok := resp.Data.Attributes.Levels[levelName]
+	if !ok || level.Content == "" {
+		return "", nil
+	}
+	if !level.Encrypted {
+		return level.Content, nil
+	}
+
+	rk, err := resolveEncryptionKey(ctx, client, project, clientKeyFlag, promptForClientKey)
+	if err != nil {
+		return "", err
+	}
+	dataKey, err := rk.dataKey()
+	if err != nil {
+		return "", err
+	}
+	return dotenv.DecryptWithProjectKey(level.Content, dataKey)
+}
+
 func runSecretShow(cmd *cobra.Command, args []string) error {
 	printActiveIdentity()
 
@@ -289,49 +341,49 @@ func runSecretDiff(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	versionA := args[1]
-	versionB := ""
+	fromVersion := args[1]
+
+	fromPlain, err := fetchAndDecryptVersion(cmd.Context(), client, project, fromVersion, versionClientKey, versionOldKeys)
+	if err != nil {
+		return fmt.Errorf("version %s: %w", fromVersion, err)
+	}
+
+	toLabel := "current"
+	var toPlain string
 	if len(args) == 3 {
-		versionB = args[2]
+		// Diff one version against another (older -> newer reads left to right).
+		toLabel = args[2]
+		toPlain, err = fetchAndDecryptVersion(cmd.Context(), client, project, args[2], versionClientKey, versionOldKeys)
+		if err != nil {
+			return fmt.Errorf("version %s: %w", args[2], err)
+		}
 	} else {
-		// Default base: the newest version (the latest snapshot of the blob).
-		versions, _, resp, lerr := client.SecretVersions.List(cmd.Context(), project, target, environment, &dotenv.VersionListOptions{PerPage: 1})
-		if resp != nil {
-			defer resp.Body.Close()
+		// Default: diff against the LIVE current secret. Versions hold prior
+		// states, so the newest snapshot is NOT the current content.
+		toPlain, err = fetchAndDecryptCurrentLevel(cmd.Context(), client, project, target, environment, versionClientKey)
+		if err != nil {
+			return err
 		}
-		if lerr != nil {
-			return versionsNotFoundHint(lerr)
-		}
-		if len(versions) == 0 {
-			return fmt.Errorf("no versions found at %s", args[0])
-		}
-		versionB = versions[0].ID
 	}
 
-	plainA, err := fetchAndDecryptVersion(cmd.Context(), client, project, versionA, versionClientKey, versionOldKeys)
+	fromMap, err := parseSecretContent(fromPlain, formatENV)
 	if err != nil {
-		return fmt.Errorf("version %s: %w", versionA, err)
+		return fmt.Errorf("version %s: %w", fromVersion, err)
 	}
-	plainB, err := fetchAndDecryptVersion(cmd.Context(), client, project, versionB, versionClientKey, versionOldKeys)
+	toMap, err := parseSecretContent(toPlain, formatENV)
 	if err != nil {
-		return fmt.Errorf("version %s: %w", versionB, err)
-	}
-
-	mapA, err := parseSecretContent(plainA, formatENV)
-	if err != nil {
-		return fmt.Errorf("version %s: %w", versionA, err)
-	}
-	mapB, err := parseSecretContent(plainB, formatENV)
-	if err != nil {
-		return fmt.Errorf("version %s: %w", versionB, err)
+		return fmt.Errorf("%s: %w", toLabel, err)
 	}
 
-	printSecretDiff(versionA, versionB, mapA, mapB, diffShowValues)
+	printSecretDiff(fromVersion, toLabel, fromMap, toMap, diffShowValues)
 	return nil
 }
 
-// printSecretDiff prints key-level changes between version A and base B.
-func printSecretDiff(labelA, labelB string, a, b map[string]string, showValues bool) {
+// printSecretDiff prints key-level changes going FROM the `from` state TO the
+// `to` state: keys present only in `to` are additions (+), keys present only in
+// `from` are removals (-), and keys in both with different values show the
+// from -> to transition.
+func printSecretDiff(fromLabel, toLabel string, from, to map[string]string, showValues bool) {
 	mask := func(v string) string {
 		if showValues {
 			return v
@@ -340,10 +392,10 @@ func printSecretDiff(labelA, labelB string, a, b map[string]string, showValues b
 	}
 
 	keys := map[string]struct{}{}
-	for k := range a {
+	for k := range from {
 		keys[k] = struct{}{}
 	}
-	for k := range b {
+	for k := range to {
 		keys[k] = struct{}{}
 	}
 	sorted := make([]string, 0, len(keys))
@@ -352,20 +404,20 @@ func printSecretDiff(labelA, labelB string, a, b map[string]string, showValues b
 	}
 	sort.Strings(sorted)
 
-	ui.PrintInfof("Diff of version %s against %s:", labelA, labelB)
+	ui.PrintInfof("Diff from version %s to %s:", fromLabel, toLabel)
 	changes := 0
 	for _, k := range sorted {
-		va, inA := a[k]
-		vb, inB := b[k]
+		vFrom, inFrom := from[k]
+		vTo, inTo := to[k]
 		switch {
-		case inA && !inB:
-			fmt.Fprintf(ui.Stdout, "+ %s=%s\n", k, mask(va))
+		case !inFrom && inTo:
+			fmt.Fprintf(ui.Stdout, "+ %s=%s\n", k, mask(vTo))
 			changes++
-		case !inA && inB:
-			fmt.Fprintf(ui.Stdout, "- %s=%s\n", k, mask(vb))
+		case inFrom && !inTo:
+			fmt.Fprintf(ui.Stdout, "- %s=%s\n", k, mask(vFrom))
 			changes++
-		case va != vb:
-			fmt.Fprintf(ui.Stdout, "~ %s: %s -> %s\n", k, mask(vb), mask(va))
+		case vFrom != vTo:
+			fmt.Fprintf(ui.Stdout, "~ %s: %s -> %s\n", k, mask(vFrom), mask(vTo))
 			changes++
 		}
 	}
