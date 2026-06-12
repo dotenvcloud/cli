@@ -8,7 +8,7 @@ require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/briandowns/spinner v1.23.2
-	github.com/dotenvcloud/sdk-go v1.0.0
+	github.com/dotenvcloud/sdk-go v1.1.0
 	github.com/fatih/color v1.16.0
 	github.com/google/uuid v1.6.0
 	github.com/oklog/ulid/v2 v2.1.1

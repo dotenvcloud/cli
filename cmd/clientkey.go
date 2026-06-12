@@ -194,6 +194,61 @@ func looksLikePath(value string) bool {
 	return false
 }
 
+// resolveOldClientKey resolves and VALIDATES the key for a rotated client-managed
+// key version. Candidates (each a file path or literal value, from repeatable
+// --old-key flags) are tried first, then the interactive prompt — every candidate
+// is checked against the key version's stored proof BEFORE use, so a wrong key is
+// rejected up front rather than producing garbage. When the old key has no stored
+// proof, the first resolvable candidate is accepted (AES-GCM authentication is
+// the backstop). No env-var tier on purpose: a stale DOTENV_CLIENT_KEY must never
+// silently masquerade as an old key.
+func resolveOldClientKey(
+	keyVersion string,
+	hist *dotenv.EncryptionKeyVersion,
+	candidates []string,
+	prompt func() (string, error),
+) (string, error) {
+	verify := func(value string) (bool, error) {
+		if hist == nil || hist.KeyCheck == "" {
+			return true, nil // no proof recorded; GCM auth is the backstop
+		}
+		return dotenv.VerifyKeyProof(value, hist.KeyCheckSalt, hist.KeyCheckIterations, hist.KeyCheck)
+	}
+
+	for _, candidate := range candidates {
+		value, err := interpretClientKeyFlag(candidate)
+		if err != nil {
+			ui.PrintWarningf("skipping --old-key %q: %v", candidate, err)
+			continue
+		}
+		ok, verr := verify(value)
+		if verr != nil {
+			return "", fmt.Errorf("failed to verify old key: %w", verr)
+		}
+		if ok {
+			return value, nil
+		}
+	}
+
+	ui.PrintInfof("Key v%s is needed to decrypt this data.", keyVersion)
+	for attempt := 0; attempt < 3; attempt++ {
+		value, err := prompt()
+		if err != nil {
+			return "", fmt.Errorf("old key v%s is required: %w", keyVersion, err)
+		}
+		ok, verr := verify(value)
+		if verr != nil {
+			return "", fmt.Errorf("failed to verify old key: %w", verr)
+		}
+		if ok {
+			return value, nil
+		}
+		ui.PrintWarningf("that key does not match key v%s — try again.", keyVersion)
+	}
+
+	return "", fmt.Errorf("could not resolve a valid key for key version %s", keyVersion)
+}
+
 // promptForClientKey prompts the user to enter their encryption key.
 func promptForClientKey() (string, error) {
 	keyStr, err := ui.Password("Enter encryption key")

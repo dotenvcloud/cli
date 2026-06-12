@@ -128,7 +128,8 @@ For more information, visit: https://dotenv.cloud/docs/cli`,
 		projectCmd,     // Project create/update/delete
 		targetCmd,      // Target create/update/delete
 		environmentCmd, // Environment create/update/delete
-		secretCmd,      // Secret delete-level
+		secretCmd,      // Secret delete-level + version history
+		keyCmd,         // Encryption key history/management
 		completionCmd,  // Shell completion support
 	)
 

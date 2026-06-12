@@ -26,5 +26,12 @@ const (
 	managedClient = "client"
 )
 
+// Key-rotation history policies (mirror the API's history_policy values):
+// what happens to backup versions still under the old key when a key rotates.
+const (
+	policyKeep      = "keep"
+	policyReencrypt = "re_encrypt"
+)
+
 // Platform identifiers used by update / explore commands.
 const platformWindows = "windows"

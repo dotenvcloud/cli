@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
+	"net/http"
 
 	"github.com/spf13/cobra"
 
@@ -19,7 +19,10 @@ delete' clears the encrypted blob stored at a level.`,
 	Example: `  dotenv secret delete my-app/production/api`,
 }
 
-var secretForce bool
+var (
+	secretForce    bool
+	secretNoBackup bool
+)
 
 //nolint:gochecknoinits // cobra subcommand registration is idiomatic in init
 func init() {
@@ -30,6 +33,8 @@ func init() {
 		RunE:  runSecretDelete,
 	}
 	secretDeleteCmd.Flags().BoolVarP(&secretForce, "force", "f", false, "skip the confirmation prompt")
+	secretDeleteCmd.Flags().BoolVar(&secretNoBackup, "no-backup", false,
+		"leave no trace: also purge version history and hard-delete")
 
 	secretCmd.AddCommand(secretDeleteCmd)
 }
@@ -37,22 +42,9 @@ func init() {
 func runSecretDelete(cmd *cobra.Command, args []string) error {
 	printActiveIdentity()
 
-	parts := strings.Split(args[0], "/")
-	if len(parts) > 3 {
-		return fmt.Errorf("invalid path: use project[/target[/environment]]")
-	}
-	for _, p := range parts {
-		if p == "" {
-			return fmt.Errorf("invalid path %q: empty segment (use project[/target[/environment]])", args[0])
-		}
-	}
-	project := parts[0]
-	var target, environment string
-	if len(parts) >= 2 {
-		target = parts[1]
-	}
-	if len(parts) == 3 {
-		environment = parts[2]
+	project, target, environment, err := parseSecretPath(args[0])
+	if err != nil {
+		return err
 	}
 
 	client, err := getAPIClient()
@@ -61,10 +53,15 @@ func runSecretDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	if !secretForce {
-		confirmed, confirmErr := ui.Confirm(
-			fmt.Sprintf("Delete the secrets stored at %q? This cannot be undone.", args[0]),
-			false,
-		)
+		message := fmt.Sprintf("Delete the secrets stored at %q? A backup version is kept; the secret can be restored.", args[0])
+		if secretNoBackup {
+			message = fmt.Sprintf(
+				"Delete the secrets stored at %q WITHOUT backup? This PURGES the entire "+
+					"version history and hard-deletes the secret — nothing can be recovered.",
+				args[0],
+			)
+		}
+		confirmed, confirmErr := ui.Confirm(message, false)
 		if confirmErr != nil {
 			return confirmErr
 		}
@@ -74,7 +71,12 @@ func runSecretDelete(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	resp, err := client.Secrets.DeleteSecretLevel(cmd.Context(), project, target, environment)
+	var resp *http.Response
+	if secretNoBackup {
+		resp, err = client.Secrets.DeleteSecretLevelWithOptions(cmd.Context(), project, target, environment, true)
+	} else {
+		resp, err = client.Secrets.DeleteSecretLevel(cmd.Context(), project, target, environment)
+	}
 	if resp != nil {
 		defer resp.Body.Close()
 	}
