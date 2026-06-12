@@ -71,7 +71,7 @@ jobs:
         run: go test -v -race -coverprofile=coverage.out ./...
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           files: ./coverage.out
           flags: cli
@@ -167,7 +167,7 @@ jobs:
         run: go mod download
 
       - name: Run Gosec
-        uses: securego/gosec@v2.26.1
+        uses: securego/gosec@v2.27.1
         with:
           args: '-no-fail -fmt sarif -out results.sarif ./...'
 
