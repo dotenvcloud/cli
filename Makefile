@@ -4,6 +4,9 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 GO_VERSION := $(shell go version | cut -d' ' -f3)
+# Telemetry signing secret, injected from the environment at build time (CI
+# secret). Empty for local/dev builds, in which case telemetry is sent unsigned.
+TELEMETRY_SECRET := $(CLI_TELEMETRY_SECRET)
 
 # Build variables
 LDFLAGS := -ldflags "\
@@ -11,6 +14,7 @@ LDFLAGS := -ldflags "\
   -X main.commit=$(COMMIT) \
   -X main.date=$(DATE) \
   -X main.goVersion=$(GO_VERSION) \
+  -X main.telemetrySecret=$(TELEMETRY_SECRET) \
   -s -w"
 
 # Platforms

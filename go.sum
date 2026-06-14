@@ -17,6 +17,8 @@ github.com/dotenvcloud/sdk-go v1.2.0 h1:YNA3wQh3WqcP0+TVPg6tgqYyyICJeC79iTm7pTil
 github.com/dotenvcloud/sdk-go v1.2.0/go.mod h1:0cVtpDZh2Hfruye3Vj43NfO0LFilIMgXUmPe/lUnPEY=
 github.com/dotenvcloud/sdk-go v1.3.0 h1:+pLrPjtBVw0+bYpD8mijio//BihC+eJdlZs/pFAZj6s=
 github.com/dotenvcloud/sdk-go v1.3.0/go.mod h1:0cVtpDZh2Hfruye3Vj43NfO0LFilIMgXUmPe/lUnPEY=
+github.com/dotenvcloud/sdk-go v1.4.0 h1:ISoQdNNMwWgUBcD3AQ1wlWjE9/goFhpk9Mbm1YTLeBU=
+github.com/dotenvcloud/sdk-go v1.4.0/go.mod h1:0cVtpDZh2Hfruye3Vj43NfO0LFilIMgXUmPe/lUnPEY=
 github.com/fatih/color v1.16.0 h1:zmkK9Ngbjj+K0yRhTVONQh1p/HknKYSlNT+vZCzyokM=
 github.com/fatih/color v1.16.0/go.mod h1:fL2Sau1YI5c0pdGEVCbKQbLXB6edEj1ZgiY4NijnWvE=
 github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHkI4W8=

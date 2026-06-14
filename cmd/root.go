@@ -7,9 +7,12 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/dotenvcloud/cli/internal/build"
+	"github.com/dotenvcloud/cli/internal/client"
 	"github.com/dotenvcloud/cli/internal/config"
 	"github.com/dotenvcloud/cli/internal/constants"
 	"github.com/dotenvcloud/cli/internal/telemetry"
@@ -234,10 +237,11 @@ func initTelemetry() {
 		}
 	}
 
-	// Get analytics ID from preferences
+	// Get analytics ID from preferences. The server requires a UUID
+	// anonymous_id, so (re)generate when missing or in the legacy non-UUID
+	// format ("cli_<ts>") — otherwise telemetry would fail validation forever.
 	analyticsID := cfg.Preferences.AnalyticsID
-	if analyticsID == "" {
-		// Generate new analytics ID if not present
+	if _, err := uuid.Parse(analyticsID); err != nil {
 		analyticsID = generateAnalyticsID()
 		cfg.Preferences.AnalyticsID = analyticsID
 		// Save config with new analytics ID; failures are non-fatal but should
@@ -248,11 +252,26 @@ func initTelemetry() {
 		}
 	}
 
-	// Create unauthenticated SDK client for telemetry
-	sdkClient := getUnauthenticatedSDKClient(apiURL)
+	// Build the telemetry SDK client: HMAC-sign with the build-embedded secret,
+	// and attach the current account's token when logged in so the server can
+	// mark the row verified. Anonymous installs still report — just unverified.
+	opts := client.Options{
+		BaseURL:            apiURL,
+		InsecureSkipVerify: config.ShouldSkipTLSVerify(),
+		TelemetrySecret:    build.TelemetrySecret(),
+	}
+	if cfg.CurrentAccount != "" {
+		if acct, ok := cfg.Accounts[cfg.CurrentAccount]; ok {
+			if acct.IsAPIKey() {
+				opts.APIKey = acct.GetToken()
+			} else {
+				opts.BearerToken = acct.GetToken()
+			}
+		}
+	}
+	sdkClient := client.NewFactory(apiURL).NewClient(opts)
 
 	// Create telemetry client
-	// Note: We're not using an API key for telemetry as it's anonymous
 	telemetryClient = telemetry.NewClient(sdkClient, analyticsID)
 	telemetryClient.SetEnabled(true)
 }
@@ -288,8 +307,9 @@ func resetCommandState() {
 	pushEncrypt = true
 }
 
-// generateAnalyticsID generates a new anonymous analytics ID
+// generateAnalyticsID generates a new anonymous analytics ID. A random UUID
+// keeps it anonymous (no host/user data) while satisfying the server's UUID
+// contract for anonymous_id.
 func generateAnalyticsID() string {
-	// Use a simple timestamp-based ID for anonymity
-	return fmt.Sprintf("cli_%d", time.Now().Unix())
+	return uuid.NewString()
 }

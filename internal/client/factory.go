@@ -24,6 +24,9 @@ type Options struct {
 
 	// TLS configuration
 	InsecureSkipVerify bool
+
+	// TelemetrySecret HMAC-signs CLI telemetry requests. Empty ⇒ unsigned.
+	TelemetrySecret string
 }
 
 // Factory provides methods for creating configured SDK clients
@@ -67,6 +70,11 @@ func (f *Factory) NewClient(opts Options) *dotenv.Client {
 	// Set TLS configuration
 	if opts.InsecureSkipVerify {
 		clientOpts = append(clientOpts, dotenv.WithInsecureSkipVerify())
+	}
+
+	// Telemetry signing secret (build-time)
+	if opts.TelemetrySecret != "" {
+		clientOpts = append(clientOpts, dotenv.WithTelemetrySecret(opts.TelemetrySecret))
 	}
 
 	return dotenv.NewClient(clientOpts...)

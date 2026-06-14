@@ -1,6 +1,12 @@
 version: 2
 project_name: dotenv-cli
 
+env:
+  # Default the telemetry signing secret to empty when not provided, so builds
+  # without it still succeed (telemetry is then sent unsigned). CI sets
+  # CLI_TELEMETRY_SECRET to enable signing.
+  - CLI_TELEMETRY_SECRET={{ if index .Env "CLI_TELEMETRY_SECRET" }}{{ .Env.CLI_TELEMETRY_SECRET }}{{ end }}
+
 before:
   hooks:
     - go mod tidy
@@ -32,6 +38,9 @@ builds:
       - -X main.commit={{.Commit}}
       - -X main.date={{.Date}}
       - -X main.goVersion={{.Env.GOVERSION}}
+      # Telemetry signing secret from a private CI env var. Empty if unset, in
+      # which case telemetry is sent unsigned.
+      - -X main.telemetrySecret={{.Env.CLI_TELEMETRY_SECRET}}
 
 archives:
   - formats: [tar.gz]

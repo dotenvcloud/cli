@@ -13,6 +13,10 @@ var (
 	commit    = "none"
 	date      = "unknown"
 	goVersion = "unknown"
+	// telemetrySecret HMAC-signs CLI telemetry. Injected from a private CI
+	// secret at release build time; empty in local/dev builds (telemetry then
+	// goes out unsigned).
+	telemetrySecret = ""
 )
 
 func main() {
@@ -23,6 +27,7 @@ func main() {
 		Date:      date,
 		GoVersion: goVersion,
 	})
+	build.SetTelemetrySecret(telemetrySecret)
 
 	// Execute root command
 	if err := cmd.Execute(); err != nil {

@@ -197,14 +197,3 @@ func printActiveIdentity() {
 		ui.PrintWarningf("Could not display account info: %v", err)
 	}
 }
-
-// getUnauthenticatedSDKClient returns an SDK client without authentication
-// This is useful for OAuth token operations that don't require authentication
-func getUnauthenticatedSDKClient(baseURL string) *dotenv.Client {
-	if baseURL == "" {
-		baseURL = config.GetAPIURL("")
-	}
-
-	factory := client.NewFactory(baseURL)
-	return factory.NewUnauthenticatedClient(baseURL, config.ShouldSkipTLSVerify())
-}
