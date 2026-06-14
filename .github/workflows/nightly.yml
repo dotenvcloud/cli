@@ -74,6 +74,10 @@ jobs:
           #                              anyway; managing the `nightly`
           #                              release manually below.
           args: release --snapshot --clean --skip=docker,snapcraft,homebrew,scoop,publish,announce,validate
+        env:
+          # Sign nightly telemetry too (same secret as release.yml). Unset ⇒
+          # empty via the goreleaser env-default ⇒ unsigned build (no failure).
+          CLI_TELEMETRY_SECRET: ${{ secrets.CLI_TELEMETRY_SECRET }}
 
       - name: Recreate `nightly` pre-release
         env:

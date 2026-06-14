@@ -10,10 +10,9 @@ import (
 
 	dotenv "github.com/dotenvcloud/sdk-go"
 	"github.com/google/uuid"
-)
 
-// cliVersionKey is a context key for the CLI version, typed to avoid string key collisions.
-type cliVersionKey struct{}
+	"github.com/dotenvcloud/cli/internal/build"
+)
 
 // Event represents a telemetry event
 type Event struct {
@@ -84,7 +83,7 @@ func (c *Client) Track(name string, properties map[string]interface{}) error {
 		Context: Context{
 			OS:          runtime.GOOS,
 			Arch:        runtime.GOARCH,
-			Version:     "1.0.0", // TODO: Get from version package
+			Version:     build.GetInfo().Version,
 			CI:          isCI(),
 			SessionID:   c.sessionID,
 			AnalyticsID: c.analyticsID,
@@ -159,44 +158,56 @@ func (c *Client) worker() {
 	}
 }
 
-// sendBatch sends a batch of events to the telemetry endpoint
+// sendBatch flushes queued events to the telemetry endpoint. The endpoint
+// accepts a single flat event per call (see the OpenAPI TelemetryRequest
+// contract), so each queued event becomes its own request. Best-effort:
+// failures are ignored, and we stop early if the shared deadline expires.
 func (c *Client) sendBatch(events []Event) {
 	if c.sdkClient == nil {
 		return
 	}
 
-	// Convert our Event type to SDK's TelemetryEvent type
-	sdkEvents := make([]dotenv.TelemetryEvent, len(events))
-	for i := range events {
-		event := &events[i]
-		sdkEvents[i] = dotenv.TelemetryEvent{
-			ID:         event.ID,
-			Name:       event.Name,
-			Properties: event.Properties,
-			Context: dotenv.TelemetryContext{
-				OS:          event.Context.OS,
-				Arch:        event.Context.Arch,
-				Version:     event.Context.Version,
-				CI:          event.Context.CI,
-				SessionID:   event.Context.SessionID,
-				AnalyticsID: event.Context.AnalyticsID,
-			},
-			Timestamp: event.Timestamp,
-		}
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Add CLI version to context for the SDK to use
-	ctx = context.WithValue(ctx, cliVersionKey{}, "1.0.0") // TODO: Get from version package
-
-	// Use SDK to send batch
-	_, err := c.sdkClient.Telemetry.SendBatch(ctx, sdkEvents)
-	if err != nil {
-		// Silently ignore errors as telemetry is optional
-		return
+	for i := range events {
+		if _, err := c.sdkClient.Telemetry.Send(ctx, eventToRequest(&events[i])); err != nil {
+			// Telemetry is optional; ignore failures. Bail on the rest of the
+			// batch once the context is done so we don't spin on a dead network.
+			if ctx.Err() != nil {
+				return
+			}
+		}
 	}
+}
+
+// eventToRequest maps an internal Event onto the SDK's flat TelemetryRequest,
+// pulling the typed fields out of the property bag the Track* helpers populate.
+func eventToRequest(e *Event) dotenv.TelemetryRequest {
+	req := dotenv.TelemetryRequest{
+		Version:     e.Context.Version,
+		OS:          e.Context.OS,
+		Arch:        e.Context.Arch,
+		AnonymousID: e.Context.AnalyticsID,
+	}
+
+	if v, ok := e.Properties["command"].(string); ok {
+		req.Command = v
+	}
+	if v, ok := e.Properties["duration"].(int64); ok {
+		req.Duration = v
+	}
+	if v, ok := e.Properties["success"].(bool); ok {
+		req.Success = v
+	}
+	if v, ok := e.Properties["error_type"].(string); ok {
+		req.ErrorType = v
+	}
+	if v, ok := e.Properties["feature"].(string); ok {
+		req.Features = []string{v}
+	}
+
+	return req
 }
 
 // isCI detects if running in a CI environment

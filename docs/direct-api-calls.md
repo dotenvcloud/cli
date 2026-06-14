@@ -27,7 +27,7 @@ The following direct API calls have been successfully replaced with SDK methods:
 - **Token Refresh**: `/api/oauth/token` (refresh_token grant) → `client.OAuth.RefreshToken()`
 
 ### Telemetry
-- **Telemetry Submission**: `/api/v1/cli/telemetry` → `client.Telemetry.SendBatch()`
+- **Telemetry Submission**: `/api/v1/cli/telemetry` → `client.Telemetry.Send()` (one flat event per call; HMAC-signed when built with a telemetry secret)
 
 ### User Operations
 - **Fetch User**: `/api/v1/user` → `client.User.GetAuthenticatedUser()`

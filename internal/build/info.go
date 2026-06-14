@@ -15,12 +15,28 @@ type Info struct {
 
 var info Info
 
+// telemetrySecret is the HMAC secret used to sign CLI telemetry requests,
+// injected at build time via ldflags and forwarded here from main. Empty in
+// local/dev builds, in which case telemetry is sent unsigned.
+var telemetrySecret string
+
 // SetInfo sets the build information
 func SetInfo(i Info) {
 	info = i
 	if info.GoVersion == "unknown" {
 		info.GoVersion = runtime.Version()
 	}
+}
+
+// SetTelemetrySecret stores the build-time telemetry signing secret.
+func SetTelemetrySecret(secret string) {
+	telemetrySecret = secret
+}
+
+// TelemetrySecret returns the build-time telemetry signing secret (empty when
+// not injected at build time).
+func TelemetrySecret() string {
+	return telemetrySecret
 }
 
 // GetInfo returns the build information
