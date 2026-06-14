@@ -105,6 +105,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PUBLISH_APP_TOKEN: ${{ steps.publish-token.outputs.token }}
+          # Embedded into the binary (ldflags) to HMAC-sign CLI telemetry.
+          # If the repo secret is unset, the goreleaser env-default leaves it
+          # empty and the build is simply unsigned (no failure).
+          CLI_TELEMETRY_SECRET: ${{ secrets.CLI_TELEMETRY_SECRET }}
 
       - name: Scan released binaries
         run: |
