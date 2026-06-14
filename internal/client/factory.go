@@ -44,8 +44,10 @@ func NewFactory(defaultBaseURL string) *Factory {
 	}
 }
 
-// NewClient creates a new SDK client with the provided options
-func (f *Factory) NewClient(opts Options) *dotenv.Client {
+// NewClient creates a new SDK client with the provided options.
+// Options is a config struct built a handful of times at startup, so passing it
+// by value (gocritic hugeParam) is fine and keeps callers simple.
+func (f *Factory) NewClient(opts Options) *dotenv.Client { //nolint:gocritic // hugeParam: see above
 	clientOpts := []dotenv.ClientOption{}
 
 	// Set base URL
