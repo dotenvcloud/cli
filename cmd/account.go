@@ -313,7 +313,32 @@ func verifyAPIKeyOrg(ctx context.Context, apiKey string) (*dotenv.Organization, 
 	return orgs[0], nil
 }
 
-func runAccountRemove(_ *cobra.Command, args []string) error {
+// revokeOAuthToken best-effort revokes an account's OAuth token on the server
+// before its local credentials are deleted, so logging out invalidates the
+// session everywhere rather than just on this machine. API-key accounts have
+// nothing to revoke. Failures (offline, already-expired token, a server without
+// the endpoint) only warn — local removal must always proceed.
+func revokeOAuthToken(ctx context.Context, account *config.Account) {
+	if account == nil || !account.IsOAuth() || account.Auth.RefreshToken == "" {
+		return
+	}
+
+	factory := client.NewFactory(account.APIURL)
+	sdkClient := factory.NewUnauthenticatedClient(account.APIURL, config.ShouldSkipTLSVerify())
+
+	resp, err := sdkClient.OAuth.RevokeToken(ctx, account.Auth.RefreshToken, constants.OAuthClientID)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+	if err != nil {
+		ui.PrintWarningf("Could not revoke token on server (removing locally anyway): %v", err)
+		return
+	}
+
+	ui.PrintInfof("Revoked token on server")
+}
+
+func runAccountRemove(cmd *cobra.Command, args []string) error {
 	configPath, err := config.ConfigPath()
 	if err != nil {
 		return err
@@ -347,6 +372,8 @@ func runAccountRemove(_ *cobra.Command, args []string) error {
 		ui.PrintInfof("Account removal canceled")
 		return nil
 	}
+
+	revokeOAuthToken(cmd.Context(), account)
 
 	if err := am.Remove(accountName); err != nil {
 		return err
