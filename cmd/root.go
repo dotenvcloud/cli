@@ -115,6 +115,7 @@ For more information, visit: https://dotenv.cloud/docs/cli`,
 		listCmd,
 		exportCmd,
 		accountCmd, // New account management
+		logoutCmd,  // Log out (revoke token + remove account)
 		orgCmd,     // Updated org management
 		statusCmd,  // New status command
 		refreshCmd,
