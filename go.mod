@@ -2,7 +2,7 @@ module github.com/dotenvcloud/cli
 
 go 1.26.0
 
-toolchain go1.26.4
+toolchain go1.26.5
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
