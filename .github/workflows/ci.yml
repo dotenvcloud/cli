@@ -167,7 +167,7 @@ jobs:
         run: go mod download
 
       - name: Run Gosec
-        uses: securego/gosec@v2.27.1
+        uses: securego/gosec@v2.29.0
         with:
           args: '-no-fail -fmt sarif -out results.sarif ./...'
 
